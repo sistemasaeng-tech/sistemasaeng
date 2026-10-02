@@ -98,7 +98,7 @@ const S = {
   usuarios:{}, cad:{fornecedores:[],setores:[],niveis:[],pilares:[],locais:[]}, cadLoaded:false,
   win:new Map(), open:new Map(), extra:new Map(), feed:[], dwHist:[],
   noite:defaultNight(), winFrom:addDays(defaultNight(), -35), tab:'noite',
-  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:''}, openId:null, dwMode:null,
+  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:''}, cadSub:null, cadDel:null, openId:null, dwMode:null,
 };
 const isAdmin = () => S.perfil?.papel === 'admin';
 const canWrite = () => ['usuario','admin'].includes(S.perfil?.papel);
@@ -352,44 +352,95 @@ function renderFeed(){
 }
 
 /* ================= cadastros ================= */
+const ICONS = {
+  usuarios:'<path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19"/><circle cx="10" cy="7.5" r="3.5"/><path d="M20 19v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.2a3.5 3.5 0 0 1 0 6.6"/>',
+  fornecedores:'<path d="M3 21V8l6-4v4l6-4v4l6-4v17z"/><path d="M7 14h2M11 14h2M15 14h2M7 17.5h2M11 17.5h2M15 17.5h2"/>',
+  setores:'<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>',
+  niveis:'<path d="M4 20h16M4 15h12M4 10h8M4 5h4"/>',
+  pilares:'<path d="M6 21V3M18 21V3M3 3h18M3 21h18M10 7v10M14 7v10"/>',
+  locais:'<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+};
+const ico = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
 const CAD_DEF = [
-  {key:'fornecedores', title:'Fornecedores', hint:'Empresas que atuam na obra.', cols:[['nome','Nome'],['disciplina','Disciplina']], k:'nome', v:'disciplina'},
-  {key:'setores', title:'Setores', hint:'Código e frentes principais do setor.', cols:[['codigo','Código'],['descricao','Descrição']], k:'codigo', v:'descricao'},
-  {key:'niveis', title:'Níveis', hint:'Cotas de nível usadas nos relatos (m).', cols:[['valor','Nível']], k:'valor'},
-  {key:'pilares', title:'Pilares', hint:'Pilar, eixo e referência de loja ou ambiente.', cols:[['codigo','Pilar'],['eixo','Eixo'],['referencia','Referência']], k:'codigo', v:'referencia', v2:'eixo'},
-  {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio fora dos setores.', cols:[['nome','Local']], k:'nome'},
+  {key:'fornecedores', title:'Fornecedores', hint:'Empresas que atuam na obra.', cols:[['nome','Nome da empresa'],['disciplina','Disciplina (opcional)']], k:'nome', v:'disciplina'},
+  {key:'setores', title:'Setores', hint:'Código e frentes principais de cada setor.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
+  {key:'niveis', title:'Níveis', hint:'Cotas de nível usadas nos relatos (m).', cols:[['valor','Nível (ex.: 114,30)']], k:'valor'},
+  {key:'pilares', title:'Pilares', hint:'Pilar, eixo e referência de loja ou ambiente.', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Referência']], k:'codigo', v:'referencia', v2:'eixo'},
+  {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio fora dos setores.', cols:[['nome','Nome do local']], k:'nome'},
 ];
+const cadItemText = (d, it) => { const o = typeof it === 'string' ? {[d.k]:it} : it; return {o, k:o[d.k], v:[d.v2 ? o[d.v2] : '', d.v ? o[d.v] : ''].filter(Boolean).join(' · ')}; };
+
 function renderCad(){
   const admin = isAdmin();
-  const empty = S.cadLoaded && CAD_DEF.every(d => !(S.cad[d.key]||[]).length);
-  $('cad-sub').innerHTML = admin ? (empty ? 'Os cadastros estão vazios. <button type="button" class="btn pri" id="b-seed" style="margin-left:8px">Carregar lista inicial da obra</button>' : 'Listas usadas nos formulários. Só administradores alteram.') : 'Listas usadas nos formulários. Só administradores alteram.';
-  const boxes = [];
-  if (admin){
-    const us = Object.entries(S.usuarios).sort(([,a],[,b]) => (a.papel === 'pendente' ? 0 : 1) - (b.papel === 'pendente' ? 0 : 1) || String(a.nome).localeCompare(String(b.nome),'pt'));
-    const pend = us.filter(([,u]) => u.papel === 'pendente').length;
-    boxes.push(`<div class="box"><h3>Usuários <span class="ro">${us.length}${pend ? ` · ${pend} aguardando` : ''}</span></h3><p class="hint">Usuário insere e atualiza atividades. Visualizador só consulta e exporta. Administrador também altera cadastros, libera pessoas e exclui atividades.</p>
-      <div class="list-scroll">${us.map(([id,u]) => `<div class="li" style="flex-wrap:wrap"><span class="k" style="min-width:0">${esc(u.nome)}</span><span class="v">${esc(u.funcao||'')} · ${esc(u.email||'')}</span><span class="badge ${u.papel}">${esc(PAPEIS[u.papel]||u.papel)}</span>
-        ${id === S.uid ? '<span class="ro">você</span>' : `<span class="ubtns">${
-          u.papel === 'pendente' ? `<button class="btn pri" type="button" data-papel="${id}:usuario">Liberar como usuário</button><button class="btn" type="button" data-papel="${id}:visualizador">Liberar como visualizador</button><button class="btn" type="button" data-papel="${id}:bloqueado">Recusar</button>`
-          : u.papel === 'usuario' ? `<button class="btn" type="button" data-papel="${id}:admin">Tornar admin</button><button class="btn" type="button" data-papel="${id}:visualizador">Tornar visualizador</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
-          : u.papel === 'visualizador' ? `<button class="btn" type="button" data-papel="${id}:usuario">Tornar usuário</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
-          : u.papel === 'admin' ? `<button class="btn" type="button" data-papel="${id}:usuario">Remover admin</button>`
-          : `<button class="btn" type="button" data-papel="${id}:visualizador">Reativar como visualizador</button><button class="btn" type="button" data-papel="${id}:usuario">Reativar como usuário</button>`}</span>`}</div>`).join('')}</div></div>`);
+  if (S.cadSub === 'usuarios' && !admin) S.cadSub = null;
+  const view = $('cad');
+  // página de um assunto já aberta: atualiza só a lista, sem apagar o que está sendo digitado
+  if (S.cadSub && view.dataset.key === S.cadSub){ renderCadList(); return; }
+  view.dataset.key = S.cadSub || '';
+  view.classList.toggle('sub', !!S.cadSub);
+  $('cad-head').hidden = !!S.cadSub;
+  if (!S.cadSub){
+    const empty = S.cadLoaded && CAD_DEF.every(d => !(S.cad[d.key]||[]).length);
+    $('cad-sub').innerHTML = admin ? 'Toque em um assunto para ver a lista e cadastrar.' : 'Listas usadas nos formulários. Só administradores alteram.';
+    const pend = Object.values(S.usuarios).filter(u => u.papel === 'pendente').length;
+    const rows = [];
+    if (admin) rows.push({key:'usuarios', title:'Usuários e acessos', hint:pend ? `${pend} aguardando liberação` : 'Liberar, bloquear e definir papéis', count:Object.keys(S.usuarios).length, alert:pend});
+    for (const d of CAD_DEF) rows.push({key:d.key, title:d.title, hint:d.hint, count:(S.cad[d.key]||[]).length});
+    view.innerHTML = `${admin && empty ? `<div class="seed"><div><b>Os cadastros estão vazios.</b><span>Carregue a lista da obra: 28 fornecedores, 10 setores, níveis, pilares e locais.</span></div><button type="button" class="btn pri" id="b-seed">Carregar lista inicial</button></div>` : ''}
+      <div class="cad-menu">${rows.map(r => `<button type="button" class="cad-row" data-cad="${r.key}">
+        <span class="cad-ico">${ico(r.key)}</span>
+        <span class="cad-tx"><b>${esc(r.title)}</b><span class="${r.alert ? 'alert' : ''}">${esc(r.hint)}</span></span>
+        <span class="cad-n">${S.cadLoaded || r.key === 'usuarios' ? r.count : '…'}</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></button>`).join('')}</div>`;
+    return;
   }
-  for (const d of CAD_DEF){
-    const items = S.cad[d.key] || [];
-    boxes.push(`<div class="box"><h3>${d.title} <span class="ro">${items.length}</span></h3><p class="hint">${d.hint}</p>
-      <div class="list-scroll">${items.length ? items.map((it,i) => {
-        const o = typeof it === 'string' ? {[d.k]:it} : it, v = [d.v2 ? o[d.v2] : '', d.v ? o[d.v] : ''].filter(Boolean).join(' · ');
-        return `<div class="li"><span class="k">${esc(o[d.k])}</span><span class="v">${esc(v)}</span>${admin ? `<button type="button" class="x" data-del="${d.key}:${i}" aria-label="Remover ${esc(o[d.k])}">×</button>` : ''}</div>`;
-      }).join('') : `<div class="li"><span class="v">${S.cadLoaded ? 'Lista vazia.' : 'Carregando…'}</span></div>`}</div>
-      ${admin ? `<form class="add" data-add="${d.key}">${d.cols.map(([c,l]) => `<input id="cad-${d.key}-${c}" name="${c}" placeholder="${l}" aria-label="${l}">`).join('')}<button class="btn" type="submit">Adicionar</button></form>` : ''}</div>`);
+  const isU = S.cadSub === 'usuarios', d = CAD_DEF.find(x => x.key === S.cadSub);
+  const title = isU ? 'Usuários e acessos' : d.title, hint = isU ? 'Usuário insere e atualiza atividades. Visualizador só consulta e exporta. Administrador também altera cadastros, libera pessoas e exclui atividades.' : d.hint;
+  view.innerHTML = `<div class="cad-page">
+    <button type="button" class="back" data-cad-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Cadastros</button>
+    <div class="cad-title"><span class="cad-ico">${ico(S.cadSub)}</span><div><h1>${esc(title)}</h1><p>${esc(hint)}</p></div></div>
+    ${!isU && admin ? `<form class="cad-add" data-add="${d.key}"><div class="cad-add-h">Novo cadastro</div><div class="cad-add-f">${d.cols.map(([c,l]) => `<input id="cad-${d.key}-${c}" name="${c}" placeholder="${l}" aria-label="${l}" autocomplete="off">`).join('')}<button class="btn pri" type="submit">Adicionar</button></div></form>` : ''}
+    <div class="search cad-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="cad-q" placeholder="Buscar em ${esc(title.toLowerCase())}…" aria-label="Buscar" autocomplete="off"></div>
+    <div class="cad-list-h"><span id="cad-count"></span></div>
+    <div class="cad-list" id="cad-list"></div>
+  </div>`;
+  $('cad-q').oninput = renderCadList;
+  renderCadList();
+}
+function renderCadList(){
+  const list = $('cad-list'); if (!list) return;
+  const admin = isAdmin(), q = ($('cad-q')?.value || '').trim().toLowerCase();
+  if (S.cadSub === 'usuarios'){
+    const ord = {pendente:0, admin:1, usuario:2, visualizador:3, bloqueado:4};
+    const us = Object.entries(S.usuarios).filter(([,u]) => !q || [u.nome,u.email,u.funcao,PAPEIS[u.papel]].join(' ').toLowerCase().includes(q))
+      .sort(([,a],[,b]) => (ord[a.papel] ?? 9) - (ord[b.papel] ?? 9) || String(a.nome).localeCompare(String(b.nome),'pt'));
+    $('cad-count').textContent = `${us.length} ${us.length === 1 ? 'pessoa' : 'pessoas'}`;
+    list.innerHTML = us.length ? us.map(([id,u]) => `<div class="cad-item user">
+      <span class="av sm">${esc(initials(u.nome))}</span>
+      <div class="ci-tx"><b>${esc(u.nome)}${id === S.uid ? ' <span class="ro">(você)</span>' : ''}</b><span>${esc([u.funcao, u.email].filter(Boolean).join(' · '))}</span></div>
+      <span class="badge ${u.papel}">${esc(PAPEIS[u.papel]||u.papel)}</span>
+      ${id === S.uid ? '' : `<div class="ubtns">${
+        u.papel === 'pendente' ? `<button class="btn pri" type="button" data-papel="${id}:usuario">Liberar como usuário</button><button class="btn" type="button" data-papel="${id}:visualizador">Liberar como visualizador</button><button class="btn" type="button" data-papel="${id}:bloqueado">Recusar</button>`
+        : u.papel === 'usuario' ? `<button class="btn" type="button" data-papel="${id}:admin">Tornar admin</button><button class="btn" type="button" data-papel="${id}:visualizador">Tornar visualizador</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
+        : u.papel === 'visualizador' ? `<button class="btn" type="button" data-papel="${id}:usuario">Tornar usuário</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
+        : u.papel === 'admin' ? `<button class="btn" type="button" data-papel="${id}:usuario">Remover admin</button>`
+        : `<button class="btn" type="button" data-papel="${id}:visualizador">Reativar como visualizador</button><button class="btn" type="button" data-papel="${id}:usuario">Reativar como usuário</button>`}</div>`}
+    </div>`).join('') : '<div class="empty">Ninguém encontrado.</div>';
+    return;
   }
-  $('cad').innerHTML = boxes.join('');
+  const d = CAD_DEF.find(x => x.key === S.cadSub); if (!d) return;
+  const all = (S.cad[d.key] || []).map((it, i) => ({i, ...cadItemText(d, it)}));
+  const items = all.filter(x => !q || (x.k + ' ' + x.v).toLowerCase().includes(q));
+  $('cad-count').textContent = q ? `${items.length} de ${all.length}` : `${all.length} ${all.length === 1 ? 'item' : 'itens'}`;
+  list.innerHTML = items.length ? items.map(x => `<div class="cad-item">
+      <div class="ci-tx"><b>${esc(x.k)}</b>${x.v ? `<span>${esc(x.v)}</span>` : ''}</div>
+      ${admin ? (S.cadDel === `${d.key}:${x.i}` ? `<div class="ci-conf"><span>Remover?</span><button type="button" class="btn danger" data-del="${d.key}:${x.i}">Sim</button><button type="button" class="btn" data-del-cancel>Não</button></div>`
+        : `<button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
+    </div>`).join('') : `<div class="empty">${S.cadLoaded ? (q ? 'Nada encontrado com essa busca.' : 'Lista vazia.') : 'Carregando…'}</div>`;
 }
 async function saveCad(next){
-  try { await setDoc(doc(db, 'config', 'cadastros'), {...next, atualizadoPor:S.uid, atualizadoEm:serverTimestamp()}); }
-  catch (e) { toast(e?.code === 'permission-denied' ? 'Só administradores alteram os cadastros.' : 'Não foi possível salvar o cadastro.'); }
+  try { await setDoc(doc(db, 'config', 'cadastros'), {...next, atualizadoPor:S.uid, atualizadoEm:serverTimestamp()}); return true; }
+  catch (e) { toast(e?.code === 'permission-denied' ? 'Só administradores alteram os cadastros.' : 'Não foi possível salvar o cadastro.'); return false; }
 }
 function fillFilterOptions(){
   const s = $('f-setor'), sv = s.value;
@@ -419,6 +470,7 @@ function renderWho(){
   if (ro) $('banner').innerHTML = '<b>Acesso de visualização.</b> Você consulta as atividades, o histórico e pode exportar, mas não insere nem altera nada.';
 }
 function setTab(t){
+  if (t === 'cad' && S.tab === 'cad') S.cadSub = null;
   S.tab = ['noite','hist','cad'].includes(t) ? t : 'noite';
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
   $('v-noite').hidden = S.tab !== 'noite'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad';
@@ -685,7 +737,11 @@ document.addEventListener('click', e => {
   const chip = t.closest('.chip[data-st]'); if (chip){ S.f.status = S.f.status === chip.dataset.st ? '' : chip.dataset.st; return renderAll(); }
   if (t.closest('.chip[data-jump]')) return $('l-pend').scrollIntoView({behavior:'smooth', block:'start'});
   const m = t.closest('[data-mode]'); if (m && $('drawer').contains(m)) return setMode(m.dataset.mode || null);
-  const del = t.closest('[data-del]'); if (del){ const [key, i] = del.dataset.del.split(':'); return saveCad({...S.cad, [key]:S.cad[key].filter((_,j) => j !== Number(i))}); }
+  const cadRow = t.closest('[data-cad]'); if (cadRow){ S.cadSub = cadRow.dataset.cad; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
+  if (t.closest('[data-cad-back]')){ S.cadSub = null; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
+  const ask = t.closest('[data-del-ask]'); if (ask){ S.cadDel = ask.dataset.delAsk; return renderCadList(); }
+  if (t.closest('[data-del-cancel]')){ S.cadDel = null; return renderCadList(); }
+  const del = t.closest('[data-del]'); if (del){ const [key, i] = del.dataset.del.split(':'); S.cadDel = null; return saveCad({...S.cad, [key]:S.cad[key].filter((_,j) => j !== Number(i))}).then(ok => ok && toast('Item removido.')); }
   const pp = t.closest('[data-papel]'); if (pp){ const [uid, papel] = pp.dataset.papel.split(':'); updateDoc(doc(db, 'usuarios', uid), {papel}).then(() => toast('Acesso atualizado.'), handleWriteError); return; }
   if (t.id === 'b-seed') return saveCad(SEED);
 });
@@ -699,7 +755,7 @@ document.addEventListener('submit', e => {
   if ((S.cad[key]||[]).some(x => String(simple ? x : x[d.k]).toLowerCase() === vals[d.k].toLowerCase())) return toast('Esse item já está na lista.');
   const next = {...S.cad, [key]:[...(S.cad[key]||[]), item]};
   if (key === 'fornecedores') next[key].sort((a,b) => a.nome.localeCompare(b.nome,'pt'));
-  saveCad(next);
+  saveCad(next).then(ok => { if (!ok) return; f.reset(); f.elements[0].focus(); toast('Cadastrado.'); });
 });
 $('n-prev').onclick = () => setNight(addDays(S.noite,-1));
 $('n-next').onclick = () => setNight(addDays(S.noite,1));
