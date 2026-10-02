@@ -1,7 +1,7 @@
 {
-  "name": "Programação Noturna · SAENG",
-  "short_name": "Noturna SAENG",
-  "description": "Atividades do turno da noite, status e histórico — Obra 4107 Rooftop Iguatemi SP",
+  "name": "Programação de Atividades · SAENG",
+  "short_name": "Atividades SAENG",
+  "description": "Atividades dos turnos diurno e noturno, status e histórico — Obra 4107 Rooftop Iguatemi SP",
   "id": "./",
   "start_url": "./",
   "scope": "./",

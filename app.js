@@ -1,4 +1,4 @@
-// Programação Noturna — Obra 4107 Rooftop Iguatemi SP
+// Programação de Atividades (turnos diurno e noturno) — Obra 4107 Rooftop Iguatemi SP
 // Front-end estático + Firebase (Authentication e Firestore).
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -26,9 +26,14 @@ const ORDER = ['programada','andamento','parcial','nao_iniciada','impedida','con
 const MOTIVOS = ['Equipe não compareceu','Efetivo insuficiente','Falta de material','Falta de equipamento','Frente não liberada','Liberação do shopping / cliente','PT / liberação de segurança não emitida','Interferência com outra equipe','Serviço antecessor não concluído','Chuva / condição climática','Outro'];
 const PRIOR = {normal:'Normal', alta:'Alta', critica:'Crítica'};
 const FUNCOES = ['Coordenador','Residente','Engenheiro','Encarregado','Mestre de obras','Técnico de segurança','Planejamento','Outro'];
-const PAPEIS = {pendente:'Aguardando aprovação', usuario:'Usuário', admin:'Administrador', bloqueado:'Bloqueado'};
-const FIELDS = {noite:'Noite',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável na noite',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
+const PAPEIS = {pendente:'Aguardando aprovação', visualizador:'Visualizador', usuario:'Usuário', admin:'Administrador', bloqueado:'Bloqueado'};
+const FIELDS = {noite:'Data',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
 const TIPO_LABEL = {setor:'Setor', pilar:'Pilar', shopping:'Shopping'};
+const TURNOS = {diurno:'Diurno', noturno:'Noturno'};
+const turnoOf = a => a.turno === 'diurno' ? 'diurno' : 'noturno'; // atividades antigas, sem turno, contam como noturnas
+const ICON_SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const ICON_LUA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
+const turnoTag = t => `<span class="turno ${t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</span>`;
 
 // Lista inicial da obra (carregada pelo administrador na aba Cadastros quando o banco está vazio).
 // Fontes: planilha de trabalhos executados 06–12/07/2026, cronograma de metálica e controle de efetivo.
@@ -59,10 +64,12 @@ const pad = n => String(n).padStart(2,'0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const parseYmd = s => { const [y,m,d] = String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
 const addDays = (s,n) => { const d = parseYmd(s); d.setDate(d.getDate()+n); return ymd(d); };
-const defaultNight = () => { const d = new Date(); if (d.getHours() < 12) d.setDate(d.getDate()-1); return ymd(d); };
+const defaultNight = () => { const d = new Date(); if (d.getHours() < 6) d.setDate(d.getDate()-1); return ymd(d); }; // até 6h ainda conta o turno noturno do dia anterior
 const DOW = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
 const fmtShort = s => { if (!s) return ''; const d = parseYmd(s); return `${pad(d.getDate())}/${pad(d.getMonth()+1)}`; };
 const fmtNightLong = s => { const d = parseYmd(s), e = parseYmd(addDays(s,1)); return `De ${DOW[d.getDay()]} ${fmtShort(s)} para ${DOW[e.getDay()]} ${fmtShort(addDays(s,1))}`; };
+const fmtDay = s => { const d = parseYmd(s); return `${DOW[d.getDay()][0].toUpperCase()}${DOW[d.getDay()].slice(1)}, ${fmtShort(s)}`; };
+const fmtWhen = (s, t) => t === 'diurno' ? `${fmtDay(s)} · turno diurno` : `${fmtNightLong(s)} · turno noturno`;
 const toDate = v => !v ? new Date() : typeof v.toDate === 'function' ? v.toDate() : typeof v.seconds === 'number' ? new Date(v.seconds*1000) : new Date(v);
 const fmtTs = v => { const d = toDate(v); return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const fmtHM = v => { const d = toDate(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -91,10 +98,11 @@ const S = {
   usuarios:{}, cad:{fornecedores:[],setores:[],niveis:[],pilares:[],locais:[]}, cadLoaded:false,
   win:new Map(), open:new Map(), extra:new Map(), feed:[], dwHist:[],
   noite:defaultNight(), winFrom:addDays(defaultNight(), -35), tab:'noite',
-  f:{q:'',tipo:'',setor:'',forn:'',status:''}, openId:null, dwMode:null,
+  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:''}, openId:null, dwMode:null,
 };
 const isAdmin = () => S.perfil?.papel === 'admin';
 const canWrite = () => ['usuario','admin'].includes(S.perfil?.papel);
+const canRead = () => ['visualizador','usuario','admin'].includes(S.perfil?.papel);
 function all(){ const m = new Map(S.extra); for (const [k,v] of S.win) m.set(k,v); for (const [k,v] of S.open) m.set(k,v); return m; }
 const nameOf = u => !u ? 'Sem identificação' : (S.usuarios[u]?.nome || (u === S.uid && S.perfil?.nome) || 'Usuário');
 const roleOf = u => S.usuarios[u]?.funcao || '';
@@ -202,7 +210,7 @@ if (!configOk){
         return;
       }
       S.perfil = snap.data(SNAP);
-      if (canWrite()) startApp(); else { stopApp(); gateWaiting(S.perfil.papel); }
+      if (canRead()) startApp(); else { stopApp(); gateWaiting(S.perfil.papel); }
     }, () => gateLogin('Não foi possível ler seu cadastro. Tente entrar de novo.'));
   });
 }
@@ -261,11 +269,14 @@ const prRank = p => p === 'critica' ? 0 : p === 'alta' ? 1 : 2;
 const sortActs = list => list.sort((x,y) => prRank(x.prioridade)-prRank(y.prioridade) || ORDER.indexOf(x.status)-ORDER.indexOf(y.status) || toDate(x.criadoEm)-toDate(y.criadoEm));
 
 function renderNight(){
-  $('night-title').textContent = S.noite === defaultNight() ? 'Esta noite' : `Noite de ${fmtShort(S.noite)}`;
-  $('night-sub').textContent = fmtNightLong(S.noite);
+  const today = S.noite === defaultNight(), ft = S.f.turno;
+  $('night-title').textContent = today ? 'Hoje' : fmtDay(S.noite);
+  $('night-sub').textContent = ft === 'noturno' ? fmtNightLong(S.noite) + ' · turno noturno' : ft === 'diurno' ? fmtDay(S.noite) + ' · turno diurno' : (today ? fmtDay(S.noite) + ' · ' : '') + 'turnos diurno e noturno';
+  $('night-eyebrow').textContent = ft ? `Turno ${TURNOS[ft].toLowerCase()}` : 'Todos os turnos';
   { const d = parseYmd(S.noite); $('night-label').textContent = `${DOW[d.getDay()].slice(0,3)} ${fmtShort(S.noite)}`; }
   $('n-date').value = S.noite;
-  const acts = [...all().values()];
+  for (const b of document.querySelectorAll('#f-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
+  const acts = [...all().values()].filter(a => !ft || turnoOf(a) === ft);
   const tonight = acts.filter(a => a.noite === S.noite);
   const pend = acts.filter(a => a.aberta && a.noite < S.noite);
   const cnt = {}; ORDER.forEach(k => cnt[k] = 0); tonight.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
@@ -278,11 +289,17 @@ function renderNight(){
   const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(x.noite).localeCompare(String(y.noite)));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
   $('c-pend').textContent = p.length === pend.length ? `${p.length}` : `${p.length} de ${pend.length}`;
-  $('l-tonight').innerHTML = !tonight.length ? `<div class="empty"><b>Nenhuma atividade para esta noite</b>Use “Nova atividade” para programar o que a equipe da noite vai executar.</div>`
-    : !t.length ? '<div class="empty">Nenhuma atividade com esses filtros.</div>' : grouped(t, false);
-  $('l-pend').innerHTML = !pend.length ? '<div class="empty">Nada pendente de noites anteriores.</div>'
+  $('h-tonight').textContent = today ? 'Programadas para hoje' : `Programadas para ${fmtShort(S.noite)}`;
+  let html;
+  if (!tonight.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Use “Nova atividade” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
+  else if (!t.length) html = '<div class="empty">Nenhuma atividade com esses filtros.</div>';
+  else if (ft) html = grouped(t, false);
+  else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false)}</div>` : ''; }).join('');
+  $('l-tonight').innerHTML = html;
+  $('l-pend').innerHTML = !pend.length ? '<div class="empty">Nada pendente de dias anteriores.</div>'
     : !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
   $('b-export').hidden = tonight.length + pend.length === 0;
+  $('b-new').hidden = !canWrite();
 }
 function grouped(list, isPend){
   const groups = new Map();
@@ -291,9 +308,9 @@ function grouped(list, isPend){
     .map(g => `<div class="grp"><div class="grp-h"><b>${esc(g.label)}</b>${g.sub ? `<span>${esc(g.sub)}</span>` : ''}</div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`).join('');
 }
 function card(a, isPend){
-  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(a.noite, S.noite) : 0, tags = [];
+  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(a.noite, S.noite) : 0, tags = [turnoTag(turnoOf(a))];
   if (a.prioridade && a.prioridade !== 'normal') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
-  if (isPend) tags.push(`<span class="tag since">desde ${fmtShort(a.noite)} · ${n} ${n === 1 ? 'noite' : 'noites'}</span>`);
+  if (isPend) tags.push(`<span class="tag since">desde ${fmtShort(a.noite)} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
   const obs = a.ultimaObs || a.motivo ? `<div class="obs">${a.motivo ? `<b>${esc(a.motivo)}</b>${a.ultimaObs ? ' — ' : ''}` : ''}${esc(a.ultimaObs||'')}</div>` : '';
   return `<button type="button" class="card" data-id="${esc(a.id)}" style="--c:${cvar(a.status)}"><span class="stripe"></span>
     <span class="body"><div class="t">${esc(a.titulo)}</div><div class="m">${esc(localLine(a))}</div>
@@ -305,16 +322,16 @@ function card(a, isPend){
 function evText(ev){
   const st = k => `<span class="pill" style="--c:${cvar(k)}">${esc(STATUS[k]?.label || k)}</span>`;
   switch (ev.tipo){
-    case 'criou': return `inseriu ${ev.origem ? 'uma cópia' : 'a atividade'} para a noite de ${fmtShort(ev.noite || ev.noiteAtv)}`;
+    case 'criou': return `inseriu ${ev.origem ? 'uma cópia' : 'a atividade'} para ${fmtShort(ev.noite || ev.noiteAtv)}${ev.turno || ev.turnoAtv ? ' (' + (TURNOS[ev.turno || ev.turnoAtv] || '').toLowerCase() + ')' : ''}`;
     case 'status': return `mudou o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
     case 'obs': return 'adicionou uma observação';
     case 'editou': return 'alterou os dados';
-    case 'reprogramou': return `reprogramou da noite de ${fmtShort(ev.de)} para ${fmtShort(ev.para)}`;
+    case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
     case 'excluiu': return 'excluiu a atividade';
     default: return esc(ev.tipo);
   }
 }
-const fmtVal = (campo, v) => campo === 'noite' && v ? fmtShort(v) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
+const fmtVal = (campo, v) => campo === 'noite' && v ? fmtShort(v) : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
 function evExtra(ev){
   let h = '';
   if (ev.mudancas?.length) h += `<div class="ch">${ev.mudancas.map(m => `${esc(FIELDS[m.campo]||m.campo)}: ${esc(fmtVal(m.campo,m.de)||'—')} → ${esc(fmtVal(m.campo,m.para)||'—')}`).join('<br>')}</div>`;
@@ -350,13 +367,14 @@ function renderCad(){
   if (admin){
     const us = Object.entries(S.usuarios).sort(([,a],[,b]) => (a.papel === 'pendente' ? 0 : 1) - (b.papel === 'pendente' ? 0 : 1) || String(a.nome).localeCompare(String(b.nome),'pt'));
     const pend = us.filter(([,u]) => u.papel === 'pendente').length;
-    boxes.push(`<div class="box"><h3>Usuários <span class="ro">${us.length}${pend ? ` · ${pend} aguardando` : ''}</span></h3><p class="hint">Libere quem pode usar o sistema. Administradores também alteram cadastros e excluem atividades.</p>
+    boxes.push(`<div class="box"><h3>Usuários <span class="ro">${us.length}${pend ? ` · ${pend} aguardando` : ''}</span></h3><p class="hint">Usuário insere e atualiza atividades. Visualizador só consulta e exporta. Administrador também altera cadastros, libera pessoas e exclui atividades.</p>
       <div class="list-scroll">${us.map(([id,u]) => `<div class="li" style="flex-wrap:wrap"><span class="k" style="min-width:0">${esc(u.nome)}</span><span class="v">${esc(u.funcao||'')} · ${esc(u.email||'')}</span><span class="badge ${u.papel}">${esc(PAPEIS[u.papel]||u.papel)}</span>
         ${id === S.uid ? '<span class="ro">você</span>' : `<span class="ubtns">${
-          u.papel === 'pendente' ? `<button class="btn pri" type="button" data-papel="${id}:usuario">Liberar</button><button class="btn" type="button" data-papel="${id}:bloqueado">Recusar</button>`
-          : u.papel === 'usuario' ? `<button class="btn" type="button" data-papel="${id}:admin">Tornar admin</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
+          u.papel === 'pendente' ? `<button class="btn pri" type="button" data-papel="${id}:usuario">Liberar como usuário</button><button class="btn" type="button" data-papel="${id}:visualizador">Liberar como visualizador</button><button class="btn" type="button" data-papel="${id}:bloqueado">Recusar</button>`
+          : u.papel === 'usuario' ? `<button class="btn" type="button" data-papel="${id}:admin">Tornar admin</button><button class="btn" type="button" data-papel="${id}:visualizador">Tornar visualizador</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
+          : u.papel === 'visualizador' ? `<button class="btn" type="button" data-papel="${id}:usuario">Tornar usuário</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
           : u.papel === 'admin' ? `<button class="btn" type="button" data-papel="${id}:usuario">Remover admin</button>`
-          : `<button class="btn" type="button" data-papel="${id}:usuario">Reativar</button>`}</span>`}</div>`).join('')}</div></div>`);
+          : `<button class="btn" type="button" data-papel="${id}:visualizador">Reativar como visualizador</button><button class="btn" type="button" data-papel="${id}:usuario">Reativar como usuário</button>`}</span>`}</div>`).join('')}</div></div>`);
   }
   for (const d of CAD_DEF){
     const items = S.cad[d.key] || [];
@@ -395,7 +413,10 @@ function renderWho(){
   const n = S.perfil?.nome || 'Você', r = S.perfil?.funcao || '';
   $('who-av').textContent = initials(n);
   $('who-name').innerHTML = `${esc(n)}${r ? ` <small>· ${esc(r)}</small>` : ''}`;
-  $('who-email').textContent = `${S.email}${isAdmin() ? ' · administrador' : ''}`;
+  $('who-email').textContent = `${S.email} · ${(PAPEIS[S.perfil?.papel] || '').toLowerCase()}`;
+  const ro = S.perfil?.papel === 'visualizador';
+  $('banner').hidden = !ro;
+  if (ro) $('banner').innerHTML = '<b>Acesso de visualização.</b> Você consulta as atividades, o histórico e pode exportar, mas não insere nem altera nada.';
 }
 function setTab(t){
   S.tab = ['noite','hist','cad'].includes(t) ? t : 'noite';
@@ -437,14 +458,15 @@ function renderDrawerHead(){
   if (!a){ $('dw-head').innerHTML = '<p class="ro">Carregando…</p>'; $('dw-pill').innerHTML = ''; return; }
   const st = STATUS[a.status] || STATUS.programada;
   $('dw-pill').innerHTML = `<span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}${a.status === 'parcial' && a.pct ? ' '+esc(a.pct)+'%' : ''}</span>`;
-  const kv = [['Local', localLine(a)], ['Noite', fmtNightLong(a.noite)], ['Fornecedor', a.fornecedor || 'Não informado'],
+  const kv = [['Turno', TURNOS[turnoOf(a)]], ['Quando', fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
     a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo prev.', a.efetivo] : null, ['Prioridade', PRIOR[a.prioridade] || 'Normal'],
     a.motivo ? ['Motivo', a.motivo] : null, ['Inserida por', `${nameOf(a.criadoPor)} em ${fmtTs(a.criadoEm)}`], ['Última alteração', `${nameOf(a.atualizadoPor)} em ${fmtTs(a.atualizadoEm)}`]].filter(Boolean);
-  $('dw-head').innerHTML = `<div class="ro">${esc(TIPO_LABEL[a.tipoLocal]||'')}</div><h2 class="dw-title">${esc(a.titulo)}</h2>
+  $('dw-head').innerHTML = `<div class="dw-tags">${turnoTag(turnoOf(a))}<span class="ro">${esc(TIPO_LABEL[a.tipoLocal]||'')}</span></div><h2 class="dw-title">${esc(a.titulo)}</h2>
     <dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
 }
 function renderDrawerActions(){
   const a = all().get(S.openId); if (!a){ $('dw-actions').innerHTML = ''; return; }
+  if (!canWrite()){ $('dw-actions').innerHTML = '<p class="readonly">Acesso de visualização: você consulta a atividade e o histórico, sem alterar.</p>'; return; }
   $('dw-actions').innerHTML = `<div class="lbl">Atualizar status</div>
     <div class="stbtns">${ORDER.filter(k => k !== a.status).map(k => `<button type="button" class="stb" data-mode="status:${k}" style="--c:${cvar(k)}">${esc(STATUS[k].label)}</button>`).join('')}</div>
     <div class="morebtns"><button type="button" class="btn" data-mode="obs">Adicionar observação</button><button type="button" class="btn" data-mode="reprog">Reprogramar</button>
@@ -452,6 +474,7 @@ function renderDrawerActions(){
       ${isAdmin() ? '<button type="button" class="btn danger" data-mode="del">Excluir</button>' : ''}</div>`;
 }
 function setMode(mode){
+  if (!canWrite()) return;
   if (mode === 'edit'){ openForm(S.openId); return; }
   S.dwMode = mode || null;
   const a = all().get(S.openId), p = $('dw-panel');
@@ -477,21 +500,25 @@ function setMode(mode){
     $('pf').onsubmit = e => { e.preventDefault(); const obs = $('pf-obs').value.trim(); if (!obs) return toast('Escreva a observação.'); mutate(S.openId, () => ({changes:{ultimaObs:obs}, ev:{tipo:'obs', obs}}), 'Observação registrada.'); };
     $('pf-obs').focus();
   } else if (mode === 'reprog'){
-    p.innerHTML = `<form class="panel" id="pf"><h4>Reprogramar para outra noite</h4><p class="ro" style="margin:0 0 10px">A atividade volta para “Programada” na nova noite. O histórico continua junto.</p>
-      <div class="f"><label for="pf-date">Nova noite <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(S.noite,1))}"></div>
+    const t0 = turnoOf(a);
+    p.innerHTML = `<form class="panel" id="pf"><h4>Reprogramar</h4><p class="ro" style="margin:0 0 10px">A atividade volta para “Programada” no novo dia e turno. O histórico continua junto.</p>
+      <div class="frow"><div class="f"><label for="pf-date">Novo dia <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div>
+      <div class="f"><label>Turno</label><div class="seg" id="pf-turno">${['diurno','noturno'].map(x => `<button type="button" data-t="${x}" aria-pressed="${x === t0}">${TURNOS[x]}</button>`).join('')}</div></div></div>
       <div class="f"><label for="pf-obs">Motivo da reprogramação</label><textarea id="pf-obs"></textarea></div><div class="acts">${cancel}<button class="btn pri" type="submit">Reprogramar</button></div></form>`;
+    let tsel = t0;
+    $('pf-turno').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; tsel = b.dataset.t; for (const x of $('pf-turno').children) x.setAttribute('aria-pressed', String(x === b)); };
     $('pf').onsubmit = e => {
       e.preventDefault(); const d = $('pf-date').value, obs = $('pf-obs').value.trim();
-      if (!d) return toast('Escolha a nova noite.'); if (d === a.noite) return toast('A atividade já está nessa noite.');
-      mutate(S.openId, cur => ({changes:{noite:d, status:'programada', aberta:true, motivo:'', pct:'', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'reprogramou', de:cur.noite, para:d, obs}}), `Reprogramada para ${fmtShort(d)}.`);
+      if (!d) return toast('Escolha o novo dia.'); if (d === a.noite && tsel === t0) return toast('A atividade já está nesse dia e turno.');
+      mutate(S.openId, cur => ({changes:{noite:d, turno:tsel, status:'programada', aberta:true, motivo:'', pct:'', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'reprogramou', de:cur.noite, para:d, turnoDe:turnoOf(cur), turnoPara:tsel, obs}}), `Reprogramada para ${fmtShort(d)} (${TURNOS[tsel].toLowerCase()}).`);
     };
   } else if (mode === 'dup'){
-    p.innerHTML = `<form class="panel" id="pf"><h4>Duplicar para outra noite</h4><p class="ro" style="margin:0 0 10px">Cria uma nova atividade igual, com status “Programada” e histórico próprio. A original não muda.</p>
-      <div class="f"><label for="pf-date">Noite <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div><div class="acts">${cancel}<button class="btn pri" type="submit">Duplicar</button></div></form>`;
+    p.innerHTML = `<form class="panel" id="pf"><h4>Duplicar para outro dia</h4><p class="ro" style="margin:0 0 10px">Cria uma nova atividade igual, com status “Programada” e histórico próprio. A original não muda.</p>
+      <div class="f"><label for="pf-date">Dia <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div><div class="acts">${cancel}<button class="btn pri" type="submit">Duplicar</button></div></form>`;
     $('pf').onsubmit = e => {
       e.preventDefault(); const d = $('pf-date').value; if (!d) return;
-      const data = {}; for (const k of Object.keys(FIELDS)) data[k] = a[k] ?? ''; data.noite = d;
-      createAct(data, a.id); setMode(null); toast(`Cópia criada para a noite de ${fmtShort(d)}.`);
+      const data = {}; for (const k of Object.keys(FIELDS)) data[k] = a[k] ?? ''; data.noite = d; data.turno = turnoOf(a);
+      createAct(data, a.id); setMode(null); toast(`Cópia criada para ${fmtShort(d)}.`);
     };
   } else if (mode === 'del'){
     p.innerHTML = `<div class="panel"><h4>Excluir esta atividade?</h4><p class="ro" style="margin:0 0 10px">O registro da exclusão fica no histórico. Para manter a atividade visível, prefira mudar o status para “Cancelada”.</p>
@@ -516,7 +543,7 @@ function renderTimeline(){
 // Toda gravação vai num lote: a atividade + um registro novo e imutável em "historico".
 // As regras do Firestore recusam qualquer alteração de atividade que não venha com o seu registro.
 function evDoc(atividadeId, a, ev){
-  const d = {atividadeId, t:serverTimestamp(), u:S.uid, titulo:a.titulo || '', local:localLine(a), noiteAtv:a.noite || '', ...ev};
+  const d = {atividadeId, t:serverTimestamp(), u:S.uid, titulo:a.titulo || '', local:localLine(a), noiteAtv:a.noite || '', turnoAtv:turnoOf(a), ...ev};
   for (const k of Object.keys(d)) if (d[k] === '' || d[k] === undefined || d[k] === null) delete d[k];
   return d;
 }
@@ -544,18 +571,20 @@ function mutate(id, build, okMsg){
 function createAct(data, origem){
   const actRef = doc(collection(db, 'atividades')), histRef = doc(collection(db, 'historico')), b = writeBatch(db);
   b.set(actRef, {...data, status:'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
-  b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, ...(origem ? {origem} : {})}));
+  b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
   return commit(b);
 }
 
 /* ================= formulário ================= */
 function openForm(id){
+  if (!canWrite()) return;
   const a = id ? all().get(id) : null;
-  const v = a ? {...a} : {noite:S.noite, tipoLocal:S.f.tipo || 'setor', setor:S.f.setor || '', prioridade:'normal', fornecedor:S.f.forn || ''};
+  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:S.f.tipo || 'setor', setor:S.f.setor || '', prioridade:'normal', fornecedor:S.f.forn || ''};
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
   <form id="af" novalidate>
     <div class="frow">
-      <div class="f"><label for="af-noite">Noite (data de início) <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
+      <div class="f"><label for="af-noite">Data <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
+      <div class="f"><label>Turno <span class="req">*</span></label><div class="seg seg-turno" id="af-turno">${['diurno','noturno'].map(t => `<button type="button" data-t="${t}" aria-pressed="${v.turno === t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</button>`).join('')}</div></div>
       <div class="f"><label for="af-prior">Prioridade</label><select id="af-prior">${Object.entries(PRIOR).map(([k,l]) => `<option value="${k}" ${k === (v.prioridade||'normal') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     <div class="f"><label>Onde</label><div class="seg" id="af-tipo">${['setor','pilar','shopping'].map(t => `<button type="button" data-t="${t}" aria-pressed="${v.tipoLocal === t}">${TIPO_LABEL[t]}</button>`).join('')}</div></div>
@@ -570,7 +599,7 @@ function openForm(id){
     <div class="f"><label for="af-det">Detalhes / orientações para a equipe</label><textarea id="af-det" placeholder="Sequência, cuidados, liberações necessárias, contato no shopping…">${esc(v.detalhes||'')}</textarea></div>
     <div class="frow">
       <div class="f"><label for="af-forn">Fornecedor</label><input id="af-forn" list="dl-forn" value="${esc(v.fornecedor||'')}" placeholder="Selecione ou digite" autocomplete="off"></div>
-      <div class="f"><label for="af-resp">Responsável na noite</label><input id="af-resp" value="${esc(v.responsavel||'')}" placeholder="Encarregado / técnico" autocomplete="off"></div>
+      <div class="f"><label for="af-resp">Responsável no turno</label><input id="af-resp" value="${esc(v.responsavel||'')}" placeholder="Encarregado / técnico" autocomplete="off"></div>
       <div class="f"><label for="af-efet">Efetivo previsto</label><input id="af-efet" type="number" min="0" inputmode="numeric" value="${esc(v.efetivo||'')}"></div>
     </div>
     <datalist id="dl-forn">${S.cad.fornecedores.map(x => `<option value="${esc(x.nome)}">${esc(x.disciplina||'')}</option>`).join('')}</datalist>
@@ -579,7 +608,9 @@ function openForm(id){
     <datalist id="dl-nivel">${S.cad.niveis.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
     <div class="acts"><button type="button" class="btn ghost" id="af-cancel">Cancelar</button><button class="btn pri" type="submit">${a ? 'Salvar alterações' : 'Inserir atividade'}</button></div>
   </form>`;
-  let tipo = v.tipoLocal || 'setor';
+  let tipo = v.tipoLocal || 'setor', turno = v.turno || '';
+  const syncTurno = () => { for (const b of $('af-turno').children) b.setAttribute('aria-pressed', String(b.dataset.t === turno)); $('af-noite-h').textContent = turno === 'noturno' ? 'No noturno, use a data em que o turno começa.' : ''; };
+  $('af-turno').onclick = e => { const b = e.target.closest('button[data-t]'); if (b){ turno = b.dataset.t; syncTurno(); } };
   const syncTipo = () => {
     $('af-loc-setor').hidden = tipo !== 'setor'; $('af-loc-pilar').hidden = tipo !== 'pilar'; $('af-loc-shop').hidden = tipo !== 'shopping';
     $('af-eixo-l').textContent = tipo === 'shopping' ? 'Complemento (piso, frente, eixo)' : 'Eixo';
@@ -587,20 +618,22 @@ function openForm(id){
   };
   $('af-tipo').onclick = e => { const b = e.target.closest('button[data-t]'); if (b){ tipo = b.dataset.t; syncTipo(); } };
   syncTipo();
+  $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
   $('af-cancel').onclick = closeModal;
   $('af').onsubmit = e => {
     e.preventDefault();
-    const d = {noite:$('af-noite').value, prioridade:$('af-prior').value, tipoLocal:tipo,
+    const d = {noite:$('af-noite').value, turno, prioridade:$('af-prior').value, tipoLocal:tipo,
       setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? $('af-pilar').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
       nivel:$('af-nivel').value.trim(), eixo:$('af-eixo').value.trim(), titulo:$('af-titulo').value.trim(), detalhes:$('af-det').value.trim(),
       fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim()};
-    if (!d.noite) return toast('Informe a noite.');
+    if (!d.noite) return toast('Informe a data.');
+    if (!d.turno) return toast('Escolha o turno: diurno ou noturno.');
     if (tipo === 'setor' && !d.setor) return toast('Selecione o setor.');
     if (tipo === 'pilar' && !d.pilar) return toast('Informe o pilar.');
     if (tipo === 'shopping' && !d.local) return toast('Informe o local no shopping.');
     if (!d.titulo) return toast('Descreva a atividade.');
     if (!a){ createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite); toast('Atividade inserida.'); return; }
-    const mudancas = Object.keys(FIELDS).filter(k => String(a[k] ?? '') !== String(d[k] ?? '')).map(k => ({campo:k, de:String(a[k] ?? ''), para:String(d[k] ?? '')}));
+    const mudancas = Object.keys(FIELDS).filter(k => String((k === 'turno' ? turnoOf(a) : a[k]) ?? '') !== String(d[k] ?? '')).map(k => ({campo:k, de:String((k === 'turno' ? turnoOf(a) : a[k]) ?? ''), para:String(d[k] ?? '')}));
     closeModal();
     if (mudancas.length) mutate(a.id, () => ({changes:d, ev:{tipo:'editou', mudancas}}), 'Alterações salvas.');
   };
@@ -624,7 +657,8 @@ function openPerfil(){
 /* ================= exportar ================= */
 async function exportCsv(){
   const acts = [...all().values()];
-  const rows = [...sortActs(acts.filter(a => a.noite === S.noite)), ...acts.filter(a => a.aberta && a.noite < S.noite).sort((x,y) => x.noite.localeCompare(y.noite))];
+  const ft = S.f.turno, inT = a => !ft || turnoOf(a) === ft;
+  const rows = [...sortActs(acts.filter(a => a.noite === S.noite && inT(a))), ...acts.filter(a => a.aberta && a.noite < S.noite && inT(a)).sort((x,y) => x.noite.localeCompare(y.noite))];
   const hist = {};
   try {
     const ids = rows.map(a => a.id);
@@ -633,12 +667,12 @@ async function exportCsv(){
       s.forEach(d => { const v = d.data(SNAP); (hist[v.atividadeId] ||= []).push(v); });
     }
   } catch (e) { console.warn(e); }
-  const head = ['Noite','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','% executado','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
+  const head = ['Data','Turno','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','% executado','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), a.noite === S.noite ? 'Desta noite' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, a.pct, a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), TURNOS[turnoOf(a)], a.noite === S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, a.pct, a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
-  const el = document.createElement('a'); el.href = url; el.download = `Programacao_Noturna_${S.noite}.csv`; document.body.appendChild(el); el.click(); el.remove();
+  const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.noite}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
@@ -674,6 +708,8 @@ $('n-date').onchange = e => setNight(e.target.value);
 $('n-date').addEventListener('click', e => { try { e.target.showPicker(); } catch {} });
 $('f-q').oninput = e => { S.f.q = e.target.value.trim(); renderAll(); };
 $('f-tipo').onchange = e => { S.f.tipo = e.target.value; renderAll(); };
+try { const t = localStorage.getItem('pn-turno'); if (t === 'diurno' || t === 'noturno') S.f.turno = t; } catch {}
+$('f-turno').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.f.turno = b.dataset.t || ''; try { localStorage.setItem('pn-turno', S.f.turno); } catch {} renderAll(); };
 $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
 $('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
 ['h-dias','h-user','h-tipo'].forEach(id => { $(id).onchange = renderAll; });
