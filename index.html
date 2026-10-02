@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 
@@ -93,7 +93,13 @@
         <select id="f-setor" aria-label="Setor"><option value="">Todos os setores</option></select>
         <select id="f-forn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option></select>
       </div>
-      <button class="btn" id="b-export" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Exportar CSV</button>
+      <div class="menu exp" id="exp-wrap">
+        <button class="btn" id="b-export" type="button" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Exportar<svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg></button>
+        <div class="menu-pop exp-pop" id="exp-pop" hidden>
+          <button type="button" id="exp-pdf"><span class="exp-ic pdf">PDF</span><span class="exp-tx"><b>Relatório PDF</b><span>Atividades em aberto por setor, com gráficos</span></span></button>
+          <button type="button" id="exp-csv"><span class="exp-ic csv">CSV</span><span class="exp-tx"><b>Planilha CSV</b><span>Atividades do dia e pendentes, com histórico</span></span></button>
+        </div>
+      </div>
       <button class="btn pri" id="b-new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova atividade</button>
     </div>
     <div class="sec">
@@ -146,6 +152,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>

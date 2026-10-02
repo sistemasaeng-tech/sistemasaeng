@@ -298,7 +298,6 @@ function renderNight(){
   $('l-tonight').innerHTML = html;
   $('l-pend').innerHTML = !pend.length ? '<div class="empty">Nada pendente de dias anteriores.</div>'
     : !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
-  $('b-export').hidden = tonight.length + pend.length === 0;
   $('b-new').hidden = !canWrite();
 }
 function grouped(list, isPend){
@@ -728,10 +727,36 @@ async function exportCsv(){
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/* ================= relatório PDF ================= */
+let gerandoPdf = false;
+async function exportPdf(){
+  if (gerandoPdf) return;
+  const ft = S.f.turno;
+  const acts = [...all().values()].filter(a => a.aberta && STATUS[a.status]?.aberta && (!ft || turnoOf(a) === ft));
+  if (!acts.length){ toast('Não há atividades em aberto para o relatório.'); return; }
+  gerandoPdf = true; toast('Gerando o relatório…');
+  try {
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=6');
+    const now = new Date(), hoje = defaultNight();
+    await gerarRelatorioPDF({
+      acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
+      setores: S.cad.setores, localLine, fmtShort, diasEntre: nightsBetween,
+      turnoLabelDe: a => TURNOS[turnoOf(a)],
+      turnoLabel: ft ? `Turno ${TURNOS[ft].toLowerCase()}` : 'Turnos diurno e noturno',
+      emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`,
+      emitidoPor: S.perfil?.nome || 'Usuário',
+      logoUrl: 'logo-saeng.png',
+      arquivo: `Relatorio_Atividades_em_Aberto_${hoje}${ft ? '_' + ft : ''}.pdf`,
+    });
+    toast('Relatório gerado.');
+  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o relatório. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  finally { gerandoPdf = false; }
+}
+
 /* ================= eventos ================= */
 document.addEventListener('click', e => {
   const t = e.target;
-  if (!t.closest('.menu')) $('who-pop').hidden = true;
+  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('exp-pop').hidden = true; $('b-export').setAttribute('aria-expanded','false'); }
   const tab = t.closest('.tab'); if (tab) return setTab(tab.dataset.tab);
   const cardEl = t.closest('.card[data-id], .act[data-id]'); if (cardEl) return openDrawer(cardEl.dataset.id);
   const chip = t.closest('.chip[data-st]'); if (chip){ S.f.status = S.f.status === chip.dataset.st ? '' : chip.dataset.st; return renderAll(); }
@@ -770,7 +795,9 @@ $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
 $('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
 ['h-dias','h-user','h-tipo'].forEach(id => { $(id).onchange = renderAll; });
 $('b-new').onclick = () => openForm(null);
-$('b-export').onclick = exportCsv;
+$('b-export').onclick = () => { const p = $('exp-pop'); p.hidden = !p.hidden; $('b-export').setAttribute('aria-expanded', String(!p.hidden)); };
+$('exp-csv').onclick = () => { $('exp-pop').hidden = true; exportCsv(); };
+$('exp-pdf').onclick = () => { $('exp-pop').hidden = true; exportPdf(); };
 $('who').onclick = () => { const p = $('who-pop'); p.hidden = !p.hidden; $('who').setAttribute('aria-expanded', String(!p.hidden)); };
 $('m-perfil').onclick = () => { $('who-pop').hidden = true; openPerfil(); };
 $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
