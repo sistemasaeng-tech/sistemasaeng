@@ -48,7 +48,9 @@ export async function gerarRelatorioPDF(ctx){
 
   const acts = ctx.acts;
   const hoje = ctx.hoje;
-  const diasAberto = a => a.noite < hoje ? ctx.diasEntre(a.noite, hoje) : 0;
+  const fimOf = ctx.fimOf || (a => a.noite), avOf = ctx.avOf || (() => 0);
+  const diasAberto = a => fimOf(a) < hoje ? ctx.diasEntre(fimOf(a), hoje) : 0; // dias de atraso após o término previsto
+  const per = a => fimOf(a) === a.noite ? ctx.fmtShort(a.noite) : `${ctx.fmtShort(a.noite)} a ${ctx.fmtShort(fimOf(a))}`;
 
   // ---------- agrupamento por frente ----------
   const groups = new Map();
@@ -62,7 +64,8 @@ export async function gerarRelatorioPDF(ctx){
   }
   const G = [...groups.values()].sort((a, b) => a.rank - b.rank);
   const cnt = {}; ORDER.forEach(k => cnt[k] = 0); acts.forEach(a => { if (cnt[a.status] != null) cnt[a.status]++; });
-  const atrasadas = acts.filter(a => a.noite < hoje).length;
+  const atrasadas = acts.filter(a => fimOf(a) < hoje).length;
+  const avMedio = acts.length ? Math.round(acts.reduce((s, a) => s + avOf(a), 0) / acts.length) : 0;
   const criticas = acts.filter(a => a.prioridade === 'critica').length;
   const altas = acts.filter(a => a.prioridade === 'alta').length;
 
@@ -103,7 +106,7 @@ export async function gerarRelatorioPDF(ctx){
   fill(C.laranja); doc.rect(M, y, 1.4, 9, 'F');
   color(C.laranjaTx); font('bold', 9);
   const pct = acts.length ? Math.round(atrasadas / acts.length * 100) : 0;
-  text(`${atrasadas} ${atrasadas === 1 ? 'atividade atrasada' : 'atividades atrasadas'} (${pct}% do total, data anterior a hoje)   ·   ${criticas} de prioridade crítica   ·   ${altas} de prioridade alta`, M + 5, y + 5.9);
+  text(`${atrasadas} ${atrasadas === 1 ? 'atividade atrasada' : 'atividades atrasadas'} (${pct}% do total, término anterior a hoje)   ·   ${criticas} de prioridade crítica   ·   ${altas} de prioridade alta   ·   avanço médio ${avMedio}%`, M + 5, y + 5.9);
   y += 15;
 
   // ---------- gráfico 1: por frente (barras empilhadas) ----------
@@ -161,9 +164,9 @@ export async function gerarRelatorioPDF(ctx){
 
   // ---------- gráfico 3: tempo em aberto  |  gráfico 4: motivos ----------
   const half = (CW - 8) / 2;
-  chartTitle('Há quanto tempo estão em aberto', M, y);
+  chartTitle('Atraso em relação ao término previsto', M, y);
   chartTitle('Motivos de não início e impedimento', M + half + 8, y);
-  const buckets = [['Hoje ou futuras', a => diasAberto(a) === 0], ['1 a 2 dias', a => { const d = diasAberto(a); return d >= 1 && d <= 2; }], ['3 a 7 dias', a => { const d = diasAberto(a); return d >= 3 && d <= 7; }], ['Mais de 7 dias', a => diasAberto(a) > 7]];
+  const buckets = [['No prazo', a => diasAberto(a) === 0], ['1 a 2 dias', a => { const d = diasAberto(a); return d >= 1 && d <= 2; }], ['3 a 7 dias', a => { const d = diasAberto(a); return d >= 3 && d <= 7; }], ['Mais de 7 dias', a => diasAberto(a) > 7]];
   const bcol = [[120,128,140], [246,167,33], [214,110,40], [184,50,76]];
   const bv = buckets.map(([, f]) => acts.filter(f).length), bmax = Math.max(1, ...bv);
   const chH = 34, by0 = y + 6 + chH, bw = (half - 8) / 4;
@@ -196,7 +199,7 @@ export async function gerarRelatorioPDF(ctx){
     const k = data.cell.raw && data.cell.raw.status;
     if (k && ST[k]){ data.cell.styles.fillColor = mix(ST[k].c, .85); data.cell.styles.textColor = ST[k].c.map(v => Math.round(v * .78)); data.cell.styles.fontStyle = 'bold'; }
   };
-  const statusObj = a => ({content: t(ST[a.status]?.label || a.status), status: a.status});
+  const statusObj = a => ({content: t(ST[a.status]?.label || a.status) + `\n${avOf(a)}% executado`, status: a.status});
   const tblBase = {
     theme:'plain', margin:{left:M, right:M, top:24, bottom:16},
     styles:{font:'helvetica', fontSize:7.6, cellPadding:{top:1.8, bottom:1.8, left:1.8, right:1.8}, textColor:C.ink, lineColor:C.line, lineWidth:{bottom:.15}, valign:'top', overflow:'linebreak'},
@@ -206,11 +209,11 @@ export async function gerarRelatorioPDF(ctx){
   if (atencao.length){
     if (y > H - 42){ doc.addPage(); y = 28; }
     chartTitle('Pontos de atenção', M, y);
-    color(C.muted); font('normal', 8); text('Impedidas, não iniciadas e de prioridade crítica, das mais antigas para as mais recentes.', M, y + 4.6);
+    color(C.muted); font('normal', 8); text('Impedidas, não iniciadas e de prioridade crítica, das mais atrasadas para as menos atrasadas.', M, y + 4.6);
     doc.autoTable({...tblBase, startY: y + 7,
-      head:[['Atividade', 'Local', 'Data', 'Dias', 'Status', 'Motivo / observação']],
-      body: atencao.map(a => [t(a.titulo) + (a.prioridade === 'critica' ? '\n[Prioridade crítica]' : ''), t(ctx.localLine(a)), `${ctx.fmtShort(a.noite)}\n${ctx.turnoLabelDe(a)}`, diasAberto(a) ? String(diasAberto(a)) : '-', statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-']),
-      columnStyles:{0:{cellWidth:46, fontStyle:'bold'}, 1:{cellWidth:32}, 2:{cellWidth:17}, 3:{cellWidth:10, halign:'center'}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},
+      head:[['Atividade', 'Local', 'Período', 'Atraso', 'Status', 'Motivo / observação']],
+      body: atencao.map(a => [t(a.titulo) + (a.prioridade === 'critica' ? '\n[Prioridade crítica]' : ''), t(ctx.localLine(a)), `${per(a)}\n${ctx.turnoLabelDe(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : '-', statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-']),
+      columnStyles:{0:{cellWidth:44, fontStyle:'bold'}, 1:{cellWidth:31}, 2:{cellWidth:20}, 3:{cellWidth:11, halign:'center'}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},
       didParseCell: d => { if (d.section === 'body' && d.column.index === 4) statusCell(d); },
     });
     y = doc.lastAutoTable.finalY + 8;
@@ -240,18 +243,18 @@ export async function gerarRelatorioPDF(ctx){
     y += 15;
     const items = [...g.items].sort((a, b) => prRank(a.prioridade) - prRank(b.prioridade) || ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.noite).localeCompare(String(b.noite)));
     doc.autoTable({...tblBase, startY: y,
-      head:[['Atividade', 'Turno / data', 'Dias', 'Fornecedor', 'Status', 'Última observação']],
+      head:[['Atividade', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Última observação']],
       body: items.map(a => {
         const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join('\n');
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, `${ctx.turnoLabelDe(a)}\n${ctx.fmtShort(a.noite)}`, diasAberto(a) ? String(diasAberto(a)) : (a.noite > hoje ? 'futura' : 'hoje'), t(a.fornecedor || '-'), statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
+        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
       }),
-      columnStyles:{0:{cellWidth:58}, 1:{cellWidth:20}, 2:{cellWidth:11, halign:'center'}, 3:{cellWidth:28}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},
+      columnStyles:{0:{cellWidth:56}, 1:{cellWidth:22}, 2:{cellWidth:13, halign:'center'}, 3:{cellWidth:28}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},
       didParseCell: d => {
         if (d.section !== 'body') return;
         if (d.column.index === 4) statusCell(d);
         if (d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){
           // título em negrito e detalhes em cinza: quebra de linha calculada aqui e desenhada em didDrawCell
-          const wUtil = 58 - 3.6;
+          const wUtil = 56 - 3.6;
           font('bold', 7.6); const tl = doc.splitTextToSize(d.cell.raw.titulo, wUtil);
           font('normal', 7.6); const dl = d.cell.raw.det ? doc.splitTextToSize(d.cell.raw.det, wUtil) : [];
           d.cell.raw.nTit = tl.length; d.cell.text = [...tl, ...dl];

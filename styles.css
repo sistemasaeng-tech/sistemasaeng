@@ -417,3 +417,32 @@ button{cursor:pointer}
   .exp #b-export{width:100%}
   .exp-pop{left:0;right:0;min-width:0}
 }
+
+/* avanço */
+.prog{position:relative;display:inline-block;flex:1;min-width:60px;height:6px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden;vertical-align:middle}
+.prog i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--brand),#f7a844);border-radius:4px}
+.prog.lg{height:12px;border-radius:7px}
+.prog-n{font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+.prog-row{display:flex;align-items:center;gap:8px;margin-top:9px;max-width:340px}
+.dw-prog{display:flex;align-items:center;gap:10px;margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.dw-prog .prog{height:10px}
+.dw-prog-l{font-size:13px;color:var(--muted);font-weight:600}
+.dw-prog .prog-n{font-size:15px;color:var(--fg)}
+.av-big{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+.av-big b{font-size:30px;font-weight:800;letter-spacing:-.02em;min-width:74px;font-variant-numeric:tabular-nums}
+.range{width:100%;accent-color:var(--brand);height:32px;margin:0 0 6px}
+.av-quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.av-quick .btn{flex:1;min-height:38px;padding:0 6px}
+.av-form{display:flex;align-items:center;gap:12px}
+.av-form .range{margin:0}
+.av-form b{min-width:46px;text-align:right;font-variant-numeric:tabular-nums}
+.tag.per{color:var(--fg);border-color:var(--line-2);text-transform:none;letter-spacing:0;font-family:var(--f-mono);font-weight:500}
+/* cronograma */
+.cf-fim{min-height:var(--tap);display:flex;align-items:center;padding:0 12px;border-radius:10px;background:var(--surface-2);border:1px dashed var(--line-2);font-weight:600;font-size:14px}
+.cf-prev{margin:4px 0 14px;padding:10px 12px;border-radius:10px;background:var(--brand-soft);font-size:13.5px;font-weight:600;color:var(--brand-text)}
+.cf-prev:empty{display:none}
+.chk{display:flex!important;align-items:center;gap:10px;min-height:var(--tap);color:var(--fg)!important;font-weight:500!important;font-size:14px!important;cursor:pointer}
+.chk input{width:20px!important;height:20px;min-height:0!important;accent-color:var(--brand);margin:0}
+@media (max-width:760px){
+  #b-crono{flex:1}
+}

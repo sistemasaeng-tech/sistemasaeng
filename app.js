@@ -27,10 +27,13 @@ const MOTIVOS = ['Equipe não compareceu','Efetivo insuficiente','Falta de mater
 const PRIOR = {normal:'Normal', alta:'Alta', critica:'Crítica'};
 const FUNCOES = ['Coordenador','Residente','Engenheiro','Encarregado','Mestre de obras','Técnico de segurança','Planejamento','Outro'];
 const PAPEIS = {pendente:'Aguardando aprovação', visualizador:'Visualizador', usuario:'Usuário', admin:'Administrador', bloqueado:'Bloqueado'};
-const FIELDS = {noite:'Data',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
+const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
 const TIPO_LABEL = {setor:'Setor', pilar:'Pilar', shopping:'Shopping'};
 const TURNOS = {diurno:'Diurno', noturno:'Noturno'};
 const turnoOf = a => a.turno === 'diurno' ? 'diurno' : 'noturno'; // atividades antigas, sem turno, contam como noturnas
+const fimOf = a => (a.fim && a.fim >= a.noite) ? a.fim : a.noite;          // término (sem término = mesmo dia do início)
+const avOf = a => a.status === 'concluida' ? 100 : Math.max(0, Math.min(100, Number(a.avanco) || (a.status === 'parcial' ? Number(a.pct) || 0 : 0)));
+const progBar = p => `<span class="prog" role="img" aria-label="Avanço ${p}%"><i style="width:${p}%"></i></span><b class="prog-n">${p}%</b>`;
 const ICON_SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const ICON_LUA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
 const turnoTag = t => `<span class="turno ${t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</span>`;
@@ -69,6 +72,8 @@ const DOW = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
 const fmtShort = s => { if (!s) return ''; const d = parseYmd(s); return `${pad(d.getDate())}/${pad(d.getMonth()+1)}`; };
 const fmtNightLong = s => { const d = parseYmd(s), e = parseYmd(addDays(s,1)); return `De ${DOW[d.getDay()]} ${fmtShort(s)} para ${DOW[e.getDay()]} ${fmtShort(addDays(s,1))}`; };
 const fmtDay = s => { const d = parseYmd(s); return `${DOW[d.getDay()][0].toUpperCase()}${DOW[d.getDay()].slice(1)}, ${fmtShort(s)}`; };
+const durOf = a => Math.round((parseYmd(fimOf(a)) - parseYmd(a.noite)) / 86400000);
+const fmtPeriodo = a => fimOf(a) === a.noite ? fmtShort(a.noite) : `${fmtShort(a.noite)} → ${fmtShort(fimOf(a))}`;
 const fmtWhen = (s, t) => t === 'diurno' ? `${fmtDay(s)} · turno diurno` : `${fmtNightLong(s)} · turno noturno`;
 const toDate = v => !v ? new Date() : typeof v.toDate === 'function' ? v.toDate() : typeof v.seconds === 'number' ? new Date(v.seconds*1000) : new Date(v);
 const fmtTs = v => { const d = toDate(v); return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -277,8 +282,8 @@ function renderNight(){
   $('n-date').value = S.noite;
   for (const b of document.querySelectorAll('#f-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
   const acts = [...all().values()].filter(a => !ft || turnoOf(a) === ft);
-  const tonight = acts.filter(a => a.noite === S.noite);
-  const pend = acts.filter(a => a.aberta && a.noite < S.noite);
+  const tonight = acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite);
+  const pend = acts.filter(a => a.aberta && fimOf(a) < S.noite);
   const cnt = {}; ORDER.forEach(k => cnt[k] = 0); tonight.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
   const total = tonight.length;
   const bar = total ? ORDER.filter(k => cnt[k]).map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
@@ -286,7 +291,7 @@ function renderNight(){
     <div class="bar" role="img" aria-label="Distribuição por status">${bar}</div>
     <div class="chips">${ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status===k}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('')}
     ${pend.length ? `<button type="button" class="chip" data-jump="pend"><span class="dot" style="--c:var(--st-nao)"></span>Pendentes anteriores <b>${pend.length}</b></button>` : ''}</div>`;
-  const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(x.noite).localeCompare(String(y.noite)));
+  const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
   $('c-pend').textContent = p.length === pend.length ? `${p.length}` : `${p.length} de ${pend.length}`;
   $('h-tonight').textContent = today ? 'Programadas para hoje' : `Programadas para ${fmtShort(S.noite)}`;
@@ -307,14 +312,15 @@ function grouped(list, isPend){
     .map(g => `<div class="grp"><div class="grp-h"><b>${esc(g.label)}</b>${g.sub ? `<span>${esc(g.sub)}</span>` : ''}</div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`).join('');
 }
 function card(a, isPend){
-  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(a.noite, S.noite) : 0, tags = [turnoTag(turnoOf(a))];
+  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), S.noite) : 0, tags = [turnoTag(turnoOf(a))], av = avOf(a);
   if (a.prioridade && a.prioridade !== 'normal') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
-  if (isPend) tags.push(`<span class="tag since">desde ${fmtShort(a.noite)} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
+  if (fimOf(a) !== a.noite) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`);
+  if (isPend) tags.push(`<span class="tag since">venceu ${fmtShort(fimOf(a))} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
   const obs = a.ultimaObs || a.motivo ? `<div class="obs">${a.motivo ? `<b>${esc(a.motivo)}</b>${a.ultimaObs ? ' — ' : ''}` : ''}${esc(a.ultimaObs||'')}</div>` : '';
   return `<button type="button" class="card" data-id="${esc(a.id)}" style="--c:${cvar(a.status)}"><span class="stripe"></span>
     <span class="body"><div class="t">${esc(a.titulo)}</div><div class="m">${esc(localLine(a))}</div>
-    <div class="row">${a.fornecedor ? `<span><b>${esc(a.fornecedor)}</b></span>` : '<span>Fornecedor não informado</span>'}${a.responsavel ? `<span>Resp.: ${esc(a.responsavel)}</span>` : ''}${a.efetivo ? `<span>Efetivo prev.: ${esc(a.efetivo)}</span>` : ''}${tags.join('')}</div>${obs}</span>
-    <span class="side"><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}${a.status === 'parcial' && a.pct ? ' '+esc(a.pct)+'%' : ''}</span><span class="when">${esc(nameOf(a.atualizadoPor))} · ${esc(fmtTs(a.atualizadoEm))}</span></span></button>`;
+    <div class="row">${a.fornecedor ? `<span><b>${esc(a.fornecedor)}</b></span>` : '<span>Fornecedor não informado</span>'}${a.responsavel ? `<span>Resp.: ${esc(a.responsavel)}</span>` : ''}${a.efetivo ? `<span>Efetivo prev.: ${esc(a.efetivo)}</span>` : ''}${tags.join('')}</div><div class="prog-row">${progBar(av)}</div>${obs}</span>
+    <span class="side"><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span><span class="when">${esc(nameOf(a.atualizadoPor))} · ${esc(fmtTs(a.atualizadoEm))}</span></span></button>`;
 }
 
 /* ================= histórico ================= */
@@ -324,13 +330,14 @@ function evText(ev){
     case 'criou': return `inseriu ${ev.origem ? 'uma cópia' : 'a atividade'} para ${fmtShort(ev.noite || ev.noiteAtv)}${ev.turno || ev.turnoAtv ? ' (' + (TURNOS[ev.turno || ev.turnoAtv] || '').toLowerCase() + ')' : ''}`;
     case 'status': return `mudou o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
     case 'obs': return 'adicionou uma observação';
+    case 'avanco': return `atualizou o avanço de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>`;
     case 'editou': return 'alterou os dados';
     case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
     case 'excluiu': return 'excluiu a atividade';
     default: return esc(ev.tipo);
   }
 }
-const fmtVal = (campo, v) => campo === 'noite' && v ? fmtShort(v) : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
+const fmtVal = (campo, v) => (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
 function evExtra(ev){
   let h = '';
   if (ev.mudancas?.length) h += `<div class="ch">${ev.mudancas.map(m => `${esc(FIELDS[m.campo]||m.campo)}: ${esc(fmtVal(m.campo,m.de)||'—')} → ${esc(fmtVal(m.campo,m.para)||'—')}`).join('<br>')}</div>`;
@@ -508,19 +515,20 @@ function renderDrawerHead(){
   const a = all().get(S.openId);
   if (!a){ $('dw-head').innerHTML = '<p class="ro">Carregando…</p>'; $('dw-pill').innerHTML = ''; return; }
   const st = STATUS[a.status] || STATUS.programada;
-  $('dw-pill').innerHTML = `<span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}${a.status === 'parcial' && a.pct ? ' '+esc(a.pct)+'%' : ''}</span>`;
-  const kv = [['Turno', TURNOS[turnoOf(a)]], ['Quando', fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
+  $('dw-pill').innerHTML = `<span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span>`;
+  const d1 = durOf(a);
+  const kv = [['Turno', TURNOS[turnoOf(a)]], ['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
     a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo prev.', a.efetivo] : null, ['Prioridade', PRIOR[a.prioridade] || 'Normal'],
     a.motivo ? ['Motivo', a.motivo] : null, ['Inserida por', `${nameOf(a.criadoPor)} em ${fmtTs(a.criadoEm)}`], ['Última alteração', `${nameOf(a.atualizadoPor)} em ${fmtTs(a.atualizadoEm)}`]].filter(Boolean);
   $('dw-head').innerHTML = `<div class="dw-tags">${turnoTag(turnoOf(a))}<span class="ro">${esc(TIPO_LABEL[a.tipoLocal]||'')}</span></div><h2 class="dw-title">${esc(a.titulo)}</h2>
-    <dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
+    <div class="dw-prog"><span class="dw-prog-l">Avanço</span>${progBar(avOf(a))}</div><dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
 }
 function renderDrawerActions(){
   const a = all().get(S.openId); if (!a){ $('dw-actions').innerHTML = ''; return; }
   if (!canWrite()){ $('dw-actions').innerHTML = '<p class="readonly">Acesso de visualização: você consulta a atividade e o histórico, sem alterar.</p>'; return; }
   $('dw-actions').innerHTML = `<div class="lbl">Atualizar status</div>
     <div class="stbtns">${ORDER.filter(k => k !== a.status).map(k => `<button type="button" class="stb" data-mode="status:${k}" style="--c:${cvar(k)}">${esc(STATUS[k].label)}</button>`).join('')}</div>
-    <div class="morebtns"><button type="button" class="btn" data-mode="obs">Adicionar observação</button><button type="button" class="btn" data-mode="reprog">Reprogramar</button>
+    <div class="morebtns"><button type="button" class="btn pri" data-mode="avanco">Atualizar avanço</button><button type="button" class="btn" data-mode="obs">Adicionar observação</button><button type="button" class="btn" data-mode="reprog">Reprogramar</button>
       <button type="button" class="btn" data-mode="edit">Editar dados</button><button type="button" class="btn" data-mode="dup">Duplicar</button>
       ${isAdmin() ? '<button type="button" class="btn danger" data-mode="del">Excluir</button>' : ''}</div>`;
 }
@@ -543,17 +551,33 @@ function setMode(mode){
       const motivo = $('pf-motivo')?.value || '', obs = $('pf-obs').value.trim(), pct = $('pf-pct')?.value || '';
       if (st.motivo && !motivo) return toast('Selecione o motivo.');
       if (st.obs && !obs) return toast('Escreva a observação.');
-      mutate(S.openId, cur => ({changes:{status:k, aberta:st.aberta, motivo:st.motivo ? motivo : '', pct:st.pct ? pct : '', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'status', de:cur.status, para:k, motivo, obs, pct}}), `Status alterado para ${st.label}.`);
+      mutate(S.openId, cur => ({changes:{status:k, aberta:st.aberta, motivo:st.motivo ? motivo : '', pct:st.pct ? pct : '', ...(k === 'concluida' ? {avanco:100} : st.pct && pct ? {avanco:Number(pct)} : {}), ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'status', de:cur.status, para:k, motivo, obs, pct}}), `Status alterado para ${st.label}.`);
     };
     (p.querySelector('#pf-motivo') || p.querySelector('#pf-obs')).focus();
+  } else if (mode === 'avanco'){
+    const v0 = avOf(a);
+    p.innerHTML = `<form class="panel" id="pf"><h4>Atualizar avanço</h4>
+      <div class="av-big"><b id="pf-av-n">${v0}%</b><span class="prog lg"><i id="pf-av-bar" style="width:${v0}%"></i></span></div>
+      <input type="range" id="pf-av" class="range" min="0" max="100" step="5" value="${v0}" aria-label="Avanço em porcentagem">
+      <div class="av-quick">${[0,25,50,75,100].map(x => `<button type="button" class="btn" data-av="${x}">${x}%</button>`).join('')}</div>
+      <div class="f"><label for="pf-obs">Observação (opcional)</label><textarea id="pf-obs" placeholder="O que foi executado, o que falta…"></textarea></div>
+      <div class="acts">${cancel}<button class="btn pri" type="submit">Salvar avanço</button></div></form>`;
+    const sync = v => { $('pf-av').value = v; $('pf-av-n').textContent = v + '%'; $('pf-av-bar').style.width = v + '%'; };
+    $('pf-av').oninput = e => sync(e.target.value);
+    p.querySelector('.av-quick').onclick = e => { const b = e.target.closest('[data-av]'); if (b) sync(b.dataset.av); };
+    $('pf').onsubmit = e => {
+      e.preventDefault(); const v = Number($('pf-av').value), obs = $('pf-obs').value.trim();
+      if (v === v0 && !obs) return toast('O avanço não mudou.');
+      mutate(S.openId, cur => ({changes:{avanco:v, ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'avanco', de:avOf(cur), para:v, obs}}), v === 100 && a.status !== 'concluida' ? 'Avanço em 100%. Quando finalizar, mude o status para Concluída.' : `Avanço atualizado para ${v}%.`);
+    };
   } else if (mode === 'obs'){
     p.innerHTML = `<form class="panel" id="pf"><h4>Observação</h4><div class="f"><label for="pf-obs">Texto <span class="req">*</span></label><textarea id="pf-obs"></textarea></div><div class="acts">${cancel}<button class="btn pri" type="submit">Registrar</button></div></form>`;
     $('pf').onsubmit = e => { e.preventDefault(); const obs = $('pf-obs').value.trim(); if (!obs) return toast('Escreva a observação.'); mutate(S.openId, () => ({changes:{ultimaObs:obs}, ev:{tipo:'obs', obs}}), 'Observação registrada.'); };
     $('pf-obs').focus();
   } else if (mode === 'reprog'){
     const t0 = turnoOf(a);
-    p.innerHTML = `<form class="panel" id="pf"><h4>Reprogramar</h4><p class="ro" style="margin:0 0 10px">A atividade volta para “Programada” no novo dia e turno. O histórico continua junto.</p>
-      <div class="frow"><div class="f"><label for="pf-date">Novo dia <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div>
+    p.innerHTML = `<form class="panel" id="pf"><h4>Reprogramar</h4><p class="ro" style="margin:0 0 10px">A atividade volta para “Programada” a partir do novo início, mantendo a duração. O histórico continua junto.</p>
+      <div class="frow"><div class="f"><label for="pf-date">Novo início <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div>
       <div class="f"><label>Turno</label><div class="seg" id="pf-turno">${['diurno','noturno'].map(x => `<button type="button" data-t="${x}" aria-pressed="${x === t0}">${TURNOS[x]}</button>`).join('')}</div></div></div>
       <div class="f"><label for="pf-obs">Motivo da reprogramação</label><textarea id="pf-obs"></textarea></div><div class="acts">${cancel}<button class="btn pri" type="submit">Reprogramar</button></div></form>`;
     let tsel = t0;
@@ -561,14 +585,14 @@ function setMode(mode){
     $('pf').onsubmit = e => {
       e.preventDefault(); const d = $('pf-date').value, obs = $('pf-obs').value.trim();
       if (!d) return toast('Escolha o novo dia.'); if (d === a.noite && tsel === t0) return toast('A atividade já está nesse dia e turno.');
-      mutate(S.openId, cur => ({changes:{noite:d, turno:tsel, status:'programada', aberta:true, motivo:'', pct:'', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'reprogramou', de:cur.noite, para:d, turnoDe:turnoOf(cur), turnoPara:tsel, obs}}), `Reprogramada para ${fmtShort(d)} (${TURNOS[tsel].toLowerCase()}).`);
+      mutate(S.openId, cur => ({changes:{noite:d, fim:addDays(d, durOf(cur)), turno:tsel, status:'programada', aberta:true, motivo:'', pct:'', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'reprogramou', de:cur.noite, para:d, turnoDe:turnoOf(cur), turnoPara:tsel, obs}}), `Reprogramada para ${fmtShort(d)} (${TURNOS[tsel].toLowerCase()}).`);
     };
   } else if (mode === 'dup'){
     p.innerHTML = `<form class="panel" id="pf"><h4>Duplicar para outro dia</h4><p class="ro" style="margin:0 0 10px">Cria uma nova atividade igual, com status “Programada” e histórico próprio. A original não muda.</p>
       <div class="f"><label for="pf-date">Dia <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div><div class="acts">${cancel}<button class="btn pri" type="submit">Duplicar</button></div></form>`;
     $('pf').onsubmit = e => {
       e.preventDefault(); const d = $('pf-date').value; if (!d) return;
-      const data = {}; for (const k of Object.keys(FIELDS)) data[k] = a[k] ?? ''; data.noite = d; data.turno = turnoOf(a);
+      const data = {}; for (const k of Object.keys(FIELDS)) data[k] = a[k] ?? ''; data.noite = d; data.fim = addDays(d, durOf(a)); data.avanco = 0; data.turno = turnoOf(a);
       createAct(data, a.id); setMode(null); toast(`Cópia criada para ${fmtShort(d)}.`);
     };
   } else if (mode === 'del'){
@@ -621,7 +645,7 @@ function mutate(id, build, okMsg){
 }
 function createAct(data, origem){
   const actRef = doc(collection(db, 'atividades')), histRef = doc(collection(db, 'historico')), b = writeBatch(db);
-  b.set(actRef, {...data, status:'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
+  b.set(actRef, {...data, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
   b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
   return commit(b);
 }
@@ -634,7 +658,10 @@ function openForm(id){
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
   <form id="af" novalidate>
     <div class="frow">
-      <div class="f"><label for="af-noite">Data <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
+      <div class="f"><label for="af-noite">Início <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
+      <div class="f"><label for="af-fim">Término <span class="req">*</span></label><input id="af-fim" type="date" value="${esc(a ? fimOf(a) : v.noite)}"></div>
+    </div>
+    <div class="frow">
       <div class="f"><label>Turno <span class="req">*</span></label><div class="seg seg-turno" id="af-turno">${['diurno','noturno'].map(t => `<button type="button" data-t="${t}" aria-pressed="${v.turno === t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</button>`).join('')}</div></div>
       <div class="f"><label for="af-prior">Prioridade</label><select id="af-prior">${Object.entries(PRIOR).map(([k,l]) => `<option value="${k}" ${k === (v.prioridade||'normal') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
@@ -646,6 +673,7 @@ function openForm(id){
       <div class="f"><label for="af-nivel">Nível</label><input id="af-nivel" list="dl-nivel" value="${esc(v.nivel||'')}" placeholder="ex.: 114,30" autocomplete="off"></div>
       <div class="f"><label for="af-eixo" id="af-eixo-l">Eixo</label><input id="af-eixo" value="${esc(v.eixo||'')}" placeholder="ex.: 8 / E-H" autocomplete="off"></div>
     </div>
+    <div class="f"><label for="af-av">Avanço</label><div class="av-form"><input type="range" id="af-av" class="range" min="0" max="100" step="5" value="${a ? avOf(a) : 0}"><b id="af-av-n">${a ? avOf(a) : 0}%</b></div></div>
     <div class="f"><label for="af-titulo">Atividade <span class="req">*</span></label><input id="af-titulo" maxlength="300" value="${esc(v.titulo||'')}" placeholder="ex.: Demolição da parede do eixo 8, trecho E–F" autocomplete="off"></div>
     <div class="f"><label for="af-det">Detalhes / orientações para a equipe</label><textarea id="af-det" placeholder="Sequência, cuidados, liberações necessárias, contato no shopping…">${esc(v.detalhes||'')}</textarea></div>
     <div class="frow">
@@ -670,21 +698,25 @@ function openForm(id){
   $('af-tipo').onclick = e => { const b = e.target.closest('button[data-t]'); if (b){ tipo = b.dataset.t; syncTipo(); } };
   syncTipo();
   $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
+  $('af-noite').addEventListener('change', () => { if (!$('af-fim').value || $('af-fim').value < $('af-noite').value) $('af-fim').value = $('af-noite').value; });
+  $('af-av').oninput = e => { $('af-av-n').textContent = e.target.value + '%'; };
   $('af-cancel').onclick = closeModal;
   $('af').onsubmit = e => {
     e.preventDefault();
-    const d = {noite:$('af-noite').value, turno, prioridade:$('af-prior').value, tipoLocal:tipo,
+    const d = {noite:$('af-noite').value, fim:$('af-fim').value || $('af-noite').value, avanco:Number($('af-av').value) || 0, turno, prioridade:$('af-prior').value, tipoLocal:tipo,
       setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? $('af-pilar').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
       nivel:$('af-nivel').value.trim(), eixo:$('af-eixo').value.trim(), titulo:$('af-titulo').value.trim(), detalhes:$('af-det').value.trim(),
       fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim()};
-    if (!d.noite) return toast('Informe a data.');
+    if (!d.noite) return toast('Informe a data de início.');
+    if (d.fim < d.noite) return toast('O término não pode ser antes do início.');
     if (!d.turno) return toast('Escolha o turno: diurno ou noturno.');
     if (tipo === 'setor' && !d.setor) return toast('Selecione o setor.');
     if (tipo === 'pilar' && !d.pilar) return toast('Informe o pilar.');
     if (tipo === 'shopping' && !d.local) return toast('Informe o local no shopping.');
     if (!d.titulo) return toast('Descreva a atividade.');
     if (!a){ createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite); toast('Atividade inserida.'); return; }
-    const mudancas = Object.keys(FIELDS).filter(k => String((k === 'turno' ? turnoOf(a) : a[k]) ?? '') !== String(d[k] ?? '')).map(k => ({campo:k, de:String((k === 'turno' ? turnoOf(a) : a[k]) ?? ''), para:String(d[k] ?? '')}));
+    const gv = (o, k) => String((k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
+    const mudancas = Object.keys(FIELDS).filter(k => gv(a, k) !== gv(d, k)).map(k => ({campo:k, de:gv(a, k), para:gv(d, k)}));
     closeModal();
     if (mudancas.length) mutate(a.id, () => ({changes:d, ev:{tipo:'editou', mudancas}}), 'Alterações salvas.');
   };
@@ -709,7 +741,7 @@ function openPerfil(){
 async function exportCsv(){
   const acts = [...all().values()];
   const ft = S.f.turno, inT = a => !ft || turnoOf(a) === ft;
-  const rows = [...sortActs(acts.filter(a => a.noite === S.noite && inT(a))), ...acts.filter(a => a.aberta && a.noite < S.noite && inT(a)).sort((x,y) => x.noite.localeCompare(y.noite))];
+  const rows = [...sortActs(acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite && inT(a))), ...acts.filter(a => a.aberta && fimOf(a) < S.noite && inT(a)).sort((x,y) => fimOf(x).localeCompare(fimOf(y)))];
   const hist = {};
   try {
     const ids = rows.map(a => a.id);
@@ -718,13 +750,77 @@ async function exportCsv(){
       s.forEach(d => { const v = d.data(SNAP); (hist[v.atividadeId] ||= []).push(v); });
     }
   } catch (e) { console.warn(e); }
-  const head = ['Data','Turno','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','% executado','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
+  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), TURNOS[turnoOf(a)], a.noite === S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, a.pct, a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
   const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.noite}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ================= cronograma quinzenal (Excel) ================= */
+function openCronograma(){
+  const ini0 = defaultNight(), ft = S.f.turno || '';
+  $('sheet').innerHTML = `<h2>Gerar cronograma quinzenal</h2>
+    <p class="ro" style="margin:-6px 0 16px">Cria a planilha Excel no padrão de cronograma SAENG, com as atividades que acontecem no período (início ou término dentro dos 15 dias). Canceladas não entram.</p>
+    <form id="cf" novalidate>
+      <div class="frow">
+        <div class="f"><label for="cf-ini">Data inicial <span class="req">*</span></label><input id="cf-ini" type="date" value="${ini0}"></div>
+        <div class="f"><label>Data final</label><div class="cf-fim" id="cf-fim"></div></div>
+      </div>
+      <div class="f"><label>Turno</label><div class="seg" id="cf-turno">${[['','Todos'],['diurno','Diurno'],['noturno','Noturno']].map(([k,l]) => `<button type="button" data-t="${k}" aria-pressed="${k === ft}">${l}</button>`).join('')}</div></div>
+      <div class="frow">
+        <div class="f"><label for="cf-rev">Revisão</label><input id="cf-rev" value="00" maxlength="3" inputmode="numeric"></div>
+        <div class="f"><label class="chk"><input type="checkbox" id="cf-conc" checked> Incluir concluídas no período</label></div>
+      </div>
+      <div class="f"><label for="cf-tit">Título da planilha</label><input id="cf-tit" value="PROGRAMAÇÃO DE ATIVIDADES | SHOPPING IGUATEMI SP - ROOFTOP"></div>
+      <div class="cf-prev" id="cf-prev"></div>
+      <div class="acts"><button type="button" class="btn ghost" id="cf-cancel">Cancelar</button><button class="btn pri" type="submit">Gerar Excel</button></div>
+    </form>`;
+  let turno = ft;
+  const sel = () => {
+    const ini = $('cf-ini').value; if (!ini) return [];
+    const fim = addDays(ini, 14), conc = $('cf-conc').checked;
+    return [...all().values()].filter(a => a.status !== 'cancelada' && (conc || a.status !== 'concluida') && (!turno || turnoOf(a) === turno) && a.noite <= fim && fimOf(a) >= ini);
+  };
+  const upd = () => {
+    const ini = $('cf-ini').value;
+    $('cf-fim').textContent = ini ? `${fmtDay(addDays(ini, 14))}/${addDays(ini, 14).slice(0,4)} · 15 dias` : '—';
+    const n = sel().length;
+    $('cf-prev').textContent = ini ? (n ? `${n} ${n === 1 ? 'atividade entra' : 'atividades entram'} no cronograma de ${fmtShort(ini)} a ${fmtShort(addDays(ini, 14))}.` : 'Nenhuma atividade nesse período.') : '';
+  };
+  $('cf-turno').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; turno = b.dataset.t; for (const x of $('cf-turno').children) x.setAttribute('aria-pressed', String(x === b)); upd(); };
+  $('cf-ini').onchange = upd; $('cf-conc').onchange = upd; upd();
+  $('cf-cancel').onclick = closeModal;
+  $('cf').onsubmit = async e => {
+    e.preventDefault();
+    const ini = $('cf-ini').value; if (!ini) return toast('Escolha a data inicial.');
+    const list = sel(); if (!list.length) return toast('Nenhuma atividade nesse período.');
+    const rev = ($('cf-rev').value.trim() || '00').padStart(2, '0');
+    const groups = new Map();
+    for (const a of list){ const g = groupKey(a); const k = a.tipoLocal === 'shopping' ? 'z' : g.k; if (!groups.has(k)) groups.set(k, {k, label: a.tipoLocal === 'shopping' ? 'Shopping' : g.label, sub: a.tipoLocal === 'shopping' ? 'Lojas, mall, estacionamento e áreas de apoio' : g.sub, items:[]}); groups.get(k).items.push(a); }
+    const grupos = [...groups.values()].sort((x, y) => groupRank(x.k) - groupRank(y.k)).map(g => ({label:g.label, sub:g.sub,
+      items: g.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || String(x.titulo).localeCompare(String(y.titulo), 'pt')).map(a => ({
+        titulo: a.titulo, empresa: a.fornecedor || '', inicio: a.noite, fim: fimOf(a), status: a.status, avanco: avOf(a),
+        detalhe: [localLine(a), `turno ${TURNOS[turnoOf(a)].toLowerCase()}`, a.responsavel ? `resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · '),
+      }))}));
+    const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
+    const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
+    try {
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=7');
+      const fimP = addDays(ini, 14);
+      const r = await gerarCronogramaXLSX({
+        inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
+        titulo: $('cf-tit').value.trim() || 'PROGRAMAÇÃO DE ATIVIDADES | SHOPPING IGUATEMI SP - ROOFTOP',
+        subtitulo: `OBRA 4107 | REVISÃO: ${rev} | ${hojeBR} - CRONOGRAMA QUINZENAL ${fmtShort(ini)} A ${fmtShort(fimP)}/${fimP.slice(0,4)}${turno ? ' - TURNO ' + TURNOS[turno].toUpperCase() : ''}`,
+        logoUrl: 'logo-saeng-cinza.png',
+        arquivo: `4107_ROOFTOP_IGSP_ATIVIDADES_CRONOGRAMA_REV${rev}_${ini}${turno ? '_' + turno.toUpperCase() : ''}.xlsx`,
+      });
+      closeModal(); toast(`Cronograma gerado com ${r.linhas} ${r.linhas === 1 ? 'atividade' : 'atividades'}.`);
+    } catch (err) { console.warn(err); btn.disabled = false; btn.textContent = 'Gerar Excel'; toast(navigator.onLine ? 'Não foi possível gerar o cronograma. Tente de novo.' : 'Para gerar o Excel pela primeira vez é preciso internet.'); }
+  };
+  showModal();
 }
 
 /* ================= relatório PDF ================= */
@@ -736,11 +832,11 @@ async function exportPdf(){
   if (!acts.length){ toast('Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=6');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=7');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
-      setores: S.cad.setores, localLine, fmtShort, diasEntre: nightsBetween,
+      setores: S.cad.setores, localLine, fmtShort, diasEntre: nightsBetween, fimOf, avOf,
       turnoLabelDe: a => TURNOS[turnoOf(a)],
       turnoLabel: ft ? `Turno ${TURNOS[ft].toLowerCase()}` : 'Turnos diurno e noturno',
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`,
@@ -797,6 +893,7 @@ $('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
 $('b-new').onclick = () => openForm(null);
 $('b-export').onclick = () => { const p = $('exp-pop'); p.hidden = !p.hidden; $('b-export').setAttribute('aria-expanded', String(!p.hidden)); };
 $('exp-csv').onclick = () => { $('exp-pop').hidden = true; exportCsv(); };
+$('b-crono').onclick = openCronograma;
 $('exp-pdf').onclick = () => { $('exp-pop').hidden = true; exportPdf(); };
 $('who').onclick = () => { const p = $('who-pop'); p.hidden = !p.hidden; $('who').setAttribute('aria-expanded', String(!p.hidden)); };
 $('m-perfil').onclick = () => { $('who-pop').hidden = true; openPerfil(); };
