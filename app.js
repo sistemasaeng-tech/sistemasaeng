@@ -263,6 +263,7 @@ const sortActs = list => list.sort((x,y) => prRank(x.prioridade)-prRank(y.priori
 function renderNight(){
   $('night-title').textContent = S.noite === defaultNight() ? 'Esta noite' : `Noite de ${fmtShort(S.noite)}`;
   $('night-sub').textContent = fmtNightLong(S.noite);
+  { const d = parseYmd(S.noite); $('night-label').textContent = `${DOW[d.getDay()].slice(0,3)} ${fmtShort(S.noite)}`; }
   $('n-date').value = S.noite;
   const acts = [...all().values()];
   const tonight = acts.filter(a => a.noite === S.noite);
@@ -389,8 +390,10 @@ function renderAll(){
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
   renderWho();
 }
+function initials(n){ const p = String(n||'').trim().split(/\s+/).filter(Boolean); return ((p[0]||'?')[0] + (p.length > 1 ? p[p.length-1][0] : '')).toUpperCase(); }
 function renderWho(){
   const n = S.perfil?.nome || 'Você', r = S.perfil?.funcao || '';
+  $('who-av').textContent = initials(n);
   $('who-name').innerHTML = `${esc(n)}${r ? ` <small>· ${esc(r)}</small>` : ''}`;
   $('who-email').textContent = `${S.email}${isAdmin() ? ' · administrador' : ''}`;
 }
@@ -399,6 +402,7 @@ function setTab(t){
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
   $('v-noite').hidden = S.tab !== 'noite'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad';
   try { localStorage.setItem('pn-tab', S.tab); } catch {}
+  window.scrollTo({top:0});
   renderAll();
 }
 function setNight(n){
@@ -412,6 +416,7 @@ function setNight(n){
 function openDrawer(id){
   S.openId = id; S.dwMode = null; S.dwHist = [];
   $('drawer').hidden = false; $('scrim').hidden = false; $('dw-panel').innerHTML = '';
+  document.querySelector('.dw-scroll').scrollTop = 0;
   if (S.unsubDw) S.unsubDw(); if (S.unsubDwHist) S.unsubDwHist();
   S.unsubDw = onSnapshot(doc(db, 'atividades', id), s => {
     if (!s.exists()){ if (S.openId === id){ toast('Esta atividade foi excluída.'); closeDrawer(); } return; }
@@ -666,6 +671,7 @@ $('n-prev').onclick = () => setNight(addDays(S.noite,-1));
 $('n-next').onclick = () => setNight(addDays(S.noite,1));
 $('n-today').onclick = () => setNight(defaultNight());
 $('n-date').onchange = e => setNight(e.target.value);
+$('n-date').addEventListener('click', e => { try { e.target.showPicker(); } catch {} });
 $('f-q').oninput = e => { S.f.q = e.target.value.trim(); renderAll(); };
 $('f-tipo').onchange = e => { S.f.tipo = e.target.value; renderAll(); };
 $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
@@ -681,3 +687,31 @@ $('scrim').onclick = () => { if (!$('modal').hidden) closeModal(); else closeDra
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ if (!$('modal').hidden) closeModal(); else if (S.openId) closeDrawer(); } });
 const net = () => { $('offline').hidden = navigator.onLine; };
 window.addEventListener('online', net); window.addEventListener('offline', net); net();
+
+/* ================= app no celular (instalação) ================= */
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+let installEvt = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const installDismissed = () => { try { return localStorage.getItem('pn-install-x') === '1'; } catch { return false; } };
+function showInstall(){
+  if (isStandalone()) return;
+  const can = !!installEvt, ios = isIOS();
+  $('m-install').hidden = !(can || ios);
+  if (installDismissed() || !(can || ios)) { $('install').hidden = true; return; }
+  $('install-tx').innerHTML = can
+    ? '<b>Instale na tela inicial</b><span>Abre como aplicativo, em tela cheia.</span>'
+    : '<b>Adicione à tela de início</b><span>No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.</span>';
+  $('install-btn').hidden = !can;
+  $('install').hidden = false;
+}
+async function doInstall(){
+  if (installEvt){ installEvt.prompt(); const r = await installEvt.userChoice.catch(() => null); installEvt = null; if (r?.outcome === 'accepted') $('install').hidden = true; showInstall(); return; }
+  if (isIOS()) toast('No Safari: toque em Compartilhar e depois em “Adicionar à Tela de Início”.');
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; showInstall(); });
+window.addEventListener('appinstalled', () => { installEvt = null; $('install').hidden = true; $('m-install').hidden = true; });
+$('install-btn').onclick = doInstall;
+$('m-install').onclick = () => { $('who-pop').hidden = true; doInstall(); };
+$('install-x').onclick = () => { $('install').hidden = true; try { localStorage.setItem('pn-install-x', '1'); } catch {} };
+showInstall();

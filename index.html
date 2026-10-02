@@ -3,23 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Programação Noturna Rooftop</title>
-<meta name="theme-color" content="#0e131a">
+<title>Programação Noturna · SAENG</title>
+<meta name="description" content="Programação das atividades do turno da noite — Obra 4107 Rooftop Iguatemi SP">
+<meta name="theme-color" content="#2b2d31">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Noturna SAENG">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
 
 <!-- ACESSO -->
 <section id="gate" class="gate">
-  <div class="gate-box">
-    <div class="gate-brand"><b>Programação Noturna</b><span>Obra 4107 · Rooftop Iguatemi SP</span></div>
-    <div class="gate-card" id="gate-card"><p>Carregando…</p></div>
+  <div class="gate-side">
+    <img src="logo-saeng.png" alt="SAENG Engenharia" width="306" height="83">
+    <div>
+      <h1>Programação Noturna</h1>
+      <p>Atividades do turno da noite, status e histórico da Obra 4107 · Rooftop Iguatemi SP.</p>
+    </div>
+    <div class="foot">SAENG Engenharia</div>
+  </div>
+  <div class="gate-main">
+    <div class="gate-box"><div class="gate-card" id="gate-card"><p>Carregando…</p></div></div>
   </div>
 </section>
 
@@ -27,17 +39,22 @@
 <div id="app" hidden>
 <header class="top">
   <div class="top-in">
-    <div class="brand"><b>Programação Noturna</b><span>Obra 4107 · Rooftop Iguatemi SP</span></div>
+    <div class="brand">
+      <img src="logo-saeng.png" alt="SAENG Engenharia" width="306" height="83">
+      <span class="div" aria-hidden="true"></span>
+      <div class="brand-tx"><b>Programação Noturna</b><span>Obra 4107 · Rooftop Iguatemi SP</span></div>
+    </div>
     <nav class="tabs" role="tablist" aria-label="Seções">
-      <button class="tab" role="tab" id="tab-noite" data-tab="noite" aria-selected="true">Noite</button>
-      <button class="tab" role="tab" id="tab-hist" data-tab="hist" aria-selected="false">Histórico</button>
-      <button class="tab" role="tab" id="tab-cad" data-tab="cad" aria-selected="false">Cadastros</button>
+      <button class="tab" role="tab" data-tab="noite" aria-selected="true">Noite</button>
+      <button class="tab" role="tab" data-tab="hist" aria-selected="false">Histórico</button>
+      <button class="tab" role="tab" data-tab="cad" aria-selected="false">Cadastros</button>
     </nav>
     <div class="menu">
-      <button class="who" id="who" type="button" aria-haspopup="true" aria-expanded="false"><span id="who-name">…</span></button>
+      <button class="who" id="who" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Minha conta"><span class="av" id="who-av">·</span><span class="nm" id="who-name"></span></button>
       <div class="menu-pop" id="who-pop" hidden>
         <span class="ro" id="who-email"></span>
         <button type="button" id="m-perfil">Alterar meu nome e função</button>
+        <button type="button" id="m-install" hidden>Instalar na tela inicial</button>
         <button type="button" id="m-sair">Sair</button>
       </div>
     </div>
@@ -45,28 +62,38 @@
 </header>
 
 <main class="wrap">
+  <div id="install" class="install" hidden>
+    <img src="icon-192.png" alt="">
+    <div class="tx" id="install-tx"></div>
+    <button class="btn pri" type="button" id="install-btn" hidden>Instalar</button>
+    <button class="x" type="button" id="install-x" aria-label="Fechar aviso">×</button>
+  </div>
   <div id="banner" class="banner" hidden></div>
 
   <section id="v-noite">
     <div class="night">
-      <h1 id="night-title">Noite</h1>
+      <div class="night-tx">
+        <div class="eyebrow">Turno noturno</div>
+        <h1 id="night-title">Esta noite</h1>
+        <div class="sub" id="night-sub"></div>
+      </div>
       <div class="nav">
         <button class="ibtn" id="n-prev" type="button" aria-label="Noite anterior">‹</button>
-        <input type="date" id="n-date" aria-label="Data de início da noite">
+        <label class="datebtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span id="night-label"></span><input type="date" id="n-date" aria-label="Escolher a noite"></label>
         <button class="ibtn" id="n-next" type="button" aria-label="Próxima noite">›</button>
-        <button class="btn ghost" id="n-today" type="button">Esta noite</button>
+        <button class="btn" id="n-today" type="button">Hoje</button>
       </div>
-      <div class="sub" id="night-sub"></div>
     </div>
     <div class="summary" id="summary"></div>
     <div class="tools">
-      <input type="search" id="f-q" placeholder="Buscar atividade, fornecedor, eixo…" aria-label="Buscar">
-      <select id="f-tipo" aria-label="Tipo de local"><option value="">Todos os locais</option><option value="setor">Setores</option><option value="pilar">Pilares</option><option value="shopping">Shopping</option></select>
-      <select id="f-setor" aria-label="Setor"><option value="">Todos os setores</option></select>
-      <select id="f-forn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option></select>
-      <span class="sp"></span>
-      <button class="btn" id="b-export" type="button">Exportar CSV</button>
-      <button class="btn pri" id="b-new" type="button">+ Nova atividade</button>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="f-q" placeholder="Buscar atividade, fornecedor, eixo…" aria-label="Buscar" enterkeyhint="search"></div>
+      <div class="selects">
+        <select id="f-tipo" aria-label="Tipo de local"><option value="">Todos os locais</option><option value="setor">Setores</option><option value="pilar">Pilares</option><option value="shopping">Shopping</option></select>
+        <select id="f-setor" aria-label="Setor"><option value="">Todos os setores</option></select>
+        <select id="f-forn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option></select>
+      </div>
+      <button class="btn" id="b-export" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Exportar CSV</button>
+      <button class="btn pri" id="b-new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova atividade</button>
     </div>
     <div class="sec">
       <div class="sec-h"><h2>Programadas para esta noite</h2><span id="c-tonight"></span></div>
@@ -79,20 +106,28 @@
   </section>
 
   <section id="v-hist" hidden>
-    <div class="night"><h1>Histórico</h1><div class="sub">Quem inseriu, alterou, comentou e mudou o status de cada atividade. Registros não podem ser editados nem apagados.</div></div>
+    <div class="night"><div class="night-tx"><div class="eyebrow">Registro</div><h1>Histórico</h1><div class="sub">Quem inseriu, alterou, comentou e mudou o status de cada atividade. Os registros não podem ser editados nem apagados.</div></div></div>
     <div class="tools">
-      <select id="h-dias" aria-label="Período"><option value="1">Últimas 24 h</option><option value="3">Últimos 3 dias</option><option value="7" selected>Últimos 7 dias</option><option value="30">Últimos 30 dias</option></select>
-      <select id="h-user" aria-label="Pessoa"><option value="">Todas as pessoas</option></select>
-      <select id="h-tipo" aria-label="Tipo de registro"><option value="">Todos os registros</option><option value="criou">Inserções</option><option value="status">Mudanças de status</option><option value="obs">Observações</option><option value="editou">Alterações de dados</option><option value="reprogramou">Reprogramações</option><option value="excluiu">Exclusões</option></select>
+      <div class="selects">
+        <select id="h-dias" aria-label="Período"><option value="1">Últimas 24 h</option><option value="3">Últimos 3 dias</option><option value="7" selected>Últimos 7 dias</option><option value="30">Últimos 30 dias</option></select>
+        <select id="h-user" aria-label="Pessoa"><option value="">Todas as pessoas</option></select>
+        <select id="h-tipo" aria-label="Tipo de registro"><option value="">Todos os registros</option><option value="criou">Inserções</option><option value="status">Mudanças de status</option><option value="obs">Observações</option><option value="editou">Alterações de dados</option><option value="reprogramou">Reprogramações</option><option value="excluiu">Exclusões</option></select>
+      </div>
     </div>
     <div id="feed"></div>
   </section>
 
   <section id="v-cad" hidden>
-    <div class="night"><h1>Cadastros</h1><div class="sub" id="cad-sub"></div></div>
+    <div class="night"><div class="night-tx"><div class="eyebrow">Configuração</div><h1>Cadastros</h1><div class="sub" id="cad-sub"></div></div></div>
     <div class="cad" id="cad"></div>
   </section>
 </main>
+
+<nav class="bnav" aria-label="Seções">
+  <button class="tab" type="button" data-tab="noite" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Noite</button>
+  <button class="tab" type="button" data-tab="hist" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Histórico</button>
+  <button class="tab" type="button" data-tab="cad" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Cadastros</button>
+</nav>
 </div>
 
 <div id="scrim" class="scrim" hidden></div>
@@ -110,6 +145,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=2"></script>
 </body>
 </html>
