@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
 
@@ -46,6 +46,7 @@
     </div>
     <nav class="tabs" role="tablist" aria-label="Seções">
       <button class="tab" role="tab" data-tab="noite" aria-selected="true">Atividades</button>
+      <button class="tab" role="tab" data-tab="etq" aria-selected="false">Etiquetas</button>
       <button class="tab" role="tab" data-tab="hist" aria-selected="false">Histórico</button>
       <button class="tab" role="tab" data-tab="cad" aria-selected="false">Cadastros</button>
     </nav>
@@ -109,6 +110,8 @@
         <select id="f-setor" aria-label="Setor"><option value="">Todos os setores</option></select>
         <select id="f-forn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option></select>
       </div>
+      <div class="f-lbl">Etiqueta</div>
+      <div class="f-sel one"><select id="f-etq" aria-label="Etiqueta"><option value="">Todas as etiquetas</option></select></div>
       <button class="link-btn" id="f-clear" type="button">Limpar filtros</button>
     </div>
     <div class="sec">
@@ -119,6 +122,15 @@
       <div class="sec-h"><h2>Pendentes de dias anteriores</h2><span id="c-pend"></span></div>
       <div id="l-pend"></div>
     </div>
+  </section>
+
+  <section id="v-etq" hidden>
+    <div id="etq-home">
+      <div class="night"><div class="night-tx"><div class="eyebrow">Serviços macro</div><h1>Etiquetas</h1><div class="sub">Atividades ligadas a um mesmo serviço, de qualquer data. Toque em uma etiqueta para ver todos os trabalhos dela.</div></div></div>
+      <div class="tools"><div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="etq-q" placeholder="Buscar etiqueta" aria-label="Buscar etiqueta" autocomplete="off"></div></div>
+      <div id="etq-list" class="etq-list"></div>
+    </div>
+    <div id="etq-page" hidden></div>
   </section>
 
   <section id="v-hist" hidden>
@@ -141,6 +153,7 @@
 
 <nav class="bnav" aria-label="Seções">
   <button class="tab" type="button" data-tab="noite" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 9l1.5 1.5L12 8M8 15l1.5 1.5L12 14M14 9.5h2.5M14 15.5h2.5"/></svg>Atividades</button>
+  <button class="tab" type="button" data-tab="etq" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0z"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/></svg>Etiquetas</button>
   <button class="tab" type="button" data-tab="hist" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Histórico</button>
   <button class="tab" type="button" data-tab="cad" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Cadastros</button>
 </nav>
@@ -167,6 +180,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=9"></script>
 </body>
 </html>

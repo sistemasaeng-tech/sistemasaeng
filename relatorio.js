@@ -245,7 +245,7 @@ export async function gerarRelatorioPDF(ctx){
     doc.autoTable({...tblBase, startY: y,
       head:[['Atividade', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Última observação']],
       body: items.map(a => {
-        const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join('\n');
+        const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : '', Array.isArray(a.etiquetas) && a.etiquetas.length ? `Etiqueta: ${a.etiquetas.join(', ')}` : ''].filter(Boolean).join('\n');
         return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
       }),
       columnStyles:{0:{cellWidth:56}, 1:{cellWidth:22}, 2:{cellWidth:13, halign:'center'}, 3:{cellWidth:28}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},

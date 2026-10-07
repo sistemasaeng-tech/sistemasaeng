@@ -29,7 +29,7 @@ const MOTIVOS = ['Equipe não compareceu','Efetivo insuficiente','Falta de mater
 const PRIOR = {normal:'Normal', alta:'Alta', critica:'Crítica'};
 const FUNCOES = ['Coordenador','Residente','Engenheiro','Encarregado','Mestre de obras','Técnico de segurança','Planejamento','Outro'];
 const PAPEIS = {pendente:'Aguardando aprovação', visualizador:'Visualizador', usuario:'Usuário', admin:'Administrador', bloqueado:'Bloqueado'};
-const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
+const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',etiquetas:'Etiquetas',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
 const TIPO_LABEL = {setor:'Setor', pilar:'Pilar', shopping:'Shopping'};
 const TURNOS = {diurno:'Diurno', noturno:'Noturno'};
 const turnoOf = a => a.turno === 'diurno' ? 'diurno' : 'noturno'; // atividades antigas, sem turno, contam como noturnas
@@ -39,6 +39,18 @@ const progBar = p => `<span class="prog" role="img" aria-label="Avanço ${p}%"><
 const ICON_SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const ICON_LUA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
 const turnoTag = t => `<span class="turno ${t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</span>`;
+
+// Etiquetas: ligam atividades de um mesmo serviço macro (ex.: "Demolição alvenaria eixo 8"), como no Todoist.
+const ICON_TAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0z"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/></svg>';
+const TAG_CORES = ['#f69321','#55b8de','#5cc58c','#d9b650','#b48ae0','#e8835f','#4fc3b5','#e07ab8','#8ea9d4','#c9a27e'];
+const MAX_TAGS = 10;
+const normTag = s => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+const tagKey = s => normTag(s).toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[̀-ͯ]/g, '');
+const tagCor = s => { let h = 7; for (const ch of tagKey(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TAG_CORES[h % TAG_CORES.length]; };
+const tagsOf = a => Array.isArray(a?.etiquetas) ? a.etiquetas.filter(Boolean) : [];
+const hasTag = (a, t) => { const k = tagKey(t); return tagsOf(a).some(x => tagKey(x) === k); };
+const tagChip = (t, cls = '') => `<span class="etq ${cls}" style="--tc:${tagCor(t)}">${ICON_TAG}<span>${esc(t)}</span></span>`;
+const tagBtn = t => `<button type="button" class="etq" data-etq="${esc(t)}" style="--tc:${tagCor(t)}">${ICON_TAG}<span>${esc(t)}</span></button>`;
 
 // Lista inicial da obra (carregada pelo administrador na aba Cadastros quando o banco está vazio).
 // Fontes: planilha de trabalhos executados 06–12/07/2026, cronograma de metálica e controle de efetivo.
@@ -103,14 +115,31 @@ if (configOk){
 const S = {
   uid:null, email:'', perfil:null, started:false, unsubs:[], unsubWin:null, unsubDw:null, unsubDwHist:null,
   usuarios:{}, cad:{fornecedores:[],setores:[],niveis:[],pilares:[],locais:[]}, cadLoaded:false,
-  win:new Map(), open:new Map(), extra:new Map(), feed:[], dwHist:[],
+  win:new Map(), open:new Map(), extra:new Map(), tagged:new Map(), feed:[], dwHist:[], etq:null,
   noite:defaultNight(), winFrom:addDays(defaultNight(), -35), tab:'noite',
-  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:''}, cadSub:null, cadDel:null, openId:null, dwMode:null,
+  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:'',etq:''}, cadSub:null, cadDel:null, openId:null, dwMode:null,
 };
 const isAdmin = () => S.perfil?.papel === 'admin';
 const canWrite = () => ['usuario','admin'].includes(S.perfil?.papel);
 const canRead = () => ['visualizador','usuario','admin'].includes(S.perfil?.papel);
-function all(){ const m = new Map(S.extra); for (const [k,v] of S.win) m.set(k,v); for (const [k,v] of S.open) m.set(k,v); return m; }
+function all(){ const m = new Map(S.tagged); for (const [k,v] of S.extra) m.set(k,v); for (const [k,v] of S.win) m.set(k,v); for (const [k,v] of S.open) m.set(k,v); return m; }
+// catálogo de etiquetas: tudo o que já foi usado nas atividades (as etiquetadas são carregadas inteiras, de qualquer data)
+function tagCatalog(){
+  const m = new Map();
+  for (const a of all().values()) for (const t of tagsOf(a)){
+    const k = tagKey(t); if (!k) continue;
+    if (!m.has(k)) m.set(k, {k, nome:normTag(t), acts:[]});
+    m.get(k).acts.push(a);
+  }
+  for (const x of m.values()){
+    const val = x.acts.filter(a => a.status !== 'cancelada');
+    x.n = x.acts.length; x.abertas = x.acts.filter(a => a.aberta).length; x.conc = x.acts.filter(a => a.status === 'concluida').length;
+    x.av = val.length ? Math.round(val.reduce((s, a) => s + avOf(a), 0) / val.length) : 0;
+    x.ini = x.acts.reduce((v, a) => !v || a.noite < v ? a.noite : v, ''); x.fim = x.acts.reduce((v, a) => fimOf(a) > v ? fimOf(a) : v, '');
+    x.ult = Math.max(...x.acts.map(a => toDate(a.atualizadoEm).getTime()));
+  }
+  return m;
+}
 const nameOf = u => !u ? 'Sem identificação' : (S.usuarios[u]?.nome || (u === S.uid && S.perfil?.nome) || 'Usuário');
 const roleOf = u => S.usuarios[u]?.funcao || '';
 
@@ -240,6 +269,9 @@ function startApp(){
     S.cadLoaded = true; fillFilterOptions(); renderAll();
   }, fail('cadastros')));
   subscribeWindow();
+  S.unsubs.push(onSnapshot(query(collection(db, 'atividades'), where('temEtiqueta', '==', true), limit(3000)), s => {
+    S.tagged = snapToMap(s); fillFilterOptions(); renderAll();
+  }, fail('etiquetas')));
   S.unsubs.push(onSnapshot(query(collection(db, 'atividades'), where('aberta', '==', true), limit(1000)), s => {
     S.open = snapToMap(s); fillFilterOptions(); renderAll();
   }, fail('abertas')));
@@ -252,7 +284,7 @@ function stopApp(){
   for (const u of S.unsubs) u(); S.unsubs = [];
   if (S.unsubWin){ S.unsubWin(); S.unsubWin = null; }
   closeDrawer(); closeModal();
-  S.started = false; S.win = new Map(); S.open = new Map(); S.extra = new Map(); S.feed = []; S.usuarios = {};
+  S.started = false; S.win = new Map(); S.open = new Map(); S.extra = new Map(); S.tagged = new Map(); S.feed = []; S.usuarios = {};
 }
 function snapToMap(s){ const m = new Map(); s.forEach(d => m.set(d.id, {id:d.id, ...d.data(SNAP)})); return m; }
 function subscribeWindow(){
@@ -269,7 +301,8 @@ function matches(a){
   if (f.setor && !(a.tipoLocal === 'setor' && a.setor === f.setor)) return false;
   if (f.forn && a.fornecedor !== f.forn) return false;
   if (f.status && a.status !== f.status) return false;
-  if (f.q){ const hay = [a.titulo,a.detalhes,a.fornecedor,a.responsavel,localLine(a),a.ultimaObs,a.motivo].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
+  if (f.etq && !hasTag(a, f.etq)) return false;
+  if (f.q){ const hay = [a.titulo,a.detalhes,a.fornecedor,a.responsavel,localLine(a),a.ultimaObs,a.motivo,...tagsOf(a)].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
   return true;
 }
 const prRank = p => p === 'critica' ? 0 : p === 'alta' ? 1 : 2;
@@ -295,7 +328,7 @@ function renderNight(){
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
   $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status===k}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
-  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn].filter(Boolean).length;
+  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn, S.f.etq].filter(Boolean).length;
   $('f-count').hidden = !nf; $('f-count').textContent = nf;
   const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
@@ -317,13 +350,14 @@ function grouped(list, isPend){
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
     .map(g => `<div class="grp"><div class="grp-h"><b>${esc(g.label)}</b>${g.sub ? `<span>${esc(g.sub)}</span>` : ''}</div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`).join('');
 }
-function card(a, isPend){
-  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), S.noite) : 0, av = avOf(a);
+function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
+  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), ref) : 0, av = avOf(a);
   const meta = [localLine(a), a.fornecedor].filter(Boolean).join(' · ');
   const tags = [];
   if (a.prioridade === 'critica' || a.prioridade === 'alta') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
-  if (fimOf(a) !== a.noite) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`);
+  if (showDate || fimOf(a) !== a.noite) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`);
   if (isPend) tags.push(`<span class="tag since">venceu ${fmtShort(fimOf(a))} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
+  const et = tagsOf(a).filter(t => !hideTag || tagKey(t) !== tagKey(hideTag)); if (et.length) tags.push(et.slice(0, 2).map(t => tagChip(t, 'sm')).join('') + (et.length > 2 ? `<span class="etq-more">+${et.length - 2}</span>` : ''));
   const alerta = (a.status === 'impedida' || a.status === 'nao_iniciada') && (a.motivo || a.ultimaObs) ? `<div class="c-alert">${esc(a.motivo || a.ultimaObs)}</div>` : '';
   return `<button type="button" class="card" data-id="${esc(a.id)}" style="--c:${cvar(a.status)}"><span class="stripe"></span>
     <span class="body">
@@ -341,7 +375,7 @@ function evText(ev){
     case 'status': return `mudou o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
     case 'obs': return 'adicionou uma observação';
     case 'avanco': return `atualizou o avanço de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>`;
-    case 'editou': return 'alterou os dados';
+    case 'editou': return ev.mudancas?.length && ev.mudancas.every(m => m.campo === 'etiquetas') ? 'alterou as etiquetas' : 'alterou os dados';
     case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
     case 'excluiu': return 'excluiu a atividade';
     default: return esc(ev.tipo);
@@ -365,6 +399,104 @@ function renderFeed(){
   for (const ev of evs){ const d = ymd(toDate(ev.t)); if (!days.has(d)) days.set(d, []); days.get(d).push(ev); }
   $('feed').innerHTML = [...days.entries()].map(([d, list]) => `<div class="feed-day"><h3>${DOW[parseYmd(d).getDay()]} ${fmtShort(d)}</h3>${list.map(ev => `
     <div class="ev"><time>${fmtHM(ev.t)}</time><div><p><b>${esc(nameOf(ev.u))}</b>${roleOf(ev.u) ? ` <span class="ro">${esc(roleOf(ev.u))}</span>` : ''} ${evText(ev)} · ${ev.tipo === 'excluiu' ? `<span>${esc(ev.titulo)}</span>` : `<button type="button" class="act" data-id="${esc(ev.atividadeId)}">${esc(ev.titulo)}</button>`} <span class="ro">${esc(ev.local||'')}</span></p>${evExtra(ev)}</div></div>`).join('')}</div>`).join('');
+}
+
+/* ================= etiquetas ================= */
+function renderEtq(){
+  const cat = tagCatalog();
+  $('etq-home').hidden = !!S.etq; $('etq-page').hidden = !S.etq;
+  if (S.etq){
+    const x = cat.get(tagKey(S.etq));
+    if (x) return renderEtqPage(x);
+    // durante uma renomeação, ou se a etiqueta saiu de todas as atividades
+    $('etq-page').innerHTML = `<div class="cad-page"><button type="button" class="back" data-etq-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Etiquetas</button><div class="empty"><b>${esc(S.etq)}</b>Nenhuma atividade com esta etiqueta no momento.</div></div>`;
+    return;
+  }
+  const q = tagKey($('etq-q').value), list = [...cat.values()].filter(x => !q || x.k.includes(q));
+  const row = x => `<button type="button" class="cad-row etq-row" data-etq="${esc(x.nome)}" style="--tc:${tagCor(x.nome)}">
+      <span class="etq-ico">${ICON_TAG}</span>
+      <span class="cad-tx"><b>${esc(x.nome)}</b><span>${x.n} ${x.n === 1 ? 'atividade' : 'atividades'}${x.abertas ? ` · ${x.abertas} em aberto` : ' · encerrada'} · ${x.ini === x.fim ? fmtShort(x.ini) : `${fmtShort(x.ini)} → ${fmtShort(x.fim)}`}</span>
+        <span class="etq-av">${progBar(x.av)}</span></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg></button>`;
+  const ab = list.filter(x => x.abertas).sort((a, b) => b.ult - a.ult), enc = list.filter(x => !x.abertas).sort((a, b) => b.fim.localeCompare(a.fim));
+  if (!cat.size){ $('etq-list').innerHTML = `<div class="empty"><b>Nenhuma etiqueta ainda</b>Ao inserir ou editar uma atividade, use o campo “Etiquetas” para ligá-la a um serviço macro, por exemplo “Demolição alvenaria eixo 8”. As atividades com a mesma etiqueta aparecem juntas aqui.</div>`; return; }
+  $('etq-list').innerHTML = !list.length ? '<div class="empty">Nenhuma etiqueta com essa busca.</div>'
+    : (ab.length ? `<div class="sec-h"><h2>Em andamento</h2><span>${ab.length}</span></div><div class="cad-menu">${ab.map(row).join('')}</div>` : '')
+    + (enc.length ? `<div class="sec-h" style="margin-top:22px"><h2>Encerradas</h2><span>${enc.length}</span></div><div class="cad-menu">${enc.map(row).join('')}</div>` : '');
+}
+function renderEtqPage(x){
+  const hoje = defaultNight(), cor = tagCor(x.nome);
+  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); x.acts.forEach(a => { cnt[a.status] = (cnt[a.status] || 0) + 1; });
+  const atras = x.acts.filter(a => a.aberta && fimOf(a) < hoje).length;
+  const bar = ORDER.filter(k => cnt[k]).map(k => `<i style="width:${(cnt[k] / x.n * 100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('');
+  const leg = ORDER.filter(k => cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`).join('');
+  const ab = x.acts.filter(a => a.aberta).sort((a, b) => a.noite.localeCompare(b.noite) || fimOf(a).localeCompare(fimOf(b)) || prRank(a.prioridade) - prRank(b.prioridade));
+  const enc = x.acts.filter(a => !a.aberta).sort((a, b) => fimOf(b).localeCompare(fimOf(a)) || b.noite.localeCompare(a.noite));
+  const encOpen = S.etqEnc || !ab.length;
+  $('etq-page').innerHTML = `<div class="cad-page etq-page">
+    <button type="button" class="back" data-etq-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Etiquetas</button>
+    <div class="etq-head" style="--tc:${cor}">
+      <span class="etq-ico lg">${ICON_TAG}</span>
+      <div class="etq-ht"><h1>${esc(x.nome)}</h1><p>${x.n} ${x.n === 1 ? 'atividade' : 'atividades'} · ${x.ini === x.fim ? fmtDay(x.ini) : `${fmtShort(x.ini)} a ${fmtShort(x.fim)}`}</p></div>
+      ${isAdmin() ? `<div class="menu"><button type="button" class="ibtn" id="etq-more-b" aria-haspopup="true" aria-label="Opções da etiqueta"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        <div class="menu-pop" id="etq-more-pop" hidden><button type="button" data-etq-act="ren">Renomear etiqueta</button><button type="button" class="m-danger" data-etq-act="del">Remover de todas as atividades</button></div></div>` : ''}
+    </div>
+    <div class="etq-kpis">
+      <div class="kp"><span>Avanço médio</span><b>${x.av}%</b>${progBar(x.av)}</div>
+      <div class="kp"><span>Concluídas</span><b>${x.conc}<small> de ${x.n - cnt.cancelada}</small></b></div>
+      <div class="kp"><span>Em aberto</span><b>${x.abertas}</b></div>
+      <div class="kp${atras ? ' warn' : ''}"><span>Atrasadas</span><b>${atras}</b></div>
+    </div>
+    <div class="etq-st"><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div><div class="sum-leg">${leg}</div></div>
+    <div class="etq-acts">
+      <button type="button" class="btn" id="etq-crono"><span class="exp-ic xls">XLS</span>Cronograma desta etiqueta</button>
+      ${canWrite() ? `<button type="button" class="btn pri" id="etq-new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova atividade com esta etiqueta</button>` : ''}
+    </div>
+    ${ab.length ? `<div class="sec"><div class="sec-h"><h2>Em aberto</h2><span>${ab.length}</span></div><div class="cards">${ab.map(a => card(a, fimOf(a) < hoje, hoje, true, x.nome)).join('')}</div></div>` : ''}
+    ${enc.length ? `<div class="sec"><div class="sec-h"><h2>Concluídas e canceladas</h2><span>${enc.length}</span>${ab.length ? `<button type="button" class="link-btn" id="etq-enc-tg">${encOpen ? 'Ocultar' : 'Mostrar'}</button>` : ''}</div>${encOpen ? `<div class="cards">${enc.map(a => card(a, false, hoje, true, x.nome)).join('')}</div>` : ''}</div>` : ''}
+  </div>`;
+}
+function openTag(nome){
+  if (S.openId) closeDrawer();
+  S.etq = nome; S.etqEnc = false;
+  if (S.tab !== 'etq') setTab('etq'); else { window.scrollTo({top:0}); renderAll(); }
+}
+// Renomear ou remover uma etiqueta em todas as atividades (administrador). Cada atividade vai num lote próprio com o seu registro de histórico.
+async function retag(antigo, novo){
+  const k = tagKey(antigo), acts = [...all().values()].filter(a => hasTag(a, antigo));
+  if (!acts.length) return;
+  toast(`Atualizando ${acts.length} ${acts.length === 1 ? 'atividade' : 'atividades'}…`);
+  let ok = 0;
+  await Promise.all(acts.map(a => {
+    const de = tagsOf(a), nv = [];
+    for (const t of de){ const v = tagKey(t) === k ? novo : t; if (v && !nv.some(x => tagKey(x) === tagKey(v))) nv.push(v); }
+    const histRef = doc(collection(db, 'historico')), b = writeBatch(db);
+    b.update(doc(db, 'atividades', a.id), {etiquetas:nv, temEtiqueta:nv.length > 0, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
+    b.set(histRef, evDoc(a.id, a, {tipo:'editou', mudancas:[{campo:'etiquetas', de:de.join(', '), para:nv.join(', ')}]}));
+    return b.commit().then(() => { ok++; }, e => console.warn(e));
+  }));
+  toast(ok === acts.length ? (novo ? `Etiqueta renomeada em ${ok} ${ok === 1 ? 'atividade' : 'atividades'}.` : `Etiqueta removida de ${ok} ${ok === 1 ? 'atividade' : 'atividades'}.`) : `Atualizadas ${ok} de ${acts.length}. Tente de novo para as restantes.`);
+}
+function openRetag(mode){
+  const x = tagCatalog().get(tagKey(S.etq)); if (!x || !isAdmin()) return;
+  if (mode === 'ren'){
+    $('sheet').innerHTML = `<h2>Renomear etiqueta</h2><p class="ro" style="margin:-6px 0 14px">O novo nome vale para as ${x.n} atividades. Se já existir outra etiqueta com esse nome, as duas viram uma só. Cada mudança fica no histórico.</p>
+      <form id="rf"><div class="f"><label for="rf-n">Novo nome</label><input id="rf-n" maxlength="60" value="${esc(x.nome)}" autocomplete="off"></div>
+      <div class="acts"><button type="button" class="btn ghost" id="rf-c">Cancelar</button><button class="btn pri" type="submit">Renomear</button></div></form>`;
+    $('rf').onsubmit = e => {
+      e.preventDefault(); const n = normTag($('rf-n').value);
+      if (!n) return toast('Informe o nome.'); if (n === x.nome){ closeModal(); return; }
+      const ex = tagCatalog().get(tagKey(n)), alvo = ex && ex.k !== x.k ? ex.nome : n;
+      closeModal(); S.etq = alvo; retag(x.nome, alvo).then(renderAll);
+    };
+    setTimeout(() => $('rf-n').select(), 30);
+  } else {
+    $('sheet').innerHTML = `<h2>Remover a etiqueta?</h2><p class="ro" style="margin:-6px 0 14px">“${esc(x.nome)}” sai das ${x.n} atividades. As atividades continuam como estão, só sem essa etiqueta. Cada mudança fica no histórico.</p>
+      <div class="acts"><button type="button" class="btn ghost" id="rf-c">Manter</button><button type="button" class="btn danger" id="rf-del">Remover etiqueta</button></div>`;
+    $('rf-del').onclick = () => { closeModal(); S.etq = null; retag(x.nome, '').then(renderAll); };
+  }
+  $('rf-c').onclick = closeModal;
+  showModal();
 }
 
 /* ================= cadastros ================= */
@@ -466,12 +598,16 @@ function fillFilterOptions(){
   for (const a of all().values()) if (a.fornecedor) used.add(a.fornecedor);
   f.innerHTML = '<option value="">Todos os fornecedores</option>' + [...used].sort((a,b) => a.localeCompare(b,'pt')).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   f.value = used.has(fv) ? fv : '';
+  const e = $('f-etq'), cat = [...tagCatalog().values()].sort((a,b) => a.nome.localeCompare(b.nome,'pt'));
+  e.innerHTML = '<option value="">Todas as etiquetas</option>' + cat.map(x => `<option value="${esc(x.nome)}">${esc(x.nome)}</option>`).join('');
+  e.value = S.f.etq && cat.some(x => x.k === tagKey(S.f.etq)) ? cat.find(x => x.k === tagKey(S.f.etq)).nome : '';
+  if (!e.value) S.f.etq = '';
 }
 
 /* ================= render geral ================= */
 function renderAll(){
   if (!S.started) return;
-  if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else renderCad();
+  if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else renderCad();
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
   renderWho();
 }
@@ -487,9 +623,10 @@ function renderWho(){
 }
 function setTab(t){
   if (t === 'cad' && S.tab === 'cad') S.cadSub = null;
-  S.tab = ['noite','hist','cad'].includes(t) ? t : 'noite';
+  if (t === 'etq' && S.tab === 'etq') S.etq = null;
+  S.tab = ['noite','etq','hist','cad'].includes(t) ? t : 'noite';
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
-  $('v-noite').hidden = S.tab !== 'noite'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad';
+  $('v-noite').hidden = S.tab !== 'noite'; $('v-etq').hidden = S.tab !== 'etq'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad';
   try { localStorage.setItem('pn-tab', S.tab); } catch {}
   window.scrollTo({top:0});
   renderAll();
@@ -526,7 +663,8 @@ function renderDrawerHead(){
   if (!a){ $('dw-head').innerHTML = '<p class="ro">Carregando…</p>'; $('dw-pill').innerHTML = ''; $('dw-info').innerHTML = ''; $('dw-av').innerHTML = ''; return; }
   const st = STATUS[a.status] || STATUS.programada;
   $('dw-pill').innerHTML = `<span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span>`;
-  $('dw-head').innerHTML = `<div class="dw-tags">${turnoTag(turnoOf(a))}${a.prioridade === 'critica' || a.prioridade === 'alta' ? `<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>` : ''}</div><h2 class="dw-title">${esc(a.titulo)}</h2>`;
+  $('dw-head').innerHTML = `<div class="dw-tags">${turnoTag(turnoOf(a))}${a.prioridade === 'critica' || a.prioridade === 'alta' ? `<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>` : ''}</div><h2 class="dw-title">${esc(a.titulo)}</h2>
+    ${tagsOf(a).length || canWrite() ? `<div class="dw-etqs">${tagsOf(a).map(tagBtn).join('')}${canWrite() ? `<button type="button" class="etq-add" data-mode="etq">${tagsOf(a).length ? 'Editar' : '+ Etiqueta'}</button>` : ''}</div>` : ''}`;
   if (!S.avEdit) renderAv(a);
   const d1 = durOf(a);
   const kv = [['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
@@ -582,6 +720,18 @@ function setMode(mode){
   const a = all().get(S.openId), p = $('dw-panel');
   if (!a || !mode){ p.innerHTML = ''; renderDrawerActions(); return; }
   const cancel = '<button type="button" class="btn ghost" data-mode="">Cancelar</button>';
+  if (mode === 'etq'){
+    p.innerHTML = `<form class="panel" id="pf"><h4>Etiquetas</h4><p class="ro" style="margin:0 0 10px">Ligue esta atividade a um serviço macro. Todas as atividades com a mesma etiqueta aparecem juntas na aba Etiquetas.</p>
+      <div class="f" id="pf-etq"></div><div class="acts">${cancel}<button class="btn pri" type="submit">Salvar etiquetas</button></div></form>`;
+    const pk = tagPicker($('pf-etq'), tagsOf(a));
+    $('pf').onsubmit = e => {
+      e.preventDefault(); const nv = pk.get(), de = tagsOf(a).join(', '), para = nv.join(', ');
+      if (de === para){ setMode(null); return; }
+      mutate(S.openId, () => ({changes:{etiquetas:nv, temEtiqueta:nv.length > 0}, ev:{tipo:'editou', mudancas:[{campo:'etiquetas', de, para}]}}), 'Etiquetas salvas.');
+    };
+    setTimeout(() => $('pf-etq').querySelector('input')?.focus(), 30);
+    return;
+  }
   if (mode === 'status'){
     p.innerHTML = `<div class="panel st-list"><h4>Mudar status</h4>${ORDER.filter(k => k !== a.status).map(k => `<button type="button" class="st-opt" data-mode="status:${k}" style="--c:${cvar(k)}"><span class="dot"></span><span>${esc(STATUS[k].label)}</span>${STATUS[k].motivo ? '<small>pede motivo</small>' : STATUS[k].obs ? '<small>pede observação</small>' : ''}</button>`).join('')}<div class="acts">${cancel}</div></div>`;
     return;
@@ -623,7 +773,7 @@ function setMode(mode){
       <div class="f"><label for="pf-date">Dia <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div><div class="acts">${cancel}<button class="btn pri" type="submit">Duplicar</button></div></form>`;
     $('pf').onsubmit = e => {
       e.preventDefault(); const d = $('pf-date').value; if (!d) return;
-      const data = {}; for (const k of Object.keys(FIELDS)) data[k] = a[k] ?? ''; data.noite = d; data.fim = addDays(d, durOf(a)); data.avanco = 0; data.turno = turnoOf(a);
+      const data = {}; for (const k of Object.keys(FIELDS)) data[k] = a[k] ?? ''; data.noite = d; data.fim = addDays(d, durOf(a)); data.avanco = 0; data.turno = turnoOf(a); data.etiquetas = tagsOf(a);
       createAct(data, a.id); setMode(null); toast(`Cópia criada para ${fmtShort(d)}.`);
     };
   } else if (mode === 'del'){
@@ -684,16 +834,17 @@ function mutate(id, build, okMsg){
 }
 function createAct(data, origem){
   const actRef = doc(collection(db, 'atividades')), histRef = doc(collection(db, 'historico')), b = writeBatch(db);
-  b.set(actRef, {...data, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
+  const et = tagsOf(data);
+  b.set(actRef, {...data, etiquetas:et, temEtiqueta:et.length > 0, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
   b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
   return commit(b);
 }
 
 /* ================= formulário ================= */
-function openForm(id){
+function openForm(id, preset = {}){
   if (!canWrite()) return;
   const a = id ? all().get(id) : null;
-  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:S.f.tipo || 'setor', setor:S.f.setor || '', prioridade:'normal', fornecedor:S.f.forn || ''};
+  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:S.f.tipo || 'setor', setor:S.f.setor || '', prioridade:'normal', fornecedor:S.f.forn || '', etiquetas:S.f.etq ? [S.f.etq] : [], ...preset};
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
   <form id="af" novalidate>
     <div class="frow">
@@ -714,6 +865,7 @@ function openForm(id){
     </div>
     <div class="f"><label for="af-av">Avanço</label><div class="av-form"><input type="range" id="af-av" class="range" min="0" max="100" step="5" value="${a ? avOf(a) : 0}"><b id="af-av-n">${a ? avOf(a) : 0}%</b></div></div>
     <div class="f"><label for="af-titulo">Atividade <span class="req">*</span></label><input id="af-titulo" maxlength="300" value="${esc(v.titulo||'')}" placeholder="ex.: Demolição da parede do eixo 8, trecho E–F" autocomplete="off"></div>
+    <div class="f"><label>Etiquetas <span class="lbl-h">serviço macro que liga atividades</span></label><div id="af-etq"></div></div>
     <div class="f"><label for="af-det">Detalhes / orientações para a equipe</label><textarea id="af-det" placeholder="Sequência, cuidados, liberações necessárias, contato no shopping…">${esc(v.detalhes||'')}</textarea></div>
     <div class="frow">
       <div class="f"><label for="af-forn">Fornecedor</label><input id="af-forn" list="dl-forn" value="${esc(v.fornecedor||'')}" placeholder="Selecione ou digite" autocomplete="off"></div>
@@ -736,6 +888,7 @@ function openForm(id){
   };
   $('af-tipo').onclick = e => { const b = e.target.closest('button[data-t]'); if (b){ tipo = b.dataset.t; syncTipo(); } };
   syncTipo();
+  const pk = tagPicker($('af-etq'), tagsOf(v));
   $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
   $('af-noite').addEventListener('change', () => { if (!$('af-fim').value || $('af-fim').value < $('af-noite').value) $('af-fim').value = $('af-noite').value; });
   $('af-av').oninput = e => { $('af-av-n').textContent = e.target.value + '%'; };
@@ -745,7 +898,8 @@ function openForm(id){
     const d = {noite:$('af-noite').value, fim:$('af-fim').value || $('af-noite').value, avanco:Number($('af-av').value) || 0, turno, prioridade:$('af-prior').value, tipoLocal:tipo,
       setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? $('af-pilar').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
       nivel:$('af-nivel').value.trim(), eixo:$('af-eixo').value.trim(), titulo:$('af-titulo').value.trim(), detalhes:$('af-det').value.trim(),
-      fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim()};
+      fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim(), etiquetas:pk.get()};
+    d.temEtiqueta = d.etiquetas.length > 0;
     if (!d.noite) return toast('Informe a data de início.');
     if (d.fim < d.noite) return toast('O término não pode ser antes do início.');
     if (!d.turno) return toast('Escolha o turno: diurno ou noturno.');
@@ -754,12 +908,61 @@ function openForm(id){
     if (tipo === 'shopping' && !d.local) return toast('Informe o local no shopping.');
     if (!d.titulo) return toast('Descreva a atividade.');
     if (!a){ createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite); toast('Atividade inserida.'); return; }
-    const gv = (o, k) => String((k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
+    const gv = (o, k) => String((k === 'etiquetas' ? tagsOf(o).join(', ') : k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
     const mudancas = Object.keys(FIELDS).filter(k => gv(a, k) !== gv(d, k)).map(k => ({campo:k, de:gv(a, k), para:gv(d, k)}));
     closeModal();
     if (mudancas.length) mutate(a.id, () => ({changes:d, ev:{tipo:'editou', mudancas}}), 'Alterações salvas.');
   };
   showModal(); setTimeout(() => $('af-titulo').focus(), 30);
+}
+// Campo de etiquetas: escolhe uma já usada (com sugestões) ou cria uma nova digitando e tocando em Enter.
+function tagPicker(el, initial){
+  let sel = [...initial];
+  el.classList.add('etq-pick');
+  el.innerHTML = `<div class="etq-box"><span class="etq-sel"></span><input class="etq-in" maxlength="60" autocomplete="off" enterkeyhint="done" aria-label="Adicionar etiqueta"></div><div class="etq-sug" hidden></div>`;
+  const box = el.querySelector('.etq-box'), selEl = el.querySelector('.etq-sel'), inp = el.querySelector('.etq-in'), sug = el.querySelector('.etq-sug');
+  const draw = () => {
+    selEl.innerHTML = sel.map((t, i) => `<span class="etq on" style="--tc:${tagCor(t)}">${ICON_TAG}<span>${esc(t)}</span><button type="button" data-rm="${i}" aria-label="Remover ${esc(t)}">×</button></span>`).join('');
+    inp.placeholder = sel.length ? 'Adicionar outra…' : 'Escolha ou crie (ex.: Demolição alvenaria eixo 8)';
+  };
+  const add = raw => {
+    const t = normTag(raw); if (!t) return;
+    const k = tagKey(t);
+    if (!sel.some(x => tagKey(x) === k)){
+      if (sel.length >= MAX_TAGS){ toast(`Use no máximo ${MAX_TAGS} etiquetas por atividade.`); return; }
+      sel.push(tagCatalog().get(k)?.nome || t);
+    }
+    inp.value = ''; draw(); sug.hidden = true;
+  };
+  let hi = 0;
+  const opts = () => [...sug.querySelectorAll('[data-sug]')];
+  const mark = () => opts().forEach((b, i) => b.classList.toggle('hi', i === hi));
+  const showSug = () => {
+    const q = tagKey(inp.value), cat = tagCatalog();
+    const list = [...cat.values()].filter(x => !sel.some(t => tagKey(t) === x.k) && (!q || x.k.includes(q)))
+      .sort((a, b) => (b.abertas > 0) - (a.abertas > 0) || b.ult - a.ult).slice(0, 8);
+    let h = list.map(x => `<button type="button" data-sug="${esc(x.nome)}" style="--tc:${tagCor(x.nome)}">${ICON_TAG}<span>${esc(x.nome)}</span><small>${x.n} ${x.n === 1 ? 'atividade' : 'atividades'}</small></button>`).join('');
+    if (q && !cat.has(q) && !sel.some(t => tagKey(t) === q)) h += `<button type="button" class="new" data-sug="${esc(normTag(inp.value))}" style="--tc:${tagCor(inp.value)}">${ICON_TAG}<span>Criar “${esc(normTag(inp.value))}”</span></button>`;
+    if (!q && !list.length) h = '<div class="etq-hint">Digite o nome do serviço macro e toque em Enter para criar a primeira etiqueta.</div>';
+    sug.innerHTML = h; sug.hidden = document.activeElement !== inp; hi = 0; if (q) mark();
+  };
+  inp.onfocus = showSug; inp.oninput = showSug;
+  inp.onblur = () => setTimeout(() => { if (document.activeElement !== inp) sug.hidden = true; }, 120);
+  inp.onkeydown = e => {
+    if (e.key === 'Enter'){ e.preventDefault(); const o = !sug.hidden && normTag(inp.value) ? opts()[hi] : null; add(o ? o.dataset.sug : inp.value); }
+    else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !sug.hidden && opts().length){ e.preventDefault(); hi = (hi + (e.key === 'ArrowDown' ? 1 : -1) + opts().length) % opts().length; mark(); }
+    else if (e.key === 'Backspace' && !inp.value && sel.length){ sel.pop(); draw(); }
+    else if (e.key === 'Escape' && !sug.hidden){ e.stopPropagation(); sug.hidden = true; }
+  };
+  sug.onmousedown = e => e.preventDefault();
+  sug.onclick = e => { const b = e.target.closest('[data-sug]'); if (b) add(b.dataset.sug); };
+  box.onclick = e => {
+    const r = e.target.closest('[data-rm]');
+    if (r){ sel.splice(Number(r.dataset.rm), 1); draw(); return; }
+    inp.focus();
+  };
+  draw();
+  return { get(){ if (normTag(inp.value)) add(inp.value); return [...sel]; } };
 }
 function showModal(){ $('modal').hidden = false; $('scrim').hidden = false; }
 function closeModal(){ $('modal').hidden = true; if ($('drawer').hidden) $('scrim').hidden = true; }
@@ -789,18 +992,24 @@ async function exportCsv(){
       s.forEach(d => { const v = d.data(SNAP); (hist[v.atividadeId] ||= []).push(v); });
     }
   } catch (e) { console.warn(e); }
-  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
+  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
   const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.noite}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 /* ================= cronograma quinzenal (Excel) ================= */
-function openCronograma(){
-  const ini0 = defaultNight(), ft = S.f.turno || '';
+function openCronograma(opts = {}){
+  const ft = S.f.turno || '', etq0 = opts.etq || '';
+  let ini0 = defaultNight();
+  if (etq0){ // pela etiqueta: começa hoje se houver atividade nos próximos 15 dias; senão, no primeiro início da etiqueta
+    const ls = [...all().values()].filter(a => hasTag(a, etq0) && a.status !== 'cancelada');
+    if (ls.length && !ls.some(a => a.noite <= addDays(ini0, 14) && fimOf(a) >= ini0)){ const ab = ls.filter(a => a.aberta); ini0 = (ab.length ? ab : ls).reduce((v, a) => a.noite < v ? a.noite : v, '9999'); }
+  }
+  const cat = [...tagCatalog().values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   $('sheet').innerHTML = `<h2>Gerar cronograma quinzenal</h2>
     <p class="ro" style="margin:-6px 0 16px">Cria a planilha Excel no padrão de cronograma SAENG, com as atividades que acontecem no período (início ou término dentro dos 15 dias). Canceladas não entram.</p>
     <form id="cf" novalidate>
@@ -810,6 +1019,10 @@ function openCronograma(){
       </div>
       <div class="f"><label>Turno</label><div class="seg" id="cf-turno">${[['','Todos'],['diurno','Diurno'],['noturno','Noturno']].map(([k,l]) => `<button type="button" data-t="${k}" aria-pressed="${k === ft}">${l}</button>`).join('')}</div></div>
       <div class="frow">
+        <div class="f"><label for="cf-etq">Etiqueta</label><select id="cf-etq"><option value="">Todas as atividades</option>${cat.map(x => `<option value="${esc(x.nome)}" ${tagKey(x.nome) === tagKey(etq0) ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></div>
+        <div class="f"><label>Agrupar por</label><div class="seg" id="cf-grp">${[['local','Setor / local'],['etq','Etiqueta']].map(([k,l]) => `<button type="button" data-g="${k}" aria-pressed="${k === (etq0 ? 'etq' : 'local')}">${l}</button>`).join('')}</div></div>
+      </div>
+      <div class="frow">
         <div class="f"><label for="cf-rev">Revisão</label><input id="cf-rev" value="00" maxlength="3" inputmode="numeric"></div>
         <div class="f"><label class="chk"><input type="checkbox" id="cf-conc" checked> Incluir concluídas no período</label></div>
       </div>
@@ -817,12 +1030,13 @@ function openCronograma(){
       <div class="cf-prev" id="cf-prev"></div>
       <div class="acts"><button type="button" class="btn ghost" id="cf-cancel">Cancelar</button><button class="btn pri" type="submit">Gerar Excel</button></div>
     </form>`;
-  let turno = ft;
+  let turno = ft, grp = etq0 ? 'etq' : 'local';
   const sel = () => {
     const ini = $('cf-ini').value; if (!ini) return [];
-    const fim = addDays(ini, 14), conc = $('cf-conc').checked;
-    return [...all().values()].filter(a => a.status !== 'cancelada' && (conc || a.status !== 'concluida') && (!turno || turnoOf(a) === turno) && a.noite <= fim && fimOf(a) >= ini);
+    const fim = addDays(ini, 14), conc = $('cf-conc').checked, et = $('cf-etq').value;
+    return [...all().values()].filter(a => a.status !== 'cancelada' && (conc || a.status !== 'concluida') && (!turno || turnoOf(a) === turno) && (!et || hasTag(a, et)) && a.noite <= fim && fimOf(a) >= ini);
   };
+  $('cf-grp').onclick = e => { const b = e.target.closest('button[data-g]'); if (!b) return; grp = b.dataset.g; for (const x of $('cf-grp').children) x.setAttribute('aria-pressed', String(x === b)); };
   const upd = () => {
     const ini = $('cf-ini').value;
     $('cf-fim').textContent = ini ? `${fmtDay(addDays(ini, 14))}/${addDays(ini, 14).slice(0,4)} · 15 dias` : '—';
@@ -830,29 +1044,34 @@ function openCronograma(){
     $('cf-prev').textContent = ini ? (n ? `${n} ${n === 1 ? 'atividade entra' : 'atividades entram'} no cronograma de ${fmtShort(ini)} a ${fmtShort(addDays(ini, 14))}.` : 'Nenhuma atividade nesse período.') : '';
   };
   $('cf-turno').onclick = e => { const b = e.target.closest('button[data-t]'); if (!b) return; turno = b.dataset.t; for (const x of $('cf-turno').children) x.setAttribute('aria-pressed', String(x === b)); upd(); };
-  $('cf-ini').onchange = upd; $('cf-conc').onchange = upd; upd();
+  $('cf-ini').onchange = upd; $('cf-conc').onchange = upd; $('cf-etq').onchange = upd; upd();
   $('cf-cancel').onclick = closeModal;
   $('cf').onsubmit = async e => {
     e.preventDefault();
     const ini = $('cf-ini').value; if (!ini) return toast('Escolha a data inicial.');
     const list = sel(); if (!list.length) return toast('Nenhuma atividade nesse período.');
     const rev = ($('cf-rev').value.trim() || '00').padStart(2, '0');
-    const groups = new Map();
-    for (const a of list){ const g = groupKey(a); const k = a.tipoLocal === 'shopping' ? 'z' : g.k; if (!groups.has(k)) groups.set(k, {k, label: a.tipoLocal === 'shopping' ? 'Shopping' : g.label, sub: a.tipoLocal === 'shopping' ? 'Lojas, mall, estacionamento e áreas de apoio' : g.sub, items:[]}); groups.get(k).items.push(a); }
-    const grupos = [...groups.values()].sort((x, y) => groupRank(x.k) - groupRank(y.k)).map(g => ({label:g.label, sub:g.sub,
+    const et = $('cf-etq').value, groups = new Map();
+    if (grp === 'etq'){
+      // cada atividade entra na etiqueta escolhida ou na primeira que tiver; sem etiqueta vai para o fim
+      for (const a of list){ const t = et ? (tagsOf(a).find(x => tagKey(x) === tagKey(et)) || et) : tagsOf(a)[0], k = t ? 'e:' + tagKey(t) : 'zz';
+        if (!groups.has(k)) groups.set(k, {k, label: t || 'Sem etiqueta', sub: t ? '' : 'Atividades avulsas', items:[]}); groups.get(k).items.push(a); }
+    } else for (const a of list){ const g = groupKey(a); const k = a.tipoLocal === 'shopping' ? 'z' : g.k; if (!groups.has(k)) groups.set(k, {k, label: a.tipoLocal === 'shopping' ? 'Shopping' : g.label, sub: a.tipoLocal === 'shopping' ? 'Lojas, mall, estacionamento e áreas de apoio' : g.sub, items:[]}); groups.get(k).items.push(a); }
+    const ordG = grp === 'etq' ? (x, y) => (x.k === 'zz') - (y.k === 'zz') || x.label.localeCompare(y.label, 'pt') : (x, y) => groupRank(x.k) - groupRank(y.k);
+    const grupos = [...groups.values()].sort(ordG).map(g => ({label:g.label, sub:g.sub,
       items: g.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || String(x.titulo).localeCompare(String(y.titulo), 'pt')).map(a => ({
         titulo: a.titulo, empresa: a.fornecedor || '', inicio: a.noite, fim: fimOf(a), status: a.status, avanco: avOf(a),
-        detalhe: [localLine(a), `turno ${TURNOS[turnoOf(a)].toLowerCase()}`, a.responsavel ? `resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · '),
+        detalhe: [localLine(a), `turno ${TURNOS[turnoOf(a)].toLowerCase()}`, a.responsavel ? `resp.: ${a.responsavel}` : '', grp === 'local' && tagsOf(a).length ? `etiqueta: ${tagsOf(a).join(', ')}` : ''].filter(Boolean).join(' · '),
       }))}));
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=8');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=9');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
         titulo: $('cf-tit').value.trim() || 'PROGRAMAÇÃO DE ATIVIDADES | SHOPPING IGUATEMI SP - ROOFTOP',
-        subtitulo: `OBRA 4107 | REVISÃO: ${rev} | ${hojeBR} - CRONOGRAMA QUINZENAL ${fmtShort(ini)} A ${fmtShort(fimP)}/${fimP.slice(0,4)}${turno ? ' - TURNO ' + TURNOS[turno].toUpperCase() : ''}`,
+        subtitulo: `OBRA 4107 | REVISÃO: ${rev} | ${hojeBR} - CRONOGRAMA QUINZENAL ${fmtShort(ini)} A ${fmtShort(fimP)}/${fimP.slice(0,4)}${turno ? ' - TURNO ' + TURNOS[turno].toUpperCase() : ''}${et ? ' - ' + et.toUpperCase() : ''}`,
         logoUrl: 'logo-saeng-cinza.png',
         arquivo: `4107_ROOFTOP_IGSP_ATIVIDADES_CRONOGRAMA_REV${rev}_${ini}${turno ? '_' + turno.toUpperCase() : ''}.xlsx`,
       });
@@ -871,7 +1090,7 @@ async function exportPdf(){
   if (!acts.length){ toast('Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=8');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=9');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -891,7 +1110,14 @@ async function exportPdf(){
 /* ================= eventos ================= */
 document.addEventListener('click', e => {
   const t = e.target;
-  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); const mp = $('dw-more-pop'); if (mp) mp.hidden = true; }
+  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } }
+  const etqEl = t.closest('[data-etq]'); if (etqEl) return openTag(etqEl.dataset.etq);
+  if (t.closest('[data-etq-back]')){ S.etq = null; window.scrollTo({top:0}); return renderAll(); }
+  if (t.closest('#etq-more-b')){ const mp = $('etq-more-pop'); mp.hidden = !mp.hidden; return; }
+  const ea = t.closest('[data-etq-act]'); if (ea){ $('etq-more-pop').hidden = true; return openRetag(ea.dataset.etqAct); }
+  if (t.closest('#etq-crono')) return openCronograma({etq:S.etq});
+  if (t.closest('#etq-new')) return openForm(null, {etiquetas:[S.etq], noite:defaultNight()});
+  if (t.closest('#etq-enc-tg')){ S.etqEnc = !S.etqEnc; return renderAll(); }
   const tab = t.closest('.tab'); if (tab) return setTab(tab.dataset.tab);
   const cardEl = t.closest('.card[data-id], .act[data-id]'); if (cardEl) return openDrawer(cardEl.dataset.id);
   const chip = t.closest('.chip[data-st]'); if (chip){ S.f.status = S.f.status === chip.dataset.st ? '' : chip.dataset.st; return renderAll(); }
@@ -928,11 +1154,13 @@ try { const t = localStorage.getItem('pn-turno'); if (t === 'diurno' || t === 'n
 $('f-turno').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.f.turno = b.dataset.t || ''; try { localStorage.setItem('pn-turno', S.f.turno); } catch {} renderAll(); };
 $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
 $('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
+$('f-etq').onchange = e => { S.f.etq = e.target.value; renderAll(); };
+$('etq-q').oninput = () => renderAll();
 ['h-dias','h-user','h-tipo'].forEach(id => { $(id).onchange = renderAll; });
 $('b-new').onclick = () => openForm(null);
 $('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
 $('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
-$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = ''; renderAll(); };
+$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = S.f.etq = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = $('f-etq').value = ''; renderAll(); };
 $('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
 $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
 $('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };
