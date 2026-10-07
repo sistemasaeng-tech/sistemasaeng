@@ -82,6 +82,10 @@ export async function gerarRelatorioPDF(ctx){
   color(C.muted); font('normal', 9);
   const prio = [criticas ? `${criticas} de prioridade crítica` : '', altas ? `${altas} de prioridade alta` : ''].filter(Boolean).join(' · ');
   text(`${ctx.turnoLabel} · situação em ${ctx.hojeLabel} · não inclui concluídas nem canceladas${prio ? ' · ' + prio : ''}`, M, y + 5.5);
+  if (ctx.filtros){
+    font('bold', 8); const fl = t('Filtro: ' + ctx.filtros), fw = doc.getTextWidth(fl) + 6;
+    fill(mix(C.laranja, .85)); doc.roundedRect(W - M - fw, y - 4.6, fw, 6.4, 1.6, 1.6, 'F'); color(C.laranjaTx); text(fl, W - M - 3, y, {align:'right'});
+  }
 
   // ---------- indicadores ----------
   y += 10;
@@ -199,7 +203,8 @@ export async function gerarRelatorioPDF(ctx){
     headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:7.6, lineWidth:0},
     alternateRowStyles:{fillColor:[250,250,251]},
   };
-  const COLW = {0:78, 1:36, 2:26, 3:16, 4:32, 5:26}; // a última coluna (observação) ocupa o restante
+  const COLW = {0:70, 1:32, 2:24, 3:14, 4:30, 5:25, 6:28}; // a última coluna (observação) ocupa o restante
+  const nomeDe = ctx.nomeDe || (() => '-');
   doc.addPage(); y = TOP + 6;
   color(C.ink); font('bold', 14); text('Atividades por setor', M, y);
   color(C.muted); font('normal', 8.5); text('Atividades em aberto agrupadas por setor, ordenadas por prioridade, status e data.', M, y + 5.2);
@@ -224,13 +229,13 @@ export async function gerarRelatorioPDF(ctx){
     y += 13;
     const items = [...g.items].sort((a, b) => prRank(a.prioridade) - prRank(b.prioridade) || ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.noite).localeCompare(String(b.noite)));
     doc.autoTable({...tblBase, startY: y,
-      head:[['Atividade', 'Etiqueta', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Motivo / última observação']],
+      head:[['Atividade', 'Etiqueta', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Inserida por', 'Motivo / última observação']],
       body: items.map(a => {
         const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · ');
         const et = Array.isArray(a.etiquetas) && a.etiquetas.length ? a.etiquetas.join('\n') : '-';
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(et), `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
+        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(et), `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t(nomeDe(a.criadoPor)) + (a.criadoEm && ctx.fmtTs ? '\n' + ctx.fmtTs(a.criadoEm) : ''), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
       }),
-      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1], textColor:C.muted}, 2:{cellWidth:COLW[2]}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:'auto'}},
+      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1], textColor:C.muted}, 2:{cellWidth:COLW[2]}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:COLW[6]}, 7:{cellWidth:'auto'}},
       didParseCell: d => {
         if (d.section !== 'body') return;
         if (d.column.index === 3 && /\d+ d/.test(String(d.cell.raw))){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; }

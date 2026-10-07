@@ -117,7 +117,7 @@ const S = {
   usuarios:{}, cad:{fornecedores:[],setores:[],niveis:[],pilares:[],locais:[]}, cadLoaded:false,
   win:new Map(), open:new Map(), extra:new Map(), tagged:new Map(), feed:[], dwHist:[], etq:null,
   noite:defaultNight(), winFrom:addDays(defaultNight(), -35), tab:'noite',
-  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:'',etq:''}, cadSub:null, cadDel:null, openId:null, dwMode:null,
+  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:'',etq:'',autor:''}, cadSub:null, cadDel:null, openId:null, dwMode:null,
 };
 const isAdmin = () => S.perfil?.papel === 'admin';
 const canWrite = () => ['usuario','admin'].includes(S.perfil?.papel);
@@ -302,6 +302,7 @@ function matches(a){
   if (f.forn && a.fornecedor !== f.forn) return false;
   if (f.status && a.status !== f.status) return false;
   if (f.etq && !hasTag(a, f.etq)) return false;
+  if (f.autor && a.criadoPor !== f.autor) return false;
   if (f.q){ const hay = [a.titulo,a.detalhes,a.fornecedor,a.responsavel,localLine(a),a.ultimaObs,a.motivo,...tagsOf(a)].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
   return true;
 }
@@ -328,7 +329,7 @@ function renderNight(){
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
   $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status===k}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
-  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn, S.f.etq].filter(Boolean).length;
+  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn, S.f.etq, S.f.autor].filter(Boolean).length;
   $('f-count').hidden = !nf; $('f-count').textContent = nf;
   const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
@@ -610,6 +611,14 @@ function fillFilterOptions(){
   e.innerHTML = '<option value="">Todas as etiquetas</option>' + cat.map(x => `<option value="${esc(x.nome)}">${esc(x.nome)}</option>`).join('');
   e.value = S.f.etq && cat.some(x => x.k === tagKey(S.f.etq)) ? cat.find(x => x.k === tagKey(S.f.etq)).nome : '';
   if (!e.value) S.f.etq = '';
+  // quem inseriu: pessoas com atividades lançadas + usuários liberados
+  const au = $('f-autor'), ids = new Set();
+  for (const a of all().values()) if (a.criadoPor) ids.add(a.criadoPor);
+  for (const [id, u] of Object.entries(S.usuarios)) if (['usuario','admin'].includes(u.papel)) ids.add(id);
+  const ord = [...ids].sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt'));
+  au.innerHTML = '<option value="">Todas as pessoas</option>' + ord.map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('');
+  au.value = ids.has(S.f.autor) ? S.f.autor : '';
+  if (!au.value) S.f.autor = '';
 }
 
 /* ================= render geral ================= */
@@ -676,7 +685,7 @@ function renderDrawerHead(){
   if (!S.avEdit) renderAv(a);
   const d1 = durOf(a);
   const kv = [['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
-    a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo previsto', a.efetivo] : null, a.motivo ? ['Motivo', a.motivo] : null].filter(Boolean);
+    a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo previsto', a.efetivo] : null, a.motivo ? ['Motivo', a.motivo] : null, ['Inserida por', `${nameOf(a.criadoPor)}${roleOf(a.criadoPor) ? ' (' + roleOf(a.criadoPor) + ')' : ''}${a.criadoEm ? ' · ' + fmtTs(a.criadoEm) : ''}`]].filter(Boolean);
   $('dw-info').innerHTML = `<dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
 }
 // avanço: a própria barra do topo é o controle
@@ -991,7 +1000,7 @@ function openPerfil(){
 async function exportCsv(){
   const acts = [...all().values()];
   const ft = S.f.turno, inT = a => !ft || turnoOf(a) === ft;
-  const rows = [...sortActs(acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite && inT(a))), ...acts.filter(a => a.aberta && fimOf(a) < S.noite && inT(a)).sort((x,y) => fimOf(x).localeCompare(fimOf(y)))];
+  const rows = [...sortActs(acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite && inT(a) && matches(a))), ...acts.filter(a => a.aberta && fimOf(a) < S.noite && inT(a) && matches(a)).sort((x,y) => fimOf(x).localeCompare(fimOf(y)))];
   const hist = {};
   try {
     const ids = rows.map(a => a.id);
@@ -1074,7 +1083,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=11');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=12');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1091,20 +1100,33 @@ function openCronograma(opts = {}){
 
 /* ================= relatório PDF ================= */
 let gerandoPdf = false;
+// texto dos filtros ativos (aparece no relatório)
+function filtrosTxt(){
+  const f = S.f, p = [];
+  if (f.autor) p.push(`inseridas por ${nameOf(f.autor)}`);
+  if (f.status) p.push(`status ${STATUS[f.status].label.toLowerCase()}`);
+  if (f.tipo) p.push(TIPO_LABEL[f.tipo].toLowerCase());
+  if (f.setor) p.push(`setor ${f.setor}`);
+  if (f.forn) p.push(`fornecedor ${f.forn}`);
+  if (f.etq) p.push(`etiqueta ${f.etq}`);
+  if (f.q) p.push(`busca "${f.q}"`);
+  return p.join(' · ');
+}
 async function exportPdf(){
   if (gerandoPdf) return;
   const ft = S.f.turno;
-  const acts = [...all().values()].filter(a => a.aberta && STATUS[a.status]?.aberta && (!ft || turnoOf(a) === ft));
-  if (!acts.length){ toast('Não há atividades em aberto para o relatório.'); return; }
+  const acts = [...all().values()].filter(a => a.aberta && STATUS[a.status]?.aberta && (!ft || turnoOf(a) === ft) && matches(a));
+  if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=11');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=12');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
       setores: S.cad.setores, localLine, fmtShort, diasEntre: nightsBetween, fimOf, avOf,
       turnoLabelDe: a => TURNOS[turnoOf(a)],
       turnoLabel: ft ? `Turno ${TURNOS[ft].toLowerCase()}` : 'Turnos diurno e noturno',
+      filtros: filtrosTxt(), nomeDe: id => id ? nameOf(id) : '-', fmtTs,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`,
       emitidoPor: S.perfil?.nome || 'Usuário',
       logoUrl: 'logo-saeng.png',
@@ -1164,12 +1186,13 @@ $('f-turno').onclick = e => { const b = e.target.closest('button'); if (!b) retu
 $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
 $('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
 $('f-etq').onchange = e => { S.f.etq = e.target.value; renderAll(); };
+$('f-autor').onchange = e => { S.f.autor = e.target.value; renderAll(); };
 $('etq-q').oninput = () => renderAll();
 ['h-dias','h-user','h-tipo'].forEach(id => { $(id).onchange = renderAll; });
 $('b-new').onclick = () => openForm(null);
 $('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
 $('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
-$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = S.f.etq = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = $('f-etq').value = ''; renderAll(); };
+$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = S.f.etq = S.f.autor = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = $('f-etq').value = $('f-autor').value = ''; renderAll(); };
 $('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
 $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
 $('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };
