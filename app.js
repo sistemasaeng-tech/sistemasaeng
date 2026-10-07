@@ -23,6 +23,8 @@ const STATUS = {
   cancelada:    {label:'Cancelada',    c:'--st-canc', aberta:false, obs:true},
 };
 const ORDER = ['programada','andamento','parcial','nao_iniciada','impedida','concluida','cancelada'];
+const PLURAL = {programada:'programadas', andamento:'em andamento', parcial:'parciais', nao_iniciada:'não iniciadas', impedida:'impedidas', concluida:'concluídas', cancelada:'canceladas'};
+const stN = (k, n) => n === 1 ? STATUS[k].label.toLowerCase() : PLURAL[k];
 const MOTIVOS = ['Equipe não compareceu','Efetivo insuficiente','Falta de material','Falta de equipamento','Frente não liberada','Liberação do shopping / cliente','PT / liberação de segurança não emitida','Interferência com outra equipe','Serviço antecessor não concluído','Chuva / condição climática','Outro'];
 const PRIOR = {normal:'Normal', alta:'Alta', critica:'Crítica'};
 const FUNCOES = ['Coordenador','Residente','Engenheiro','Encarregado','Mestre de obras','Técnico de segurança','Planejamento','Outro'];
@@ -276,10 +278,10 @@ const sortActs = list => list.sort((x,y) => prRank(x.prioridade)-prRank(y.priori
 function renderNight(){
   const today = S.noite === defaultNight(), ft = S.f.turno;
   $('night-title').textContent = today ? 'Hoje' : fmtDay(S.noite);
-  $('night-sub').textContent = ft === 'noturno' ? fmtNightLong(S.noite) + ' · turno noturno' : ft === 'diurno' ? fmtDay(S.noite) + ' · turno diurno' : (today ? fmtDay(S.noite) + ' · ' : '') + 'turnos diurno e noturno';
-  $('night-eyebrow').textContent = ft ? `Turno ${TURNOS[ft].toLowerCase()}` : 'Todos os turnos';
+  $('night-sub').textContent = (today ? fmtDay(S.noite) + ' · ' : '') + (ft === 'noturno' ? 'turno noturno' : ft === 'diurno' ? 'turno diurno' : 'turnos diurno e noturno');
   { const d = parseYmd(S.noite); $('night-label').textContent = `${DOW[d.getDay()].slice(0,3)} ${fmtShort(S.noite)}`; }
   $('n-date').value = S.noite;
+  $('n-today').hidden = today;
   for (const b of document.querySelectorAll('#f-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
   const acts = [...all().values()].filter(a => !ft || turnoOf(a) === ft);
   const tonight = acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite);
@@ -287,22 +289,26 @@ function renderNight(){
   const cnt = {}; ORDER.forEach(k => cnt[k] = 0); tonight.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
   const total = tonight.length;
   const bar = total ? ORDER.filter(k => cnt[k]).map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
-  $('summary').innerHTML = `<div class="big">${cnt.concluida}<small>de ${total} concluídas</small></div>
-    <div class="bar" role="img" aria-label="Distribuição por status">${bar}</div>
-    <div class="chips">${ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status===k}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('')}
-    ${pend.length ? `<button type="button" class="chip" data-jump="pend"><span class="dot" style="--c:var(--st-nao)"></span>Pendentes anteriores <b>${pend.length}</b></button>` : ''}</div>`;
+  const leg = ORDER.filter(k => k !== 'concluida' && cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`);
+  if (pend.length) leg.push(`<button type="button" class="sum-pend" data-jump="pend"><i class="dot" style="--c:var(--st-nao)"></i>${pend.length} ${pend.length === 1 ? 'pendente' : 'pendentes'} de dias anteriores</button>`);
+  $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${cnt.concluida}</b><span>de ${total} concluídas</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
+    ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
+  // painel de filtros
+  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status===k}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
+  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn].filter(Boolean).length;
+  $('f-count').hidden = !nf; $('f-count').textContent = nf;
   const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
   $('c-pend').textContent = p.length === pend.length ? `${p.length}` : `${p.length} de ${pend.length}`;
   $('h-tonight').textContent = today ? 'Programadas para hoje' : `Programadas para ${fmtShort(S.noite)}`;
   let html;
-  if (!tonight.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Use “Nova atividade” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
+  if (!tonight.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
   else if (!t.length) html = '<div class="empty">Nenhuma atividade com esses filtros.</div>';
   else if (ft) html = grouped(t, false);
   else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false)}</div>` : ''; }).join('');
   $('l-tonight').innerHTML = html;
-  $('l-pend').innerHTML = !pend.length ? '<div class="empty">Nada pendente de dias anteriores.</div>'
-    : !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
+  $('sec-pend').hidden = !pend.length;
+  $('l-pend').innerHTML = !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
   $('b-new').hidden = !canWrite();
 }
 function grouped(list, isPend){
@@ -312,15 +318,19 @@ function grouped(list, isPend){
     .map(g => `<div class="grp"><div class="grp-h"><b>${esc(g.label)}</b>${g.sub ? `<span>${esc(g.sub)}</span>` : ''}</div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`).join('');
 }
 function card(a, isPend){
-  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), S.noite) : 0, tags = [turnoTag(turnoOf(a))], av = avOf(a);
-  if (a.prioridade && a.prioridade !== 'normal') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
+  const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), S.noite) : 0, av = avOf(a);
+  const meta = [localLine(a), a.fornecedor].filter(Boolean).join(' · ');
+  const tags = [];
+  if (a.prioridade === 'critica' || a.prioridade === 'alta') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
   if (fimOf(a) !== a.noite) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`);
   if (isPend) tags.push(`<span class="tag since">venceu ${fmtShort(fimOf(a))} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
-  const obs = a.ultimaObs || a.motivo ? `<div class="obs">${a.motivo ? `<b>${esc(a.motivo)}</b>${a.ultimaObs ? ' — ' : ''}` : ''}${esc(a.ultimaObs||'')}</div>` : '';
+  const alerta = (a.status === 'impedida' || a.status === 'nao_iniciada') && (a.motivo || a.ultimaObs) ? `<div class="c-alert">${esc(a.motivo || a.ultimaObs)}</div>` : '';
   return `<button type="button" class="card" data-id="${esc(a.id)}" style="--c:${cvar(a.status)}"><span class="stripe"></span>
-    <span class="body"><div class="t">${esc(a.titulo)}</div><div class="m">${esc(localLine(a))}</div>
-    <div class="row">${a.fornecedor ? `<span><b>${esc(a.fornecedor)}</b></span>` : '<span>Fornecedor não informado</span>'}${a.responsavel ? `<span>Resp.: ${esc(a.responsavel)}</span>` : ''}${a.efetivo ? `<span>Efetivo prev.: ${esc(a.efetivo)}</span>` : ''}${tags.join('')}</div><div class="prog-row">${progBar(av)}</div>${obs}</span>
-    <span class="side"><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span><span class="when">${esc(nameOf(a.atualizadoPor))} · ${esc(fmtTs(a.atualizadoEm))}</span></span></button>`;
+    <span class="body">
+      <span class="c-top"><span class="t">${esc(a.titulo)}</span><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span></span>
+      <span class="m">${esc(meta)}</span>${alerta}
+      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
+    </span></button>`;
 }
 
 /* ================= histórico ================= */
@@ -493,7 +503,7 @@ function setNight(n){
 
 /* ================= painel da atividade ================= */
 function openDrawer(id){
-  S.openId = id; S.dwMode = null; S.dwHist = [];
+  S.openId = id; S.dwMode = null; S.dwHist = []; S.avEdit = false; S.histOpen = false; S.moreOpen = false;
   $('drawer').hidden = false; $('scrim').hidden = false; $('dw-panel').innerHTML = '';
   document.querySelector('.dw-scroll').scrollTop = 0;
   if (S.unsubDw) S.unsubDw(); if (S.unsubDwHist) S.unsubDwHist();
@@ -513,32 +523,69 @@ function closeDrawer(){
 }
 function renderDrawerHead(){
   const a = all().get(S.openId);
-  if (!a){ $('dw-head').innerHTML = '<p class="ro">Carregando…</p>'; $('dw-pill').innerHTML = ''; return; }
+  if (!a){ $('dw-head').innerHTML = '<p class="ro">Carregando…</p>'; $('dw-pill').innerHTML = ''; $('dw-info').innerHTML = ''; $('dw-av').innerHTML = ''; return; }
   const st = STATUS[a.status] || STATUS.programada;
   $('dw-pill').innerHTML = `<span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span>`;
+  $('dw-head').innerHTML = `<div class="dw-tags">${turnoTag(turnoOf(a))}${a.prioridade === 'critica' || a.prioridade === 'alta' ? `<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>` : ''}</div><h2 class="dw-title">${esc(a.titulo)}</h2>`;
+  if (!S.avEdit) renderAv(a);
   const d1 = durOf(a);
-  const kv = [['Turno', TURNOS[turnoOf(a)]], ['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
-    a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo prev.', a.efetivo] : null, ['Prioridade', PRIOR[a.prioridade] || 'Normal'],
-    a.motivo ? ['Motivo', a.motivo] : null, ['Inserida por', `${nameOf(a.criadoPor)} em ${fmtTs(a.criadoEm)}`], ['Última alteração', `${nameOf(a.atualizadoPor)} em ${fmtTs(a.atualizadoEm)}`]].filter(Boolean);
-  $('dw-head').innerHTML = `<div class="dw-tags">${turnoTag(turnoOf(a))}<span class="ro">${esc(TIPO_LABEL[a.tipoLocal]||'')}</span></div><h2 class="dw-title">${esc(a.titulo)}</h2>
-    <div class="dw-prog"><span class="dw-prog-l">Avanço</span>${progBar(avOf(a))}</div><dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
+  const kv = [['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
+    a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo previsto', a.efetivo] : null, a.motivo ? ['Motivo', a.motivo] : null].filter(Boolean);
+  $('dw-info').innerHTML = `<dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
+}
+// avanço: a própria barra do topo é o controle
+function renderAv(a){
+  const v = avOf(a), w = canWrite();
+  if (!S.avEdit){
+    $('dw-av').innerHTML = `<${w ? 'button type="button" id="av-open"' : 'div'} class="av-row${w ? ' edit' : ''}"><span class="av-l">Avanço</span>${progBar(v)}${w ? '<span class="av-ed">Ajustar</span>' : ''}</${w ? 'button' : 'div'}>`;
+    if (w) $('av-open').onclick = () => { S.avEdit = true; renderAv(all().get(S.openId) || a); };
+    return;
+  }
+  $('dw-av').innerHTML = `<div class="av-edit">
+    <div class="av-big"><b id="av-n">${v}%</b><span class="prog lg"><i id="av-bar" style="width:${v}%"></i></span></div>
+    <input type="range" id="av-r" class="range" min="0" max="100" step="5" value="${v}" aria-label="Avanço em porcentagem">
+    <div class="av-quick">${[0,25,50,75,100].map(x => `<button type="button" class="chip" data-av="${x}">${x}%</button>`).join('')}</div>
+    <div class="acts"><button type="button" class="btn ghost" id="av-cancel">Cancelar</button><button type="button" class="btn pri" id="av-save">Salvar avanço</button></div></div>`;
+  const sync = x => { $('av-r').value = x; $('av-n').textContent = x + '%'; $('av-bar').style.width = x + '%'; };
+  $('av-r').oninput = e => sync(e.target.value);
+  $('dw-av').querySelector('.av-quick').onclick = e => { const b = e.target.closest('[data-av]'); if (b) sync(b.dataset.av); };
+  $('av-cancel').onclick = () => { S.avEdit = false; renderAv(all().get(S.openId) || a); };
+  $('av-save').onclick = () => {
+    const nv = Number($('av-r').value), cur = all().get(S.openId) || a;
+    S.avEdit = false;
+    if (nv === avOf(cur)){ renderAv(cur); return toast('O avanço não mudou.'); }
+    mutate(S.openId, c => ({changes:{avanco:nv}, ev:{tipo:'avanco', de:avOf(c), para:nv}}), nv === 100 && cur.status !== 'concluida' ? 'Avanço em 100%. Quando finalizar, mude o status para Concluída.' : `Avanço atualizado para ${nv}%.`);
+    renderAv({...cur, avanco:nv});
+  };
 }
 function renderDrawerActions(){
   const a = all().get(S.openId); if (!a){ $('dw-actions').innerHTML = ''; return; }
   if (!canWrite()){ $('dw-actions').innerHTML = '<p class="readonly">Acesso de visualização: você consulta a atividade e o histórico, sem alterar.</p>'; return; }
-  $('dw-actions').innerHTML = `<div class="lbl">Atualizar status</div>
-    <div class="stbtns">${ORDER.filter(k => k !== a.status).map(k => `<button type="button" class="stb" data-mode="status:${k}" style="--c:${cvar(k)}">${esc(STATUS[k].label)}</button>`).join('')}</div>
-    <div class="morebtns"><button type="button" class="btn pri" data-mode="avanco">Atualizar avanço</button><button type="button" class="btn" data-mode="obs">Adicionar observação</button><button type="button" class="btn" data-mode="reprog">Reprogramar</button>
-      <button type="button" class="btn" data-mode="edit">Editar dados</button><button type="button" class="btn" data-mode="dup">Duplicar</button>
-      ${isAdmin() ? '<button type="button" class="btn danger" data-mode="del">Excluir</button>' : ''}</div>`;
+  $('dw-actions').innerHTML = `<div class="dw-bar">
+      <button type="button" class="btn dw-st" data-mode="status"><span class="dot" style="--c:${cvar(a.status)}"></span>Mudar status<svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg></button>
+      <button type="button" class="btn" data-mode="obs">Observação</button>
+      <div class="menu dw-more"><button type="button" class="ibtn" id="dw-more-b" aria-haspopup="true" aria-expanded="false" aria-label="Mais ações"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        <div class="menu-pop" id="dw-more-pop" hidden>
+          <button type="button" data-mode="reprog">Reprogramar</button>
+          <button type="button" data-mode="edit">Editar dados</button>
+          <button type="button" data-mode="dup">Duplicar</button>
+          ${isAdmin() ? '<button type="button" class="m-danger" data-mode="del">Excluir</button>' : ''}
+        </div></div>
+    </div>`;
+  $('dw-more-b').onclick = e => { e.stopPropagation(); const p = $('dw-more-pop'); p.hidden = !p.hidden; $('dw-more-b').setAttribute('aria-expanded', String(!p.hidden)); };
 }
 function setMode(mode){
   if (!canWrite()) return;
+  { const mp = $('dw-more-pop'); if (mp) mp.hidden = true; }
   if (mode === 'edit'){ openForm(S.openId); return; }
   S.dwMode = mode || null;
   const a = all().get(S.openId), p = $('dw-panel');
   if (!a || !mode){ p.innerHTML = ''; renderDrawerActions(); return; }
   const cancel = '<button type="button" class="btn ghost" data-mode="">Cancelar</button>';
+  if (mode === 'status'){
+    p.innerHTML = `<div class="panel st-list"><h4>Mudar status</h4>${ORDER.filter(k => k !== a.status).map(k => `<button type="button" class="st-opt" data-mode="status:${k}" style="--c:${cvar(k)}"><span class="dot"></span><span>${esc(STATUS[k].label)}</span>${STATUS[k].motivo ? '<small>pede motivo</small>' : STATUS[k].obs ? '<small>pede observação</small>' : ''}</button>`).join('')}<div class="acts">${cancel}</div></div>`;
+    return;
+  }
   if (mode.startsWith('status:')){
     const k = mode.slice(7), st = STATUS[k];
     p.innerHTML = `<form class="panel" id="pf"><h4>Mudar para <span class="pill" style="--c:${cvar(k)}">${esc(st.label)}</span></h4>
@@ -554,22 +601,6 @@ function setMode(mode){
       mutate(S.openId, cur => ({changes:{status:k, aberta:st.aberta, motivo:st.motivo ? motivo : '', pct:st.pct ? pct : '', ...(k === 'concluida' ? {avanco:100} : st.pct && pct ? {avanco:Number(pct)} : {}), ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'status', de:cur.status, para:k, motivo, obs, pct}}), `Status alterado para ${st.label}.`);
     };
     (p.querySelector('#pf-motivo') || p.querySelector('#pf-obs')).focus();
-  } else if (mode === 'avanco'){
-    const v0 = avOf(a);
-    p.innerHTML = `<form class="panel" id="pf"><h4>Atualizar avanço</h4>
-      <div class="av-big"><b id="pf-av-n">${v0}%</b><span class="prog lg"><i id="pf-av-bar" style="width:${v0}%"></i></span></div>
-      <input type="range" id="pf-av" class="range" min="0" max="100" step="5" value="${v0}" aria-label="Avanço em porcentagem">
-      <div class="av-quick">${[0,25,50,75,100].map(x => `<button type="button" class="btn" data-av="${x}">${x}%</button>`).join('')}</div>
-      <div class="f"><label for="pf-obs">Observação (opcional)</label><textarea id="pf-obs" placeholder="O que foi executado, o que falta…"></textarea></div>
-      <div class="acts">${cancel}<button class="btn pri" type="submit">Salvar avanço</button></div></form>`;
-    const sync = v => { $('pf-av').value = v; $('pf-av-n').textContent = v + '%'; $('pf-av-bar').style.width = v + '%'; };
-    $('pf-av').oninput = e => sync(e.target.value);
-    p.querySelector('.av-quick').onclick = e => { const b = e.target.closest('[data-av]'); if (b) sync(b.dataset.av); };
-    $('pf').onsubmit = e => {
-      e.preventDefault(); const v = Number($('pf-av').value), obs = $('pf-obs').value.trim();
-      if (v === v0 && !obs) return toast('O avanço não mudou.');
-      mutate(S.openId, cur => ({changes:{avanco:v, ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'avanco', de:avOf(cur), para:v, obs}}), v === 100 && a.status !== 'concluida' ? 'Avanço em 100%. Quando finalizar, mude o status para Concluída.' : `Avanço atualizado para ${v}%.`);
-    };
   } else if (mode === 'obs'){
     p.innerHTML = `<form class="panel" id="pf"><h4>Observação</h4><div class="f"><label for="pf-obs">Texto <span class="req">*</span></label><textarea id="pf-obs"></textarea></div><div class="acts">${cancel}<button class="btn pri" type="submit">Registrar</button></div></form>`;
     $('pf').onsubmit = e => { e.preventDefault(); const obs = $('pf-obs').value.trim(); if (!obs) return toast('Escreva a observação.'); mutate(S.openId, () => ({changes:{ultimaObs:obs}, ev:{tipo:'obs', obs}}), 'Observação registrada.'); };
@@ -606,12 +637,20 @@ function setMode(mode){
     };
   }
 }
+function tlItem(ev, a){
+  const c = ev.tipo === 'status' ? cvar(ev.para) : ev.tipo === 'criou' ? 'var(--brand)' : ev.tipo === 'avanco' ? 'var(--brand)' : 'var(--faint)';
+  return `<li style="--c:${c}"><span class="d"></span><div class="h"><b>${esc(nameOf(ev.u))}</b> ${evText({...ev, noiteAtv:ev.noiteAtv || a?.noite})}</div><div class="ts">${esc(fmtTs(ev.t))}${roleOf(ev.u) ? ' · ' + esc(roleOf(ev.u)) : ''}</div>${evExtra(ev)}</li>`;
+}
 function renderTimeline(){
-  const a = all().get(S.openId);
-  $('dw-tl').innerHTML = [...S.dwHist].reverse().map(ev => {
-    const c = ev.tipo === 'status' ? cvar(ev.para) : ev.tipo === 'criou' ? 'var(--accent)' : 'var(--faint)';
-    return `<li style="--c:${c}"><span class="d"></span><div class="h"><b>${esc(nameOf(ev.u))}</b>${roleOf(ev.u) ? ` <span class="ro">${esc(roleOf(ev.u))}</span>` : ''} ${evText({...ev, noiteAtv:ev.noiteAtv || a?.noite})}</div><div class="ts">${esc(fmtTs(ev.t))}</div>${evExtra(ev)}</li>`;
-  }).join('') || '<li class="ro">Carregando…</li>';
+  const a = all().get(S.openId), hs = [...S.dwHist].reverse();
+  $('dw-last').innerHTML = hs.length ? tlItem(hs[0], a) : '<li class="ro">Carregando…</li>';
+  const rest = hs.slice(1);
+  const tg = $('dw-hist-tg');
+  tg.hidden = !rest.length;
+  tg.textContent = S.histOpen ? 'Ocultar histórico' : `Ver histórico completo (${hs.length} registros)`;
+  tg.onclick = () => { S.histOpen = !S.histOpen; renderTimeline(); };
+  $('dw-tl').hidden = !S.histOpen || !rest.length;
+  $('dw-tl').innerHTML = S.histOpen ? rest.map(ev => tlItem(ev, a)).join('') : '';
 }
 
 /* ================= escrita ================= */
@@ -808,7 +847,7 @@ function openCronograma(){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=7');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=8');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -832,7 +871,7 @@ async function exportPdf(){
   if (!acts.length){ toast('Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=7');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=8');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -852,11 +891,11 @@ async function exportPdf(){
 /* ================= eventos ================= */
 document.addEventListener('click', e => {
   const t = e.target;
-  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('exp-pop').hidden = true; $('b-export').setAttribute('aria-expanded','false'); }
+  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); const mp = $('dw-more-pop'); if (mp) mp.hidden = true; }
   const tab = t.closest('.tab'); if (tab) return setTab(tab.dataset.tab);
   const cardEl = t.closest('.card[data-id], .act[data-id]'); if (cardEl) return openDrawer(cardEl.dataset.id);
   const chip = t.closest('.chip[data-st]'); if (chip){ S.f.status = S.f.status === chip.dataset.st ? '' : chip.dataset.st; return renderAll(); }
-  if (t.closest('.chip[data-jump]')) return $('l-pend').scrollIntoView({behavior:'smooth', block:'start'});
+  if (t.closest('[data-jump]')) return $('sec-pend').scrollIntoView({behavior:'smooth', block:'start'});
   const m = t.closest('[data-mode]'); if (m && $('drawer').contains(m)) return setMode(m.dataset.mode || null);
   const cadRow = t.closest('[data-cad]'); if (cadRow){ S.cadSub = cadRow.dataset.cad; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
   if (t.closest('[data-cad-back]')){ S.cadSub = null; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
@@ -891,10 +930,12 @@ $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
 $('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
 ['h-dias','h-user','h-tipo'].forEach(id => { $(id).onchange = renderAll; });
 $('b-new').onclick = () => openForm(null);
-$('b-export').onclick = () => { const p = $('exp-pop'); p.hidden = !p.hidden; $('b-export').setAttribute('aria-expanded', String(!p.hidden)); };
-$('exp-csv').onclick = () => { $('exp-pop').hidden = true; exportCsv(); };
-$('b-crono').onclick = openCronograma;
-$('exp-pdf').onclick = () => { $('exp-pop').hidden = true; exportPdf(); };
+$('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
+$('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
+$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = ''; renderAll(); };
+$('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
+$('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
+$('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };
 $('who').onclick = () => { const p = $('who-pop'); p.hidden = !p.hidden; $('who').setAttribute('aria-expanded', String(!p.hidden)); };
 $('m-perfil').onclick = () => { $('who-pop').hidden = true; openPerfil(); };
 $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
