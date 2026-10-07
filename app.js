@@ -364,7 +364,7 @@ function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
     <span class="body">
       <span class="c-top"><span class="t">${esc(a.titulo)}</span><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span></span>
       <span class="m">${esc(meta)}</span>${alerta}
-      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
+      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${a.criadoPor ? `<span class="c-who" title="Inserida por ${esc(nameOf(a.criadoPor))}"><i>${esc(initials(nameOf(a.criadoPor)))}</i>${esc(shortName(nameOf(a.criadoPor)))}</span>` : ''}${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
     </span></button>`;
 }
 
@@ -628,6 +628,7 @@ function renderAll(){
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
   renderWho();
 }
+const shortName = n => { const p = String(n||'').trim().split(/\s+/).filter(Boolean); return p.length > 2 ? `${p[0]} ${p[p.length-1]}` : p.join(' '); };
 function initials(n){ const p = String(n||'').trim().split(/\s+/).filter(Boolean); return ((p[0]||'?')[0] + (p.length > 1 ? p[p.length-1][0] : '')).toUpperCase(); }
 function renderWho(){
   const n = S.perfil?.nome || 'Você', r = S.perfil?.funcao || '';
@@ -1083,7 +1084,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=12');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=13');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1119,7 +1120,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=12');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=13');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
