@@ -38,8 +38,9 @@ const t = s => String(s ?? '').replace(/[–—]/g, '-').replace(/[‘’]/g, "'
 export async function gerarRelatorioPDF(ctx){
   const jsPDF = await loadLibs();
   const logo = await toDataURL(ctx.logoUrl).catch(() => null);
-  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
-  const W = 210, H = 297, M = 14, CW = W - 2*M;
+  // A4 paisagem: resumo na primeira página e a lista por setor nas seguintes
+  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'landscape'});
+  const W = 297, H = 210, M = 12, CW = W - 2*M;
   const fill = c => doc.setFillColor(c[0], c[1], c[2]);
   const stroke = c => doc.setDrawColor(c[0], c[1], c[2]);
   const color = c => doc.setTextColor(c[0], c[1], c[2]);
@@ -52,7 +53,7 @@ export async function gerarRelatorioPDF(ctx){
   const diasAberto = a => fimOf(a) < hoje ? ctx.diasEntre(fimOf(a), hoje) : 0; // dias de atraso após o término previsto
   const per = a => fimOf(a) === a.noite ? ctx.fmtShort(a.noite) : `${ctx.fmtShort(a.noite)} a ${ctx.fmtShort(fimOf(a))}`;
 
-  // ---------- agrupamento por frente ----------
+  // ---------- agrupamento por setor ----------
   const groups = new Map();
   for (const a of acts){
     let k, label, sub, rank;
@@ -70,20 +71,20 @@ export async function gerarRelatorioPDF(ctx){
   const altas = acts.filter(a => a.prioridade === 'alta').length;
 
   // ---------- cabeçalho da primeira página ----------
-  fill(C.graf); doc.rect(0, 0, W, 38, 'F');
-  fill(C.laranja); doc.rect(0, 38, W, 1.6, 'F');
-  if (logo) doc.addImage(logo, 'PNG', M, 11, 44, 44 * 83 / 306);
-  color(C.white); font('bold', 15); text('Relatório de atividades em aberto', W - M, 17, {align:'right'});
-  color([169,173,180]); font('normal', 9.5); text('Obra 4107 · Rooftop Iguatemi SP · Programação de Atividades', W - M, 23.5, {align:'right'});
-  text(`Emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`, W - M, 29, {align:'right'});
+  fill(C.graf); doc.rect(0, 0, W, 28, 'F');
+  fill(C.laranja); doc.rect(0, 28, W, 1.4, 'F');
+  if (logo) doc.addImage(logo, 'PNG', M, 8, 42, 42 * 83 / 306);
+  color(C.white); font('bold', 15); text('Relatório de atividades em aberto', W - M, 13, {align:'right'});
+  color([169,173,180]); font('normal', 9); text(`Obra 4107 · Rooftop Iguatemi SP · emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`, W - M, 19.5, {align:'right'});
 
-  let y = 48;
-  color(C.ink); font('bold', 20); text(`${acts.length} ${acts.length === 1 ? 'atividade' : 'atividades'} em aberto`, M, y);
-  color(C.muted); font('normal', 9.5);
-  text(`${ctx.turnoLabel} · situação em ${ctx.hojeLabel} · não inclui atividades concluídas nem canceladas`, M, y + 6);
+  let y = 40;
+  color(C.ink); font('bold', 17); text(`${acts.length} ${acts.length === 1 ? 'atividade' : 'atividades'} em aberto`, M, y);
+  color(C.muted); font('normal', 9);
+  const prio = [criticas ? `${criticas} de prioridade crítica` : '', altas ? `${altas} de prioridade alta` : ''].filter(Boolean).join(' · ');
+  text(`${ctx.turnoLabel} · situação em ${ctx.hojeLabel} · não inclui concluídas nem canceladas${prio ? ' · ' + prio : ''}`, M, y + 5.5);
 
   // ---------- indicadores ----------
-  y += 12;
+  y += 10;
   const kpis = [
     ['Em aberto', acts.length, C.graf],
     ['Programadas', cnt.programada, ST.programada.c],
@@ -91,51 +92,47 @@ export async function gerarRelatorioPDF(ctx){
     ['Parciais', cnt.parcial, ST.parcial.c],
     ['Não iniciadas', cnt.nao_iniciada, ST.nao_iniciada.c],
     ['Impedidas', cnt.impedida, ST.impedida.c],
+    ['Atrasadas', atrasadas, [214,110,40]],
+    ['Avanço médio', avMedio + '%', C.laranja],
   ];
-  const kw = (CW - 5*3.5) / 6, kh = 22;
+  const gap = 3.5, kw = (CW - (kpis.length - 1) * gap) / kpis.length, kh = 19;
   kpis.forEach(([lab, n, c], i) => {
-    const x = M + i * (kw + 3.5);
+    const x = M + i * (kw + gap);
     fill(C.soft); doc.roundedRect(x, y, kw, kh, 2, 2, 'F');
-    fill(c); doc.rect(x, y, kw, 1.4, 'F');
-    color(C.ink); font('bold', 18); text(String(n), x + 4, y + 12);
-    color(C.muted); font('normal', 7.8); text(lab, x + 4, y + 18);
+    fill(c); doc.rect(x, y, kw, 1.3, 'F');
+    color(C.ink); font('bold', 17); text(String(n), x + 4, y + 10.5);
+    color(C.muted); font('normal', 7.8); text(lab, x + 4, y + 16);
   });
-  y += kh + 5;
-  // faixa de alerta
-  fill(mix(C.laranja, .86)); doc.roundedRect(M, y, CW, 9, 2, 2, 'F');
-  fill(C.laranja); doc.rect(M, y, 1.4, 9, 'F');
-  color(C.laranjaTx); font('bold', 9);
-  const pct = acts.length ? Math.round(atrasadas / acts.length * 100) : 0;
-  text(`${atrasadas} ${atrasadas === 1 ? 'atividade atrasada' : 'atividades atrasadas'} (${pct}% do total, término anterior a hoje)   ·   ${criticas} de prioridade crítica   ·   ${altas} de prioridade alta   ·   avanço médio ${avMedio}%`, M + 5, y + 5.9);
-  y += 15;
+  y += kh + 9;
 
-  // ---------- gráfico 1: por frente (barras empilhadas) ----------
-  const chartTitle = (s, x, yy) => { color(C.ink); font('bold', 10.5); text(s, x, yy); };
-  const leftW = 112, rightX = M + leftW + 8, rightW = CW - leftW - 8;
-  chartTitle('Atividades em aberto por setor', M, y);
-  chartTitle('Distribuição por status', rightX, y);
-  let cy = y + 6;
+  // ---------- gráficos em três colunas ----------
+  const chartTitle = (s, x, yy) => { color(C.ink); font('bold', 10); text(s, x, yy); };
+  const colGap = 10, c1W = 118, c2W = 62, c3W = CW - c1W - c2W - 2 * colGap;
+  const c1X = M, c2X = c1X + c1W + colGap, c3X = c2X + c2W + colGap;
+  const topY = y, botLimit = H - 16;
+
+  // coluna 1: atividades por setor (barras empilhadas)
+  chartTitle('Atividades em aberto por setor', c1X, topY);
   const rows = G.map(g => ({label: g.label, by: ORDER.map(k => g.items.filter(a => a.status === k).length), total: g.items.length}));
   const maxT = Math.max(1, ...rows.map(r => r.total));
-  const labW = 22, barMax = leftW - labW - 10;
-  const rowH = Math.min(7.5, Math.max(4.6, 78 / Math.max(rows.length, 1)));
+  const labW = 22, barMax = c1W - labW - 9;
+  const rowH = Math.min(8, Math.max(4.4, (botLimit - topY - 20) / Math.max(rows.length, 1)));
+  const cy = topY + 5;
   rows.forEach((r, i) => {
     const ry = cy + i * rowH;
-    color(C.muted); font('normal', 8); text(r.label, M, ry + rowH * .62);
-    fill(C.soft); doc.rect(M + labW, ry + rowH * .18, barMax, rowH * .64, 'F');
-    let x = M + labW;
+    color(C.muted); font('normal', 8); text(r.label, c1X, ry + rowH * .62);
+    fill(C.soft); doc.rect(c1X + labW, ry + rowH * .18, barMax, rowH * .64, 'F');
+    let x = c1X + labW;
     r.by.forEach((n, j) => { if (!n) return; const w = n / maxT * barMax; fill(ST[ORDER[j]].c); doc.rect(x, ry + rowH * .18, w, rowH * .64, 'F'); x += w; });
     color(C.ink); font('bold', 8); text(String(r.total), x + 1.6, ry + rowH * .62);
   });
-  const barsEnd = cy + rows.length * rowH;
-  // legenda
-  let lx = M, ly = barsEnd + 4;
+  let lx = c1X, ly = cy + rows.length * rowH + 5;
   font('normal', 7.2);
-  ORDER.forEach(k => { const w = doc.getTextWidth(t(ST[k].label)) + 7; if (lx + w > M + leftW){ lx = M; ly += 4.5; } fill(ST[k].c); doc.rect(lx, ly - 2.3, 2.6, 2.6, 'F'); color(C.muted); text(ST[k].label, lx + 3.6, ly); lx += w + 2; });
-  const leftEnd = ly + 2;
+  ORDER.forEach(k => { const w = doc.getTextWidth(t(ST[k].label)) + 7; if (lx + w > c1X + c1W){ lx = c1X; ly += 4.5; } fill(ST[k].c); doc.rect(lx, ly - 2.3, 2.6, 2.6, 'F'); color(C.muted); text(ST[k].label, lx + 3.6, ly); lx += w + 2; });
 
-  // ---------- gráfico 2: rosca por status ----------
-  const cx = rightX + rightW / 2, ccy = cy + 23, R = 19, r0 = 11.5;
+  // coluna 2: rosca por status
+  chartTitle('Distribuição por status', c2X, topY);
+  const R = 21, r0 = 13, cx = c2X + c2W / 2, ccy = topY + 7 + R;
   const total = acts.length || 1;
   let ang = -Math.PI / 2;
   ORDER.forEach(k => {
@@ -151,112 +148,98 @@ export async function gerarRelatorioPDF(ctx){
   });
   if (!acts.length){ fill(C.soft); doc.circle(cx, ccy, R, 'F'); }
   fill(C.white); doc.circle(cx, ccy, r0, 'F');
-  color(C.ink); font('bold', 15); text(String(acts.length), cx, ccy + 1.5, {align:'center'});
-  color(C.muted); font('normal', 6.8); text('em aberto', cx, ccy + 5.4, {align:'center'});
-  let dy = ccy + R + 6;
+  color(C.ink); font('bold', 16); text(String(acts.length), cx, ccy + 1.6, {align:'center'});
+  color(C.muted); font('normal', 6.8); text('em aberto', cx, ccy + 5.6, {align:'center'});
+  let dy = ccy + R + 8;
   ORDER.forEach(k => {
-    fill(ST[k].c); doc.rect(rightX + 2, dy - 2.4, 2.6, 2.6, 'F');
-    color(C.ink); font('normal', 8); text(ST[k].label, rightX + 6.5, dy);
-    font('bold', 8); text(`${cnt[k]}  (${acts.length ? Math.round(cnt[k] / acts.length * 100) : 0}%)`, rightX + rightW - 1, dy, {align:'right'});
-    dy += 4.6;
+    fill(ST[k].c); doc.rect(c2X, dy - 2.4, 2.6, 2.6, 'F');
+    color(C.ink); font('normal', 8); text(ST[k].label, c2X + 4.5, dy);
+    font('bold', 8); text(`${cnt[k]}  (${acts.length ? Math.round(cnt[k] / acts.length * 100) : 0}%)`, c2X + c2W, dy, {align:'right'});
+    dy += 5;
   });
-  y = Math.max(leftEnd, dy) + 6;
 
-  // ---------- gráfico 3: tempo em aberto  |  gráfico 4: motivos ----------
-  const half = (CW - 8) / 2;
-  chartTitle('Atraso em relação ao término previsto', M, y);
-  chartTitle('Motivos de não início e impedimento', M + half + 8, y);
+  // coluna 3: atraso (em cima) e motivos (embaixo)
+  chartTitle('Atraso em relação ao término previsto', c3X, topY);
   const buckets = [['No prazo', a => diasAberto(a) === 0], ['1 a 2 dias', a => { const d = diasAberto(a); return d >= 1 && d <= 2; }], ['3 a 7 dias', a => { const d = diasAberto(a); return d >= 3 && d <= 7; }], ['Mais de 7 dias', a => diasAberto(a) > 7]];
   const bcol = [[120,128,140], [246,167,33], [214,110,40], [184,50,76]];
   const bv = buckets.map(([, f]) => acts.filter(f).length), bmax = Math.max(1, ...bv);
-  const chH = 34, by0 = y + 6 + chH, bw = (half - 8) / 4;
-  stroke(C.line); doc.setLineWidth(.2); doc.line(M, by0, M + half, by0);
+  const chH = 38, by0 = topY + 5 + chH, bw = c3W / 4;
+  stroke(C.line); doc.setLineWidth(.2); doc.line(c3X, by0, c3X + c3W, by0);
   bv.forEach((n, i) => {
-    const h = n / bmax * (chH - 7), x = M + 2 + i * (bw + 2);
-    fill(bcol[i]); doc.rect(x, by0 - h, bw - 2, h, 'F');
-    color(C.ink); font('bold', 9); text(String(n), x + (bw - 2) / 2, by0 - h - 1.5, {align:'center'});
-    color(C.muted); font('normal', 7); text(buckets[i][0], x + (bw - 2) / 2, by0 + 4, {align:'center'});
+    const h = n / bmax * (chH - 8), x = c3X + i * bw + 2;
+    fill(bcol[i]); doc.rect(x, by0 - h, bw - 4, h, 'F');
+    color(C.ink); font('bold', 9); text(String(n), x + (bw - 4) / 2, by0 - h - 1.5, {align:'center'});
+    color(C.muted); font('normal', 7); text(buckets[i][0], x + (bw - 4) / 2, by0 + 4, {align:'center'});
   });
+  const my = by0 + 15;
+  chartTitle('Motivos de não início e impedimento', c3X, my);
   const mot = {}; acts.filter(a => a.motivo && (a.status === 'nao_iniciada' || a.status === 'impedida')).forEach(a => { mot[a.motivo] = (mot[a.motivo] || 0) + 1; });
   const motL = Object.entries(mot).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const mx = M + half + 8;
-  if (!motL.length){ color(C.faint); font('italic', 8.5); text('Nenhuma atividade não iniciada ou impedida.', mx, y + 14); }
+  if (!motL.length){ color(C.faint); font('italic', 8.5); text('Nenhuma atividade não iniciada ou impedida.', c3X, my + 8); }
   else {
-    const mmax = Math.max(...motL.map(m => m[1])), mrh = Math.min(6.2, chH / motL.length);
+    const mmax = Math.max(...motL.map(m => m[1])), mrh = Math.min(6.4, (botLimit - my - 6) / motL.length), labM = 50;
     motL.forEach(([m, n], i) => {
-      const ry = y + 6 + i * mrh;
-      color(C.muted); font('normal', 7.4); text(doc.splitTextToSize(t(m), 44)[0], mx, ry + mrh * .62);
-      const bwm = (half - 52) * n / mmax; fill(ST.impedida.c); doc.rect(mx + 45, ry + mrh * .2, Math.max(bwm, .8), mrh * .6, 'F');
-      color(C.ink); font('bold', 7.6); text(String(n), mx + 46 + bwm + .8, ry + mrh * .62);
+      const ry = my + 4 + i * mrh;
+      color(C.muted); font('normal', 7.4); text(doc.splitTextToSize(t(m), labM - 1)[0], c3X, ry + mrh * .62);
+      const bwm = (c3W - labM - 8) * n / mmax; fill(ST.impedida.c); doc.rect(c3X + labM, ry + mrh * .2, Math.max(bwm, .8), mrh * .6, 'F');
+      color(C.ink); font('bold', 7.6); text(String(n), c3X + labM + bwm + 1.6, ry + mrh * .62);
     });
   }
-  y = by0 + 10;
 
-  // ---------- pontos de atenção ----------
-  const atencao = acts.filter(a => a.status === 'impedida' || a.status === 'nao_iniciada' || a.prioridade === 'critica')
-    .sort((a, b) => (b.prioridade === 'critica') - (a.prioridade === 'critica') || diasAberto(b) - diasAberto(a)).slice(0, 8);
+  // ---------- lista por setor ----------
   const statusCell = (data) => {
     const k = data.cell.raw && data.cell.raw.status;
     if (k && ST[k]){ data.cell.styles.fillColor = mix(ST[k].c, .85); data.cell.styles.textColor = ST[k].c.map(v => Math.round(v * .78)); data.cell.styles.fontStyle = 'bold'; }
   };
   const statusObj = a => ({content: t(ST[a.status]?.label || a.status) + `\n${avOf(a)}% executado`, status: a.status});
+  const TOP = 22;
   const tblBase = {
-    theme:'plain', margin:{left:M, right:M, top:24, bottom:16},
-    styles:{font:'helvetica', fontSize:7.6, cellPadding:{top:1.8, bottom:1.8, left:1.8, right:1.8}, textColor:C.ink, lineColor:C.line, lineWidth:{bottom:.15}, valign:'top', overflow:'linebreak'},
-    headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:7.4, lineWidth:0},
+    theme:'plain', margin:{left:M, right:M, top:TOP, bottom:15},
+    styles:{font:'helvetica', fontSize:7.8, cellPadding:{top:1.8, bottom:1.8, left:2, right:2}, textColor:C.ink, lineColor:C.line, lineWidth:{bottom:.15}, valign:'top', overflow:'linebreak'},
+    headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:7.6, lineWidth:0},
     alternateRowStyles:{fillColor:[250,250,251]},
   };
-  if (atencao.length){
-    if (y > H - 42){ doc.addPage(); y = 28; }
-    chartTitle('Pontos de atenção', M, y);
-    color(C.muted); font('normal', 8); text('Impedidas, não iniciadas e de prioridade crítica, das mais atrasadas para as menos atrasadas.', M, y + 4.6);
-    doc.autoTable({...tblBase, startY: y + 7,
-      head:[['Atividade', 'Local', 'Período', 'Atraso', 'Status', 'Motivo / observação']],
-      body: atencao.map(a => [t(a.titulo) + (a.prioridade === 'critica' ? '\n[Prioridade crítica]' : ''), t(ctx.localLine(a)), `${per(a)}\n${ctx.turnoLabelDe(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : '-', statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-']),
-      columnStyles:{0:{cellWidth:44, fontStyle:'bold'}, 1:{cellWidth:31}, 2:{cellWidth:20}, 3:{cellWidth:11, halign:'center'}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},
-      didParseCell: d => { if (d.section === 'body' && d.column.index === 4) statusCell(d); },
-    });
-    y = doc.lastAutoTable.finalY + 8;
-  }
-
-  // ---------- detalhamento por setor ----------
-  doc.addPage(); y = 28;
-  color(C.ink); font('bold', 15); text('Detalhamento por setor', M, y);
-  color(C.muted); font('normal', 8.5); text('Atividades em aberto agrupadas por frente, ordenadas por prioridade e status.', M, y + 5.5);
-  y += 12;
+  const COLW = {0:78, 1:36, 2:26, 3:16, 4:32, 5:26}; // a última coluna (observação) ocupa o restante
+  doc.addPage(); y = TOP + 6;
+  color(C.ink); font('bold', 14); text('Atividades por setor', M, y);
+  color(C.muted); font('normal', 8.5); text('Atividades em aberto agrupadas por setor, ordenadas por prioridade, status e data.', M, y + 5.2);
+  y += 11;
   const prRank = p => p === 'critica' ? 0 : p === 'alta' ? 1 : 2;
   for (const g of G){
-    if (y > H - 50){ doc.addPage(); y = 28; }
+    if (y > H - 45){ doc.addPage(); y = TOP + 2; }
     // cabeçalho do setor
-    fill(C.soft); doc.roundedRect(M, y, CW, 13, 2, 2, 'F');
-    fill(C.laranja); doc.rect(M, y, 1.6, 13, 'F');
-    color(C.ink); font('bold', 11.5); text(g.label, M + 5, y + 5.6);
-    color(C.muted); font('normal', 7.8); text(doc.splitTextToSize(t(g.sub), 100)[0] || '', M + 5, y + 10.2);
-    // mini contadores à direita
+    fill(C.soft); doc.roundedRect(M, y, CW, 11, 2, 2, 'F');
+    fill(C.laranja); doc.rect(M, y, 1.6, 11, 'F');
+    color(C.ink); font('bold', 11); text(g.label, M + 5, y + 7.1);
+    font('bold', 11); const lw = doc.getTextWidth(t(g.label));
+    color(C.muted); font('normal', 8); text(doc.splitTextToSize(t(g.sub), 140)[0] || '', M + 5 + lw + 4, y + 7.1);
+    // contadores à direita
     let px = W - M - 3;
     [...ORDER].reverse().forEach(k => {
       const n = g.items.filter(a => a.status === k).length; if (!n) return;
       const lab = `${n} ${PLURAL[k][n === 1 ? 0 : 1]}`; font('bold', 7); const w = doc.getTextWidth(t(lab)) + 5;
-      px -= w; fill(mix(ST[k].c, .82)); doc.roundedRect(px, y + 4.2, w, 5, 1.2, 1.2, 'F');
-      color(ST[k].c.map(v => Math.round(v * .78))); text(lab, px + 2.5, y + 7.65); px -= 1.6;
+      px -= w; fill(mix(ST[k].c, .82)); doc.roundedRect(px, y + 3, w, 5, 1.2, 1.2, 'F');
+      color(ST[k].c.map(v => Math.round(v * .78))); text(lab, px + 2.5, y + 6.45); px -= 1.6;
     });
-    y += 15;
+    y += 13;
     const items = [...g.items].sort((a, b) => prRank(a.prioridade) - prRank(b.prioridade) || ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.noite).localeCompare(String(b.noite)));
     doc.autoTable({...tblBase, startY: y,
-      head:[['Atividade', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Última observação']],
+      head:[['Atividade', 'Etiqueta', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Motivo / última observação']],
       body: items.map(a => {
-        const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : '', Array.isArray(a.etiquetas) && a.etiquetas.length ? `Etiqueta: ${a.etiquetas.join(', ')}` : ''].filter(Boolean).join('\n');
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
+        const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · ');
+        const et = Array.isArray(a.etiquetas) && a.etiquetas.length ? a.etiquetas.join('\n') : '-';
+        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(et), `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
       }),
-      columnStyles:{0:{cellWidth:56}, 1:{cellWidth:22}, 2:{cellWidth:13, halign:'center'}, 3:{cellWidth:28}, 4:{cellWidth:22}, 5:{cellWidth:'auto'}},
+      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1], textColor:C.muted}, 2:{cellWidth:COLW[2]}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:'auto'}},
       didParseCell: d => {
         if (d.section !== 'body') return;
-        if (d.column.index === 4) statusCell(d);
+        if (d.column.index === 3 && /\d+ d/.test(String(d.cell.raw))){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; }
+        if (d.column.index === 5) statusCell(d);
         if (d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){
           // título em negrito e detalhes em cinza: quebra de linha calculada aqui e desenhada em didDrawCell
-          const wUtil = 56 - 3.6;
-          font('bold', 7.6); const tl = doc.splitTextToSize(d.cell.raw.titulo, wUtil);
-          font('normal', 7.6); const dl = d.cell.raw.det ? doc.splitTextToSize(d.cell.raw.det, wUtil) : [];
+          const wUtil = COLW[0] - 4;
+          font('bold', 7.8); const tl = doc.splitTextToSize(d.cell.raw.titulo, wUtil);
+          font('normal', 7.2); const dl = d.cell.raw.det ? doc.splitTextToSize(d.cell.raw.det, wUtil) : [];
           d.cell.raw.nTit = tl.length; d.cell.text = [...tl, ...dl];
         }
       },
@@ -265,15 +248,15 @@ export async function gerarRelatorioPDF(ctx){
       },
       didDrawCell: d => {
         if (d.section === 'body' && d.column.index === 0 && d.cell.raw && d.cell.raw._lines){
-          const pos = d.cell.getTextPos(), lh = 7.6 * 1.15 * 25.4 / 72;
+          const pos = d.cell.getTextPos(), lh = 7.8 * 1.15 * 25.4 / 72;
           d.cell.raw._lines.forEach((ln, i) => {
-            if (i < d.cell.raw.nTit){ font('bold', 7.6); color(C.ink); } else { font('normal', 7.6); color(C.muted); }
+            if (i < d.cell.raw.nTit){ font('bold', 7.8); color(C.ink); } else { font('normal', 7.2); color(C.muted); }
             doc.text(ln, pos.x, pos.y + i * lh, {baseline:'top'});
           });
         }
       },
     });
-    y = doc.lastAutoTable.finalY + 9;
+    y = doc.lastAutoTable.finalY + 8;
   }
   if (!G.length){ color(C.muted); font('italic', 10); text('Nenhuma atividade em aberto.', M, y + 4); }
 
@@ -282,16 +265,16 @@ export async function gerarRelatorioPDF(ctx){
   for (let i = 1; i <= N; i++){
     doc.setPage(i);
     if (i > 1){
-      fill(C.graf); doc.rect(0, 0, W, 15, 'F'); fill(C.laranja); doc.rect(0, 15, W, .9, 'F');
-      if (logo) doc.addImage(logo, 'PNG', M, 4.2, 24, 24 * 83 / 306);
-      color(C.white); font('bold', 9); text('Atividades em aberto', W - M, 7, {align:'right'});
-      color([169,173,180]); font('normal', 7.2); text(`Obra 4107 · emitido em ${ctx.emitidoEm}`, W - M, 11.2, {align:'right'});
+      fill(C.graf); doc.rect(0, 0, W, 14, 'F'); fill(C.laranja); doc.rect(0, 14, W, .9, 'F');
+      if (logo) doc.addImage(logo, 'PNG', M, 3.8, 24, 24 * 83 / 306);
+      color(C.white); font('bold', 9); text('Relatório de atividades em aberto', W - M, 6.6, {align:'right'});
+      color([169,173,180]); font('normal', 7.2); text(`Obra 4107 · ${ctx.turnoLabel} · emitido em ${ctx.emitidoEm}`, W - M, 10.8, {align:'right'});
     }
-    stroke(C.line); doc.setLineWidth(.2); doc.line(M, H - 11, W - M, H - 11);
-    fill(C.laranja); doc.rect(M, H - 8.2, 2, 2, 'F');
+    stroke(C.line); doc.setLineWidth(.2); doc.line(M, H - 10, W - M, H - 10);
+    fill(C.laranja); doc.rect(M, H - 7.4, 2, 2, 'F');
     color(C.faint); font('normal', 7.2);
-    text('SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP', M + 3.5, H - 6.6);
-    text(`Página ${i} de ${N}`, W - M, H - 6.6, {align:'right'});
+    text('SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP', M + 3.5, H - 5.8);
+    text(`Página ${i} de ${N}`, W - M, H - 5.8, {align:'right'});
   }
   doc.save(ctx.arquivo);
 }
