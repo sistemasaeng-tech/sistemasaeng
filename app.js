@@ -563,16 +563,12 @@ function renderCadList(){
     const us = Object.entries(S.usuarios).filter(([,u]) => !q || [u.nome,u.email,u.funcao,PAPEIS[u.papel]].join(' ').toLowerCase().includes(q))
       .sort(([,a],[,b]) => (ord[a.papel] ?? 9) - (ord[b.papel] ?? 9) || String(a.nome).localeCompare(String(b.nome),'pt'));
     $('cad-count').textContent = `${us.length} ${us.length === 1 ? 'pessoa' : 'pessoas'}`;
-    list.innerHTML = us.length ? us.map(([id,u]) => `<div class="cad-item user">
+    list.innerHTML = us.length ? us.map(([id,u]) => `<div class="cad-item user ${esc(u.papel)}">
       <span class="av sm">${esc(initials(u.nome))}</span>
       <div class="ci-tx"><b>${esc(u.nome)}${id === S.uid ? ' <span class="ro">(você)</span>' : ''}</b><span>${esc([u.funcao, u.email].filter(Boolean).join(' · '))}</span></div>
-      <span class="badge ${u.papel}">${esc(PAPEIS[u.papel]||u.papel)}</span>
-      ${id === S.uid ? '' : `<div class="ubtns">${
-        u.papel === 'pendente' ? `<button class="btn pri" type="button" data-papel="${id}:usuario">Liberar como usuário</button><button class="btn" type="button" data-papel="${id}:visualizador">Liberar como visualizador</button><button class="btn" type="button" data-papel="${id}:bloqueado">Recusar</button>`
-        : u.papel === 'usuario' ? `<button class="btn" type="button" data-papel="${id}:admin">Tornar admin</button><button class="btn" type="button" data-papel="${id}:visualizador">Tornar visualizador</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
-        : u.papel === 'visualizador' ? `<button class="btn" type="button" data-papel="${id}:usuario">Tornar usuário</button><button class="btn danger" type="button" data-papel="${id}:bloqueado">Bloquear</button>`
-        : u.papel === 'admin' ? `<button class="btn" type="button" data-papel="${id}:usuario">Remover admin</button>`
-        : `<button class="btn" type="button" data-papel="${id}:visualizador">Reativar como visualizador</button><button class="btn" type="button" data-papel="${id}:usuario">Reativar como usuário</button>`}</div>`}
+      <span class="badge ${u.papel}">${esc(u.papel === 'pendente' ? 'Pendente' : PAPEIS[u.papel] || u.papel)}</span>
+      ${id === S.uid ? '<span class="u-sp"></span>' : `<div class="menu u-menu"><button type="button" class="ibtn u-more" data-umenu="${id}" aria-haspopup="true" aria-expanded="${S.uMenu === id}" aria-label="Ações para ${esc(u.nome)}"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        <div class="menu-pop u-pop"${S.uMenu === id ? '' : ' hidden'}>${userActions(id, u.papel)}</div></div>`}
     </div>`).join('') : '<div class="empty">Ninguém encontrado.</div>';
     return;
   }
@@ -585,6 +581,18 @@ function renderCadList(){
       ${admin ? (S.cadDel === `${d.key}:${x.i}` ? `<div class="ci-conf"><span>Remover?</span><button type="button" class="btn danger" data-del="${d.key}:${x.i}">Sim</button><button type="button" class="btn" data-del-cancel>Não</button></div>`
         : `<button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
     </div>`).join('') : `<div class="empty">${S.cadLoaded ? (q ? 'Nada encontrado com essa busca.' : 'Lista vazia.') : 'Carregando…'}</div>`;
+}
+// ações do menu ⋯ de cada pessoa, conforme o papel atual
+function userActions(id, papel){
+  const it = (p, label, cls = '') => `<button type="button" class="${cls}" data-papel="${id}:${p}">${label}</button>`;
+  const L = {
+    pendente: [it('usuario','Liberar como usuário','m-pri'), it('visualizador','Liberar como visualizador'), it('bloqueado','Recusar acesso','m-danger')],
+    usuario: [it('admin','Tornar administrador'), it('visualizador','Tornar visualizador'), it('bloqueado','Bloquear','m-danger')],
+    visualizador: [it('usuario','Tornar usuário'), it('admin','Tornar administrador'), it('bloqueado','Bloquear','m-danger')],
+    admin: [it('usuario','Remover administrador (vira usuário)'), it('visualizador','Tornar visualizador')],
+    bloqueado: [it('usuario','Reativar como usuário'), it('visualizador','Reativar como visualizador')],
+  };
+  return `<span class="ro">${esc(nameOf(id))} · ${esc(PAPEIS[papel] || papel)}</span>` + (L[papel] || L.bloqueado).join('');
 }
 async function saveCad(next){
   try { await setDoc(doc(db, 'config', 'cadastros'), {...next, atualizadoPor:S.uid, atualizadoEm:serverTimestamp()}); return true; }
@@ -1066,7 +1074,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=9');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=10');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1090,7 +1098,7 @@ async function exportPdf(){
   if (!acts.length){ toast('Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=9');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=10');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1110,7 +1118,7 @@ async function exportPdf(){
 /* ================= eventos ================= */
 document.addEventListener('click', e => {
   const t = e.target;
-  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } }
+  if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
   const etqEl = t.closest('[data-etq]'); if (etqEl) return openTag(etqEl.dataset.etq);
   if (t.closest('[data-etq-back]')){ S.etq = null; window.scrollTo({top:0}); return renderAll(); }
   if (t.closest('#etq-more-b')){ const mp = $('etq-more-pop'); mp.hidden = !mp.hidden; return; }
@@ -1128,7 +1136,8 @@ document.addEventListener('click', e => {
   const ask = t.closest('[data-del-ask]'); if (ask){ S.cadDel = ask.dataset.delAsk; return renderCadList(); }
   if (t.closest('[data-del-cancel]')){ S.cadDel = null; return renderCadList(); }
   const del = t.closest('[data-del]'); if (del){ const [key, i] = del.dataset.del.split(':'); S.cadDel = null; return saveCad({...S.cad, [key]:S.cad[key].filter((_,j) => j !== Number(i))}).then(ok => ok && toast('Item removido.')); }
-  const pp = t.closest('[data-papel]'); if (pp){ const [uid, papel] = pp.dataset.papel.split(':'); updateDoc(doc(db, 'usuarios', uid), {papel}).then(() => toast('Acesso atualizado.'), handleWriteError); return; }
+  const um = t.closest('[data-umenu]'); if (um){ S.uMenu = S.uMenu === um.dataset.umenu ? null : um.dataset.umenu; return renderCadList(); }
+  const pp = t.closest('[data-papel]'); if (pp){ S.uMenu = null; renderCadList(); const [uid, papel] = pp.dataset.papel.split(':'); updateDoc(doc(db, 'usuarios', uid), {papel}).then(() => toast('Acesso atualizado.'), handleWriteError); return; }
   if (t.id === 'b-seed') return saveCad(SEED);
 });
 document.addEventListener('submit', e => {

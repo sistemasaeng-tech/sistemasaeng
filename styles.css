@@ -658,3 +658,25 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 }
 .etq-sug button.hi{background:var(--surface-2);box-shadow:inset 2px 0 0 var(--tc)}
 .etq-av .prog-n{font-size:12px;font-weight:700;line-height:1}
+
+/* v9 · usuários: linha limpa com menu de ações */
+.cad-list:has(.u-menu){overflow:visible}
+.cad-item.user{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"av tx bd mn";column-gap:12px;row-gap:4px}
+.cad-item.user .av{grid-area:av}
+.cad-item.user .ci-tx{grid-area:tx;min-width:0}
+.cad-item.user .ci-tx > b,.cad-item.user .ci-tx > span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cad-item.user .ci-tx > b .ro{display:inline;font-weight:500}
+.cad-item.user .badge{grid-area:bd;justify-self:end}
+.cad-item.user .u-menu,.cad-item.user .u-sp{grid-area:mn}
+.cad-item.user.pendente{background:color-mix(in srgb,var(--st-parc) 7%,transparent)}
+.u-menu{position:relative;flex:none}
+.u-more{width:38px;height:38px;border:0;background:transparent;color:var(--muted)}
+.u-more:hover,.u-more[aria-expanded="true"]{background:var(--surface-2);color:var(--fg)}
+.u-sp{width:38px;flex:none}
+.u-pop{min-width:260px}
+.u-pop .m-pri{color:var(--brand-text);font-weight:700}
+@media (max-width:760px){
+  .cad-item.user{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"av tx mn" "av bd mn"}
+  .cad-item.user .av{align-self:start;margin-top:2px}
+  .cad-item.user .badge{justify-self:start;font-size:10px;padding:1px 6px}
+}
