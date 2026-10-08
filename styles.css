@@ -783,3 +783,184 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 .gt-gn.etq-g b{text-transform:none;letter-spacing:0;font-size:13px}
 .gt-tail{color:#f4a684}
 @media (max-width:760px){ .gt-tt{white-space:normal} .gt-gn.etq-g b{font-size:12px} }
+
+/* =====================================================================
+   v15 · CELULAR — cara de aplicativo (vale só até 760px; o computador não muda)
+   ===================================================================== */
+@media (max-width:760px){
+  body{font-size:14.5px;background:var(--bg)}
+  .wrap{padding:12px 14px calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 92px)}
+
+  /* barra superior compacta: só o logo e o avatar */
+  .top{box-shadow:none;background:color-mix(in srgb,var(--head) 88%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px)}
+  .top::after{height:2px}
+  .top-in{height:50px;padding-inline:14px;gap:10px}
+  .brand img{height:21px}
+  .brand .div,.brand-tx{display:none}
+  .who{padding:0;background:none;border:0}
+  .who .av{width:32px;height:32px;font-size:12px}
+  .who .nm{display:none}
+
+  /* títulos de página no estilo app: grandes, sem textos de apoio */
+  .night .eyebrow,.night .sub,#cad-sub{display:none}
+  .night h1{font-size:28px;margin:2px 0 0}
+  .night{margin-bottom:2px}
+
+  /* ---------- tela inicial ---------- */
+  .day-head{align-items:center;gap:8px}
+  .day-head h1{font-size:28px}
+  .day-head .sub{font-size:13px;margin-top:2px}
+  .sub-t{display:none}
+  .day-head .nav{gap:0}
+  .day-head .ibtn{width:36px;height:36px;border-radius:50%}
+  .day-head .datebtn{width:36px;height:36px;border-radius:50%;background:var(--surface-2);border:0}
+  .day-bar{margin-top:10px}
+  .turno-seg{border:0;background:var(--surface);border-radius:12px;padding:3px}
+  .turno-seg button{min-height:32px;font-size:12.5px;border-radius:9px}
+  .turno-seg button[aria-pressed="true"]{background:var(--surface-2)}
+
+  .summary{margin-top:10px;padding:12px 14px;border-radius:16px}
+  .sum-top{gap:12px}
+  .sum-n b{font-size:22px}
+  .sum-n span{font-size:12px}
+  .summary .bar{height:5px}
+  .sum-leg{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px;margin:10px -14px 0;padding:0 14px;font-size:11.5px}
+  .sum-leg::-webkit-scrollbar{display:none}
+  .sum-leg > span,.sum-pend{flex:none;white-space:nowrap;background:var(--surface-2);border-radius:999px;padding:4px 10px;gap:5px}
+  .sum-pend{background:color-mix(in srgb,var(--st-nao) 14%,transparent)}
+
+  .tools{margin-top:10px;gap:6px}
+  .tools .search input{height:40px;border-radius:12px;background:var(--surface);border-color:transparent;font-size:14.5px}
+  .tools .ibtn.tool{width:40px;height:40px;border-radius:12px;background:var(--surface);border-color:transparent}
+  .filters{border-radius:16px;padding:14px}
+
+  .sec{margin-top:18px}
+  .sec-h{margin-bottom:6px}
+  .sec-h h2{font-size:15px}
+  .turno-h{border-top:0;padding:8px 0 0;margin-top:4px}
+  .turno-h .th-d{display:none}
+  .turno-h b{margin-left:auto}
+  .grp{margin-top:10px}
+  .grp-h{flex-wrap:nowrap;margin-bottom:6px;font-size:11.5px;min-width:0}
+  .grp-h b{font-size:11.5px;flex:none}
+  .grp-h span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--faint)}
+  .cards{gap:8px}
+
+  /* cartões enxutos */
+  .card{grid-template-columns:3px minmax(0,1fr);border-radius:14px;border-color:transparent;background:var(--surface)}
+  .card:active{transform:scale(.985)}
+  .card .body{padding:11px 12px 11px 0}
+  .card .c-top{gap:8px}
+  .card .t{font-size:14.5px;font-weight:650;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .card .pill{font-size:10.5px;padding:2px 8px;flex:none}
+  .card .m{font-family:var(--f);font-size:12.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .c-alert{font-size:12px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .c-bot{margin-top:8px;gap:8px;align-items:center}
+  .card .c-tags{flex-wrap:nowrap;overflow:hidden;gap:6px;min-width:0;flex:1}
+  .card .c-tags > *{flex:none}
+  .card .c-tags .etq.sm{flex:0 1 auto;min-width:0;max-width:150px}
+  .c-who{max-width:none}
+  .c-who-n{display:none}
+  .c-who i{width:20px;height:20px;font-size:8.5px}
+  .card .tag{font-size:10px;padding:1px 6px}
+  .card .tag.per{font-size:10.5px}
+  .card .c-prog{flex:none;width:72px}
+  .card .c-prog .prog-n{font-size:11px;min-width:28px}
+
+  #b-new{right:16px;bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 14px);width:54px;height:54px;box-shadow:0 8px 24px rgba(246,147,33,.35)}
+
+  /* ---------- barra de navegação inferior ---------- */
+  .bnav{background:color-mix(in srgb,var(--surface) 90%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(16px);backdrop-filter:saturate(1.4) blur(16px);border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);box-shadow:none}
+  .bnav .tab{font-size:10.5px;gap:4px;font-weight:600;color:var(--faint)}
+  .bnav .tab svg{width:21px;height:21px;position:relative;z-index:1}
+  .bnav .tab[aria-selected="true"]::before{top:9px;left:50%;right:auto;width:52px;height:28px;margin-left:-26px;border-radius:14px;background:var(--brand-soft)}
+  .bnav .tab[aria-selected="true"]{color:var(--fg)}
+
+  /* ---------- detalhe da atividade (folha) ---------- */
+  .dw-top{padding:12px 14px 8px;border-bottom:0;background:var(--bg)}
+  .dw-top .ibtn{width:34px;height:34px;border-radius:50%;background:var(--surface);border:0;font-size:20px}
+  .dw-scroll{padding:4px 16px calc(env(safe-area-inset-bottom,0px) + 28px)}
+  .dw-title{font-size:21px;line-height:1.2;margin:6px 0 10px}
+  .dw-tags .turno{font-size:11.5px}
+  .av-row{padding:12px 14px;border-radius:14px}
+  .dw-bar{gap:6px}
+  .dw-bar .btn{min-height:42px;border-radius:12px;font-size:13.5px}
+  .kv{display:block;padding:4px 14px;border-radius:14px;border-color:transparent}
+  .kv dt{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding-top:10px}
+  .kv dd{font-size:14px;padding:2px 0 10px;border-bottom:1px solid var(--line)}
+  .kv dd:last-of-type{border-bottom:0}
+  .det{border-radius:14px}
+  .dw-hist .lbl{margin-top:20px}
+  .panel{border-radius:16px;padding:14px;box-shadow:none}
+
+  /* ---------- formulários (folha cheia) ---------- */
+  .modal .sheet{padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 16px)}
+  .sheet h2{font-size:22px;margin:0 0 14px}
+  .f{margin-bottom:10px;gap:5px}
+  .f label{font-size:12px}
+  .f input,.f select,.f textarea{border-radius:12px;border-color:transparent;background:var(--surface);font-size:15px}
+  .seg{border-color:transparent;background:var(--surface);border-radius:12px}
+  .etq-box{border-color:transparent;background:var(--surface);border-radius:12px}
+
+  /* ---------- calendário ---------- */
+  .gt-top .ibtn{width:36px;height:36px;border-radius:50%}
+  .gt-hoje{height:34px;border-radius:999px;border:0;background:var(--surface-2);padding:0 12px;font-size:12.5px}
+  #gt-sub{font-size:12.5px}
+  .gt-ctl{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:10px -14px 0;padding:0 14px}
+  .gt-ctl::-webkit-scrollbar{display:none}
+  .gt-ctl > *{flex:none}
+  .gt-seg{border:0;background:var(--surface);border-radius:12px}
+  .gt-wrap{margin:10px -14px 0;border-radius:0;border-left:0;border-right:0;max-height:calc(100dvh - 50px - var(--bnav-h) - env(safe-area-inset-bottom,0px) - 170px)}
+  .gt-leg{font-size:11px;gap:4px 12px}
+  .gt-leg-tx{display:none}
+
+  /* ---------- etiquetas ---------- */
+  .etq-list{margin-top:12px}
+  .cad-menu{border-radius:16px;border-color:transparent;box-shadow:none}
+  .etq-row{padding:12px 14px;min-height:0;gap:12px}
+  .etq-ico{width:36px;height:36px;border-radius:11px}
+  .etq-head{margin-bottom:12px}
+  .etq-ico.lg{width:44px;height:44px;border-radius:13px}
+  .etq-kpis{gap:6px}
+  .etq-kpis .kp{padding:10px 12px;border-radius:14px;border-color:transparent}
+  .etq-kpis .kp b{font-size:20px}
+  .etq-acts{margin:14px 0 4px}
+  .etq-acts .btn{min-height:44px;border-radius:12px}
+
+  /* ---------- histórico ---------- */
+  #v-hist .tools{margin-top:10px}
+  #v-hist .selects{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0;padding:0;width:100%;overflow:visible}
+  #v-hist .selects select{max-width:none;width:100%;height:40px;border-radius:12px;border-color:transparent;font-size:13px}
+  #v-hist .selects select#h-tipo{grid-column:1 / -1}
+  .feed-day{margin-top:16px}
+  .ev{grid-template-columns:42px minmax(0,1fr);gap:8px;padding:10px 0}
+  .ev time{font-size:11.5px}
+  .ev p{font-size:13.5px;line-height:1.4}
+  .ev .ro{display:none}
+
+  /* ---------- cadastros ---------- */
+  .cad-row{padding:12px 14px;min-height:62px;gap:12px}
+  .cad-ico{width:38px;height:38px;border-radius:11px}
+  .cad-tx b{font-size:14.5px}
+  .cad-title{gap:12px;margin-bottom:14px}
+  .cad-title h1{font-size:22px}
+  .cad-title p{font-size:12.5px}
+  .cad-title .cad-ico{width:42px;height:42px}
+  .cad-list{border-radius:16px;border-color:transparent}
+  .cad-add{border-radius:16px}
+  .search input{border-color:transparent;border-radius:12px}
+}
+@media (max-width:380px){
+  .card .c-prog{width:58px}
+  .bnav .tab{font-size:9.5px}
+}
+@media (max-width:760px){
+  .card .c-tags .etq.sm + .etq.sm{display:none}
+  .card .c-tags .etq.sm{max-width:170px}
+  .sum-pend{order:-1}
+}
+.etq-more.m-only{display:none}
+@media (max-width:760px){
+  .card .c-tags .etq-more{display:none}
+  .card .c-tags .etq-more.m-only{display:inline}
+}

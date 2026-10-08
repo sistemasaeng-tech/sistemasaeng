@@ -312,7 +312,8 @@ const sortActs = list => list.sort((x,y) => prRank(x.prioridade)-prRank(y.priori
 function renderNight(){
   const today = S.noite === defaultNight(), ft = S.f.turno;
   $('night-title').textContent = today ? 'Hoje' : fmtDay(S.noite);
-  $('night-sub').textContent = (today ? fmtDay(S.noite) + ' · ' : '') + (ft === 'noturno' ? 'turno noturno' : ft === 'diurno' ? 'turno diurno' : 'turnos diurno e noturno');
+  { const tt = ft === 'noturno' ? 'turno noturno' : ft === 'diurno' ? 'turno diurno' : 'turnos diurno e noturno';
+    $('night-sub').innerHTML = today ? `${esc(fmtDay(S.noite))}<span class="sub-t"> · ${tt}</span>` : `<span class="sub-t">${tt}</span>`; }
   { const d = parseYmd(S.noite); $('night-label').textContent = `${DOW[d.getDay()].slice(0,3)} ${fmtShort(S.noite)}`; }
   $('n-date').value = S.noite;
   $('n-today').hidden = today;
@@ -358,13 +359,13 @@ function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   if (a.prioridade === 'critica' || a.prioridade === 'alta') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
   if (showDate || fimOf(a) !== a.noite) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`);
   if (isPend) tags.push(`<span class="tag since">venceu ${fmtShort(fimOf(a))} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
-  const et = tagsOf(a).filter(t => !hideTag || tagKey(t) !== tagKey(hideTag)); if (et.length) tags.push(et.slice(0, 2).map(t => tagChip(t, 'sm')).join('') + (et.length > 2 ? `<span class="etq-more">+${et.length - 2}</span>` : ''));
+  const et = tagsOf(a).filter(t => !hideTag || tagKey(t) !== tagKey(hideTag)); if (et.length) tags.push(et.slice(0, 2).map(t => tagChip(t, 'sm')).join('') + (et.length > 2 ? `<span class="etq-more">+${et.length - 2}</span>` : '') + (et.length > 1 ? `<span class="etq-more m-only">+${et.length - 1}</span>` : ''));
   const alerta = (a.status === 'impedida' || a.status === 'nao_iniciada') && (a.motivo || a.ultimaObs) ? `<div class="c-alert">${esc(a.motivo || a.ultimaObs)}</div>` : '';
   return `<button type="button" class="card" data-id="${esc(a.id)}" style="--c:${cvar(a.status)}"><span class="stripe"></span>
     <span class="body">
       <span class="c-top"><span class="t">${esc(a.titulo)}</span><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span></span>
       <span class="m">${esc(meta)}</span>${alerta}
-      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${a.criadoPor ? `<span class="c-who" title="Inserida por ${esc(nameOf(a.criadoPor))}"><i>${esc(initials(nameOf(a.criadoPor)))}</i>${esc(shortName(nameOf(a.criadoPor)))}</span>` : ''}${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
+      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${a.criadoPor ? `<span class="c-who" title="Inserida por ${esc(nameOf(a.criadoPor))}"><i>${esc(initials(nameOf(a.criadoPor)))}</i><span class="c-who-n">${esc(shortName(nameOf(a.criadoPor)))}</span></span>` : ''}${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
     </span></button>`;
 }
 
@@ -1175,7 +1176,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=14');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=15');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1211,7 +1212,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=14');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=15');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
