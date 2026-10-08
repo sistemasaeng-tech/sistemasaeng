@@ -57,7 +57,8 @@ export async function gerarRelatorioPDF(ctx){
   const groups = new Map();
   for (const a of acts){
     let k, label, sub, rank;
-    if (a.tipoLocal === 'setor'){ const i = ctx.setores.findIndex(s => s.codigo === a.setor); k = 's:' + a.setor; label = `Setor ${a.setor || '?'}`; sub = (ctx.setores[i] || {}).descricao || ''; rank = i < 0 ? 500 : i; }
+    if (ctx.grupoDe){ ({k, label, sub, rank} = ctx.grupoDe(a)); if (k.startsWith('z:')){ label = sub || 'Shopping'; sub = 'Shopping'; } }
+    else if (a.tipoLocal === 'setor'){ const i = ctx.setores.findIndex(s => s.codigo === a.setor); k = 's:' + a.setor; label = `Setor ${a.setor || '?'}`; sub = (ctx.setores[i] || {}).descricao || ''; rank = i < 0 ? 500 : i; }
     else if (a.tipoLocal === 'pilar'){ k = 'p'; label = 'Pilares'; sub = 'Intervenções em pilares'; rank = 1000; }
     else { k = 'z'; label = 'Shopping'; sub = 'Lojas, mall, estacionamento e áreas de apoio'; rank = 2000; }
     if (!groups.has(k)) groups.set(k, {k, label, sub, rank, items:[]});
@@ -311,12 +312,17 @@ export async function gerarGanttPDF(ctx){
 
   // linhas do gráfico, já paginadas
   const rows = [];
-  for (const gr of G){ rows.push({k:'g', gr}); for (const a of gr.items) rows.push({k:'a', a, gr}); }
+  let lastP = '';
+  for (const gr of G){
+    if (gr.parent && gr.parent !== lastP){ const kids = G.filter(x => x.parent === gr.parent); rows.push({k:'p', name:gr.parent, kids}); }
+    lastP = gr.parent || '';
+    rows.push({k:'g', gr}); for (const a of gr.items) rows.push({k:'a', a, gr});
+  }
   const pages = []; let cur = null, y = 0;
   const topOf = p => p === 0 ? (ctx.filtros ? 40 : 34) : 20;
   rows.forEach(r => {
-    const h = r.k === 'g' ? grpH : rowH;
-    if (!cur || y + h > bottom || (r.k === 'g' && y + grpH + rowH > bottom)){ cur = {rows:[], top: topOf(pages.length)}; pages.push(cur); y = cur.top + headH; }
+    const h = r.k === 'a' ? rowH : grpH;
+    if (!cur || y + h > bottom || (r.k !== 'a' && y + grpH * (r.k === 'p' ? 2 : 1) + rowH > bottom)){ cur = {rows:[], top: topOf(pages.length)}; pages.push(cur); y = cur.top + headH; }
     // grupo que continua na página seguinte repete o título
     if (r.k === 'a' && cur.rows.length === 0){ cur.rows.push({k:'g', gr:r.gr, cont:true, y}); y += grpH; }
     cur.rows.push({...r, y}); y += h; cur.end = y;
@@ -358,15 +364,27 @@ export async function gerarGanttPDF(ctx){
     });
     stroke(C.line); doc.setLineWidth(.3); doc.line(M, gy, W - M, gy);
     // linhas
+    const spanOf = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => Math.max(di(ctx.fimOf(a)), a.aberta && ctx.fimOf(a) < hoje ? ti : -1))))];
     pg.rows.forEach(r => {
+      if (r.k === 'p'){
+        const all_ = r.kids.flatMap(x => x.items), [ps, pe] = spanOf(all_);
+        fill([222,225,230]); doc.rect(M, r.y, W - 2 * M, grpH, 'F');
+        color(C.ink); font('bold', 7.6); text(r.name.toUpperCase(), M + 2, r.y + 4.4);
+        const lw = doc.getTextWidth(t(r.name.toUpperCase()));
+        color(C.muted); font('normal', 6); text(`${r.kids.length} ${r.kids.length === 1 ? 'pilar' : 'pilares'}`, M + 4 + lw, r.y + 4.4);
+        color(C.muted); font('bold', 6.4); text(`${all_.filter(a => a.status === 'concluida').length}/${all_.length}`, gx - 2, r.y + 4.4, {align:'right'});
+        if (pe >= ps){ const x0 = gx + ps * cw + .8, x1 = gx + (pe + 1) * cw - .8, yy = r.y + grpH / 2; fill([110,116,126]); doc.rect(x0, yy - .8, x1 - x0, 1.6, 'F'); }
+        return;
+      }
       if (r.k === 'g'){
         const gr = r.gr, isE = gr.k.startsWith('e:');
         fill([238,240,243]); doc.rect(M, r.y, W - 2 * M, grpH, 'F');
         if (isE){ fill(hex(ctx.tagCor(gr.label))); doc.circle(M + 2.6, r.y + grpH / 2, 1.1, 'F'); }
         color(C.ink); font('bold', 7.2);
         const lab = fit((isE ? gr.label : gr.label.toUpperCase()) + (r.cont ? ' (continuação)' : ''), labelW - 18 - (isE ? 4 : 0));
-        text(lab, M + (isE ? 5 : 2), r.y + 4.3);
-        if (gr.sub && !r.cont){ const lw = doc.getTextWidth(lab); color(C.faint); font('normal', 6); text(fit(gr.sub, labelW - 20 - lw - (isE ? 4 : 0)), M + (isE ? 5 : 2) + lw + 2, r.y + 4.3); }
+        const ind = (isE ? 5 : 2) + (gr.parent ? 4 : 0);
+        text(lab, M + ind, r.y + 4.3);
+        if (gr.sub && !r.cont){ const lw = doc.getTextWidth(lab); color(C.faint); font('normal', 6); text(fit(gr.sub, labelW - 18 - lw - ind), M + ind + lw + 2, r.y + 4.3); }
         const done = gr.items.filter(a => a.status === 'concluida').length;
         color(C.muted); font('bold', 6.4); text(`${done}/${gr.items.length}`, gx - 2, r.y + 4.3, {align:'right'});
         // barra-resumo do grupo
@@ -378,11 +396,12 @@ export async function gerarGanttPDF(ctx){
       const a = r.a, av = ctx.avOf(a), i0 = di(a.noite), i1 = di(ctx.fimOf(a)), s0 = Math.max(0, i0), e0 = Math.min(n - 1, i1), c = COR[a.status] || COR.programada;
       stroke(C.line); doc.setLineWidth(.12); doc.line(M, r.y + rowH, W - M, r.y + rowH);
       // rótulo
-      let lx = M + 2;
+      const ix = r.gr && r.gr.parent ? 4 : 0;
+      let lx = M + 2 + ix;
       if (a.prioridade === 'critica' || a.prioridade === 'alta'){ fill(a.prioridade === 'critica' ? ST.impedida.c : ST.parcial.c); doc.circle(lx + .8, r.y + 2.7, .8, 'F'); lx += 2.6; }
       color(C.ink); font('bold', 6.6); text(fit(a.titulo, gx - lx - 2), lx, r.y + 3.3);
       const meta = [ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.criadoPor)].filter(Boolean).join(' · ');
-      color(C.faint); font('normal', 5.4); text(fit(meta, gx - M - 4), M + 2, r.y + 6.2);
+      color(C.faint); font('normal', 5.4); text(fit(meta, gx - M - 4 - ix), M + 2 + ix, r.y + 6.2);
       const bh = 4.4, by = r.y + (rowH - bh) / 2;
       // atraso: faixa até hoje
       if (a.aberta && ctx.fimOf(a) < hoje){

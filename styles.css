@@ -972,3 +972,15 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
   .gt-pdf{height:34px;width:34px;padding:0;justify-content:center;margin-left:4px;border:0;border-radius:50%;background:var(--surface-2)}
   .gt-pdf span{display:none}
 }
+/* grupo pai (ex.: Pilares) e grupos filhos (Pilar P34, Pilar P48…) */
+.gt-par .gt-gn{background:#2a2d34}
+.gt-par .gt-gn b{font-size:12.5px;letter-spacing:.08em}
+.gt-par{border-top:1px solid var(--line-2)}
+.gt-sum.par{height:8px;margin-top:-4px;background:#5b606b}
+.gt-sum.par::before,.gt-sum.par::after{background:#5b606b;height:13px}
+.gt-child .gt-gn{padding-left:28px;position:sticky}
+.gt-child .gt-gn::before{content:"";position:absolute;left:15px;top:0;bottom:50%;width:8px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);border-bottom-left-radius:4px}
+.gt-child .gt-gn b{text-transform:none;letter-spacing:0;font-size:13px}
+@media (max-width:760px){ .gt-child .gt-gn{padding-left:22px} .gt-child .gt-gn::before{left:10px} .gt-child .gt-gn b{font-size:12px} }
+.gt-r.in-child .gt-n{padding-left:28px}
+@media (max-width:760px){ .gt-r.in-child .gt-n{padding-left:20px} }

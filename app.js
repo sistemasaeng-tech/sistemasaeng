@@ -154,12 +154,19 @@ function localLine(a){
 }
 function groupKey(a){
   if (a.tipoLocal === 'setor') return {k:'s:'+(a.setor||'?'), label:`Setor ${a.setor||'?'}`, sub:(S.cad.setores.find(x => x.codigo === a.setor)||{}).descricao||''};
-  if (a.tipoLocal === 'pilar') return {k:'p', label:'Pilares', sub:'Intervenções em pilares'};
+  if (a.tipoLocal === 'pilar'){
+    // cada pilar é um grupo próprio, dentro do grupo pai "Pilares"
+    const code = pilarCode(a.pilar) || String(a.pilar || '?').trim() || '?';
+    const cad = S.cad.pilares.find(x => (pilarCode(x.codigo) || x.codigo) === code);
+    const resto = String(a.pilar || '').replace(/^\s*P\s*\d+\s*[-–—:|·]*\s*/i, '').trim();
+    return {k:'p:'+code, label:`Pilar ${code}`, sub: cad ? [cad.eixo, cad.referencia].filter(Boolean).join(' · ') : resto, parent:'Pilares'};
+  }
   return {k:'z:'+(a.local||''), label:'Shopping', sub:a.local||''};
 }
 function groupRank(k){
   if (k.startsWith('s:')){ const i = S.cad.setores.findIndex(x => 's:'+x.codigo === k); return i < 0 ? 500 : i; }
-  return k === 'p' ? 1000 : 2000;
+  if (k.startsWith('p:')) return 1000 + (parseInt(k.replace(/\D/g, '')) || 999) / 1000;
+  return 2000;
 }
 
 /* ================= acesso ================= */
@@ -459,8 +466,8 @@ function gtData(){
   for (const a of acts){
     let k, label, sub, rank;
     if (g.grp === 'etq'){ const t = tagsOf(a)[0]; k = t ? 'e:' + tagKey(t) : 'zz'; label = t || 'Sem etiqueta'; sub = ''; rank = t ? 0 : 1; }
-    else { const gk = groupKey(a); k = gk.k; label = gk.label; sub = gk.sub; rank = groupRank(gk.k); }
-    if (!groups.has(k)) groups.set(k, {k, label, sub, rank, items:[]});
+    else { const gk = groupKey(a); k = gk.k; label = gk.label; sub = gk.sub; rank = groupRank(gk.k); var parent = gk.parent; }
+    if (!groups.has(k)) groups.set(k, {k, label, sub, rank, parent: g.grp === 'etq' ? '' : (parent || ''), items:[]});
     groups.get(k).items.push(a);
   }
   const G = [...groups.values()].sort((x, y) => x.rank - y.rank || x.label.localeCompare(y.label, 'pt') || x.sub.localeCompare(y.sub, 'pt'));
@@ -474,7 +481,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=17');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=18');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -516,11 +523,19 @@ function renderGantt(){
   h += `<div class="gt-h"><div class="gt-corner">${mesLbl}</div>${days.map(d => { const dt = parseYmd(d); return `<div class="gt-d${we(d) ? ' we' : ''}${d === hoje ? ' today' : ''}${dt.getDate() === 1 && d !== ini ? ' m1' : ''}">${dt.getDate() === 1 && d !== ini ? `<em>${MESES[dt.getMonth()]}</em>` : ''}<span>${DOW3[dt.getDay()]}</span><b>${dt.getDate()}</b></div>`; }).join('')}</div>`;
   h += `<div class="gt-b"><div class="gt-cols">${days.map((d, i) => we(d) ? `<i style="left:${i * cw}px;width:${cw}px"></i>` : '').join('')}</div>`;
   if (ti >= 0 && ti < n) h += `<div class="gt-now" style="left:calc(var(--lw) + ${(ti + .5) * cw}px)"></div>`;
+  const span = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => Math.max(di(fimOf(a)), a.aberta && fimOf(a) < hoje ? ti : -1))))];
+  let lastParent = '';
   for (const gr of G){
+    if (gr.parent && gr.parent !== lastParent){
+      const kids = G.filter(x => x.parent === gr.parent), all_ = kids.flatMap(x => x.items), [ps, pe] = span(all_);
+      h += `<div class="gt-g gt-par"><div class="gt-gn"><b>${esc(gr.parent)}</b><span>${kids.length} ${kids.length === 1 ? 'pilar' : 'pilares'}</span><em>${all_.filter(a => a.status === 'concluida').length}/${all_.length}</em></div>
+        <div class="gt-gt">${pe >= ps ? `<span class="gt-sum par" style="left:${ps * cw + 3}px;width:${(pe - ps + 1) * cw - 6}px"></span>` : ''}</div></div>`;
+    }
+    lastParent = gr.parent || '';
     const items = gr.items;
     const gs = Math.max(0, Math.min(...items.map(a => di(a.noite)))), ge = Math.min(n - 1, Math.max(...items.map(a => Math.max(di(fimOf(a)), a.aberta && fimOf(a) < hoje ? ti : -1))));
     const done = items.filter(a => a.status === 'concluida').length;
-    h += `<div class="gt-g"><div class="gt-gn${gr.k.startsWith('e:') ? ' etq-g' : ''}"${gr.k.startsWith('e:') ? ` style="--tc:${tagCor(gr.label)}"` : ''}>${gr.k.startsWith('e:') ? ICON_TAG : ''}<b>${esc(gr.label)}</b>${gr.sub && !mob ? `<span>${esc(gr.sub)}</span>` : ''}<em>${done}/${items.length}</em></div>
+    h += `<div class="gt-g${gr.parent ? ' gt-child' : ''}"><div class="gt-gn${gr.k.startsWith('e:') ? ' etq-g' : ''}"${gr.k.startsWith('e:') ? ` style="--tc:${tagCor(gr.label)}"` : ''}>${gr.k.startsWith('e:') ? ICON_TAG : ''}<b>${esc(gr.label)}</b>${gr.sub && !mob ? `<span>${esc(gr.sub)}</span>` : ''}<em>${done}/${items.length}</em></div>
       <div class="gt-gt">${ge >= gs ? `<span class="gt-sum" style="left:${gs * cw + 3}px;width:${(ge - gs + 1) * cw - 6}px"></span>` : ''}</div></div>`;
     for (const a of items){
       const st = STATUS[a.status] || STATUS.programada, av = avOf(a), i0 = di(a.noite), i1 = di(fimOf(a));
@@ -537,7 +552,7 @@ function renderGantt(){
         if (t1 >= t0){ const w = (t1 - t0 + 1) * cw - 3, d = nightsBetween(fimOf(a), hoje); tail = `<span class="gt-tail" style="left:${t0 * cw - (i1 + 1 >= 0 ? 3 : -3)}px;width:${w}px" title="${d} ${d === 1 ? 'dia' : 'dias'} de atraso">${w >= 46 ? `+${d}d` : ''}</span>`; }
       }
       const meta = [g.grp === 'etq' ? localLine(a) : '', a.fornecedor, a.criadoPor ? shortName(nameOf(a.criadoPor)) : ''].filter(Boolean).join(' · ');
-      h += `<div class="gt-r" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.titulo)} · ${fmtPeriodo(a)} · ${esc(st.label)} ${av}%">
+      h += `<div class="gt-r${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.titulo)} · ${fmtPeriodo(a)} · ${esc(st.label)} ${av}%">
         <div class="gt-n"><b>${a.prioridade === 'critica' || a.prioridade === 'alta' ? `<i class="gt-p ${a.prioridade}"></i>` : ''}<span class="gt-tt">${esc(a.titulo)}</span></b><small><span class="t-ic ${turnoOf(a)}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${esc(meta)}</small></div>
         <div class="gt-t">${tail}${bar}</div></div>`;
     }
@@ -1238,7 +1253,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=17');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=18');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1274,11 +1289,12 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=17');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=18');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
       setores: S.cad.setores, localLine, fmtShort, diasEntre: nightsBetween, fimOf, avOf,
+      grupoDe: a => { const g = groupKey(a); return {...g, rank: groupRank(g.k), sub: a.tipoLocal === 'shopping' ? g.sub : g.sub}; },
       turnoLabelDe: a => TURNOS[turnoOf(a)],
       turnoLabel: ft ? `Turno ${TURNOS[ft].toLowerCase()}` : 'Turnos diurno e noturno',
       filtros: filtrosTxt(), nomeDe: id => id ? nameOf(id) : '-', fmtTs,
