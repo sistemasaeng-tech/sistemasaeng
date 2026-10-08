@@ -400,7 +400,7 @@ export async function gerarGanttPDF(ctx){
       let lx = M + 2 + ix;
       if (a.prioridade === 'critica' || a.prioridade === 'alta'){ fill(a.prioridade === 'critica' ? ST.impedida.c : ST.parcial.c); doc.circle(lx + .8, r.y + 2.7, .8, 'F'); lx += 2.6; }
       color(C.ink); font('bold', 6.6); text(fit(a.titulo, gx - lx - 2), lx, r.y + 3.3);
-      const meta = [ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.criadoPor)].filter(Boolean).join(' · ');
+      const meta = [ctx.lojaDe ? ctx.lojaDe(a) : '', ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.criadoPor)].filter(Boolean).join(' · ');
       color(C.faint); font('normal', 5.4); text(fit(meta, gx - M - 4 - ix), M + 2 + ix, r.y + 6.2);
       const bh = 4.4, by = r.y + (rowH - bh) / 2;
       // atraso: faixa até hoje

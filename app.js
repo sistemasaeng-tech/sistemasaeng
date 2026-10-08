@@ -29,7 +29,7 @@ const MOTIVOS = ['Equipe não compareceu','Efetivo insuficiente','Falta de mater
 const PRIOR = {normal:'Normal', alta:'Alta', critica:'Crítica'};
 const FUNCOES = ['Coordenador','Residente','Engenheiro','Encarregado','Mestre de obras','Técnico de segurança','Planejamento','Outro'];
 const PAPEIS = {pendente:'Aguardando aprovação', visualizador:'Visualizador', usuario:'Usuário', admin:'Administrador', bloqueado:'Bloqueado'};
-const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',etiquetas:'Etiquetas',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
+const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',etiquetas:'Etiquetas',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',pilarLoja:'Loja / ambiente do pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
 const TIPO_LABEL = {setor:'Setor', pilar:'Pilar', shopping:'Shopping'};
 const TURNOS = {diurno:'Diurno', noturno:'Noturno'};
 const turnoOf = a => a.turno === 'diurno' ? 'diurno' : 'noturno'; // atividades antigas, sem turno, contam como noturnas
@@ -143,10 +143,20 @@ function tagCatalog(){
 const nameOf = u => !u ? 'Sem identificação' : (S.usuarios[u]?.nome || (u === S.uid && S.perfil?.nome) || 'Usuário');
 const roleOf = u => S.usuarios[u]?.funcao || '';
 
+// Pilar: o mesmo pilar pode estar em lojas diferentes conforme o piso, por isso a loja/ambiente é um campo próprio
+const pilarCodeOf = a => pilarCode(a.pilar) || String(a.pilar || '').trim();
+const pilarLojaOf = a => {
+  if (a.pilarLoja) return a.pilarLoja;
+  const resto = String(a.pilar || '').replace(/^\s*P\s*\d+\s*[-–—:|·]*\s*/i, '').trim(); // lançamentos antigos "P34 - Loja X"
+  if (resto) return resto;
+  const cad = S.cad.pilares.filter(x => (pilarCode(x.codigo) || x.codigo) === pilarCodeOf(a));
+  return cad.length === 1 ? (cad[0].referencia || '') : '';
+};
+const pilarEixoOf = code => (S.cad.pilares.find(x => (pilarCode(x.codigo) || x.codigo) === code && x.eixo) || {}).eixo || '';
 function localLine(a){
   const parts = [];
   if (a.tipoLocal === 'setor') parts.push(`Setor ${a.setor||'?'}`);
-  else if (a.tipoLocal === 'pilar'){ const p = S.cad.pilares.find(x => x.codigo === a.pilar); parts.push(`Pilar ${a.pilar||'?'}${p?.eixo ? ' ('+p.eixo+')' : ''}`); if (p?.referencia) parts.push(p.referencia); }
+  else if (a.tipoLocal === 'pilar'){ const c = pilarCodeOf(a) || '?', e = pilarEixoOf(c), l = pilarLojaOf(a); parts.push(`Pilar ${c}${e ? ' (' + e + ')' : ''}`); if (l) parts.push(l); }
   else parts.push(a.local || 'Shopping');
   if (a.nivel) parts.push(`Nív. ${a.nivel}`);
   if (a.eixo) parts.push(a.tipoLocal === 'shopping' ? a.eixo : `Eixo ${a.eixo}`);
@@ -159,7 +169,8 @@ function groupKey(a){
     const code = pilarCode(a.pilar) || String(a.pilar || '?').trim() || '?';
     const cad = S.cad.pilares.find(x => (pilarCode(x.codigo) || x.codigo) === code);
     const resto = String(a.pilar || '').replace(/^\s*P\s*\d+\s*[-–—:|·]*\s*/i, '').trim();
-    return {k:'p:'+code, label:`Pilar ${code}`, sub: cad ? [cad.eixo, cad.referencia].filter(Boolean).join(' · ') : resto, parent:'Pilares'};
+    const lojas = [...new Set(S.cad.pilares.filter(x => (pilarCode(x.codigo) || x.codigo) === code).map(x => x.referencia).filter(Boolean))];
+    return {k:'p:'+code, label:`Pilar ${code}`, sub: [cad?.eixo, lojas.length === 1 ? lojas[0] : lojas.length > 1 ? `${lojas.length} lojas` : resto].filter(Boolean).join(' · '), parent:'Pilares'};
   }
   return {k:'z:'+(a.local||''), label:'Shopping', sub:a.local||''};
 }
@@ -319,7 +330,9 @@ function locOptions(tipo){
     return [...m.entries()];
   }
   if (tipo === 'pilar'){
-    const m = new Map(S.cad.pilares.map(x => [pilarCode(x.codigo) || x.codigo, `${x.codigo}${x.eixo ? ' (' + x.eixo + ')' : ''}${x.referencia ? ' · ' + x.referencia : ''}`]));
+    const by = new Map();
+    for (const x of S.cad.pilares){ const c = pilarCode(x.codigo) || x.codigo; if (!by.has(c)) by.set(c, {eixo:x.eixo, lojas:[]}); if (x.referencia) by.get(c).lojas.push(x.referencia); if (!by.get(c).eixo && x.eixo) by.get(c).eixo = x.eixo; }
+    const m = new Map([...by.entries()].map(([c, o]) => [c, `${c}${o.eixo ? ' (' + o.eixo + ')' : ''}${o.lojas.length ? ' · ' + o.lojas.join(', ') : ''}`]));
     for (const a of acts) if (a.tipoLocal === 'pilar'){ const c = pilarCode(a.pilar); if (c && !m.has(c)) m.set(c, c); }
     return [...m.entries()].sort((x, y) => (parseInt(x[0].slice(1)) || 0) - (parseInt(y[0].slice(1)) || 0));
   }
@@ -482,11 +495,11 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=19');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=20');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
-      turnoDe: a => turnoOf(a), nomeDe: id => id ? shortName(nameOf(id)) : '', tagCor,
+      turnoDe: a => turnoOf(a), nomeDe: id => id ? shortName(nameOf(id)) : '', tagCor, lojaDe: a => a.tipoLocal === 'pilar' && S.gt.grp !== 'etq' ? pilarLojaOf(a) : '',
       titulo: 'Calendário de atividades',
       sub: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom]} · por ${S.gt.grp === 'etq' ? 'etiqueta' : 'setor'} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}${S.gt.conc ? '' : ' · sem concluídas'}`,
       filtros: filtrosTxt(),
@@ -552,7 +565,7 @@ function renderGantt(){
         const t0 = Math.max(0, i1 + 1), t1 = Math.min(n - 1, ti);
         if (t1 >= t0){ const w = (t1 - t0 + 1) * cw - 3, d = nightsBetween(fimOf(a), hoje); tail = `<span class="gt-tail" style="left:${t0 * cw - (i1 + 1 >= 0 ? 3 : -3)}px;width:${w}px" title="${d} ${d === 1 ? 'dia' : 'dias'} de atraso">${w >= 46 ? `+${d}d` : ''}</span>`; }
       }
-      const meta = [g.grp === 'etq' ? localLine(a) : '', a.fornecedor, a.criadoPor ? shortName(nameOf(a.criadoPor)) : ''].filter(Boolean).join(' · ');
+      const meta = [g.grp === 'etq' ? localLine(a) : a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.fornecedor, a.criadoPor ? shortName(nameOf(a.criadoPor)) : ''].filter(Boolean).join(' · ');
       h += `<div class="gt-r${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.titulo)} · ${fmtPeriodo(a)} · ${esc(st.label)} ${av}%">
         <div class="gt-n"><b>${a.prioridade === 'critica' || a.prioridade === 'alta' ? `<i class="gt-p ${a.prioridade}"></i>` : ''}<span class="gt-tt">${esc(a.titulo)}</span></b><small><span class="t-ic ${turnoOf(a)}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${esc(meta)}</small></div>
         <div class="gt-t">${tail}${bar}</div></div>`;
@@ -679,7 +692,7 @@ const CAD_DEF = [
   {key:'fornecedores', title:'Fornecedores', hint:'Empresas que atuam na obra.', cols:[['nome','Nome da empresa'],['disciplina','Disciplina (opcional)']], k:'nome', v:'disciplina'},
   {key:'setores', title:'Setores', hint:'Código e frentes principais de cada setor.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
   {key:'niveis', title:'Níveis', hint:'Cotas de nível usadas nos relatos (m).', cols:[['valor','Nível (ex.: 114,30)']], k:'valor'},
-  {key:'pilares', title:'Pilares', hint:'Pilar, eixo e referência de loja ou ambiente.', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Referência']], k:'codigo', v:'referencia', v2:'eixo'},
+  {key:'pilares', title:'Pilares', hint:'Cadastre o mesmo pilar uma vez para cada loja ou ambiente que ele atravessa (ex.: P34 · Loja Lenny e P34 · Loja Corello).', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Loja / ambiente']], k:'codigo', v:'referencia', v2:'eixo'},
   {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio fora dos setores.', cols:[['nome','Nome do local']], k:'nome'},
 ];
 const cadItemText = (d, it) => { const o = typeof it === 'string' ? {[d.k]:it} : it; return {o, k:o[d.k], v:[d.v2 ? o[d.v2] : '', d.v ? o[d.v] : ''].filter(Boolean).join(' · ')}; };
@@ -1045,7 +1058,8 @@ function openForm(id, preset = {}){
     </div>
     <div class="f"><label>Onde</label><div class="seg" id="af-tipo">${['setor','pilar','shopping'].map(t => `<button type="button" data-t="${t}" aria-pressed="${v.tipoLocal === t}">${TIPO_LABEL[t]}</button>`).join('')}</div></div>
     <div class="frow" id="af-loc-setor"><div class="f"><label for="af-setor">Setor <span class="req">*</span></label><select id="af-setor"><option value="">Selecione…</option>${S.cad.setores.map(x => `<option value="${esc(x.codigo)}" ${x.codigo === v.setor ? 'selected' : ''}>Setor ${esc(x.codigo)}${x.descricao ? ' — '+esc(x.descricao) : ''}</option>`).join('')}</select></div></div>
-    <div class="frow" id="af-loc-pilar"><div class="f"><label for="af-pilar">Pilar <span class="req">*</span></label><input id="af-pilar" list="dl-pilar" value="${esc(v.pilar||'')}" placeholder="ex.: P34" autocomplete="off"></div></div>
+    <div class="frow" id="af-loc-pilar"><div class="f"><label for="af-pilar">Pilar <span class="req">*</span></label><input id="af-pilar" list="dl-pilar" value="${esc(v.tipoLocal === 'pilar' || v.pilar ? pilarCodeOf(v) : '')}" placeholder="ex.: P34" autocomplete="off"></div>
+      <div class="f"><label for="af-pilar-loja">Loja / ambiente</label><input id="af-pilar-loja" list="dl-pilar-loja" value="${esc(v.pilar || v.pilarLoja ? pilarLojaOf(v) : '')}" placeholder="ex.: Loja A. Niemeyer" autocomplete="off"></div></div>
     <div class="frow" id="af-loc-shop"><div class="f"><label for="af-local">Local no shopping <span class="req">*</span></label><input id="af-local" list="dl-local" value="${esc(v.local||'')}" placeholder="ex.: Mall – Escadas Centrais" autocomplete="off"></div></div>
     <div class="frow">
       <div class="f"><label for="af-nivel">Nível</label><input id="af-nivel" list="dl-nivel" value="${esc(v.nivel||'')}" placeholder="ex.: 114,30" autocomplete="off"></div>
@@ -1061,7 +1075,8 @@ function openForm(id, preset = {}){
       <div class="f"><label for="af-efet">Efetivo previsto</label><input id="af-efet" type="number" min="0" inputmode="numeric" value="${esc(v.efetivo||'')}"></div>
     </div>
     <datalist id="dl-forn">${S.cad.fornecedores.map(x => `<option value="${esc(x.nome)}">${esc(x.disciplina||'')}</option>`).join('')}</datalist>
-    <datalist id="dl-pilar">${S.cad.pilares.map(x => `<option value="${esc(x.codigo)}">${esc([x.eixo,x.referencia].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>
+    <datalist id="dl-pilar">${locOptions('pilar').map(([c, l]) => `<option value="${esc(c)}">${esc(l)}</option>`).join('')}</datalist>
+    <datalist id="dl-pilar-loja"></datalist>
     <datalist id="dl-local">${S.cad.locais.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
     <datalist id="dl-nivel">${S.cad.niveis.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
     <div class="acts"><button type="button" class="btn ghost" id="af-cancel">Cancelar</button><button class="btn pri" type="submit">${a ? 'Salvar alterações' : 'Inserir atividade'}</button></div>
@@ -1076,6 +1091,13 @@ function openForm(id, preset = {}){
   };
   $('af-tipo').onclick = e => { const b = e.target.closest('button[data-t]'); if (b){ tipo = b.dataset.t; syncTipo(); } };
   syncTipo();
+  const syncLojas = () => {
+    const c = pilarCode($('af-pilar').value) || $('af-pilar').value.trim(), set = new Set();
+    for (const x of S.cad.pilares) if ((pilarCode(x.codigo) || x.codigo) === c && x.referencia) set.add(x.referencia);
+    for (const a of all().values()) if (a.tipoLocal === 'pilar' && pilarCodeOf(a) === c){ const l = pilarLojaOf(a); if (l) set.add(l); }
+    $('dl-pilar-loja').innerHTML = [...set].sort((x, y) => x.localeCompare(y, 'pt')).map(l => `<option value="${esc(l)}"></option>`).join('');
+  };
+  $('af-pilar').addEventListener('input', syncLojas); syncLojas();
   const pk = tagPicker($('af-etq'), tagsOf(v));
   $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
   $('af-noite').addEventListener('change', () => { if (!$('af-fim').value || $('af-fim').value < $('af-noite').value) $('af-fim').value = $('af-noite').value; });
@@ -1084,7 +1106,7 @@ function openForm(id, preset = {}){
   $('af').onsubmit = e => {
     e.preventDefault();
     const d = {noite:$('af-noite').value, fim:$('af-fim').value || $('af-noite').value, avanco:Number($('af-av').value) || 0, turno, prioridade:$('af-prior').value, tipoLocal:tipo,
-      setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? $('af-pilar').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
+      setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? (pilarCode($('af-pilar').value) || $('af-pilar').value.trim()) : '', pilarLoja: tipo === 'pilar' ? $('af-pilar-loja').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
       nivel:$('af-nivel').value.trim(), eixo:$('af-eixo').value.trim(), titulo:$('af-titulo').value.trim(), detalhes:$('af-det').value.trim(),
       fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim(), etiquetas:pk.get()};
     d.temEtiqueta = d.etiquetas.length > 0;
@@ -1180,10 +1202,10 @@ async function exportCsv(){
       s.forEach(d => { const v = d.data(SNAP); (hist[v.atividadeId] ||= []).push(v); });
     }
   } catch (e) { console.warn(e); }
-  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
+  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Loja / ambiente do pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.pilar, a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
   const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.noite}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
@@ -1254,7 +1276,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=19');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=20');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1290,7 +1312,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=19');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=20');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1341,9 +1363,14 @@ document.addEventListener('submit', e => {
   const vals = Object.fromEntries(d.cols.map(([c]) => [c, f.elements[c].value.trim()]));
   if (!vals[d.k]) return toast('Preencha o primeiro campo.');
   const simple = key === 'niveis' || key === 'locais', item = simple ? vals[d.k] : vals;
-  if ((S.cad[key]||[]).some(x => String(simple ? x : x[d.k]).toLowerCase() === vals[d.k].toLowerCase())) return toast('Esse item já está na lista.');
+  const same = key === 'pilares'
+    ? x => (pilarCode(x.codigo) || lc(x.codigo)) === (pilarCode(vals.codigo) || lc(vals.codigo)) && lc(x.referencia) === lc(vals.referencia)
+    : x => String(simple ? x : x[d.k]).toLowerCase() === vals[d.k].toLowerCase();
+  if ((S.cad[key]||[]).some(same)) return toast(key === 'pilares' ? 'Esse pilar com essa loja já está na lista.' : 'Esse item já está na lista.');
+  if (key === 'pilares' && pilarCode(vals.codigo)) vals.codigo = pilarCode(vals.codigo);
   const next = {...S.cad, [key]:[...(S.cad[key]||[]), item]};
   if (key === 'fornecedores') next[key].sort((a,b) => a.nome.localeCompare(b.nome,'pt'));
+  if (key === 'pilares') next[key].sort((a,b) => (parseInt(String(a.codigo).replace(/\D/g,'')) || 0) - (parseInt(String(b.codigo).replace(/\D/g,'')) || 0) || String(a.referencia||'').localeCompare(String(b.referencia||''),'pt'));
   saveCad(next).then(ok => { if (!ok) return; f.reset(); f.elements[0].focus(); toast('Cadastrado.'); });
 });
 $('n-prev').onclick = () => setNight(addDays(S.noite,-1));
