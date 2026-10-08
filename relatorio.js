@@ -283,3 +283,149 @@ export async function gerarRelatorioPDF(ctx){
   }
   doc.save(ctx.arquivo);
 }
+
+// ======================================================================
+// Calendário (Gantt) em PDF: o mesmo período, agrupamento e filtros da tela
+// ======================================================================
+export async function gerarGanttPDF(ctx){
+  const jsPDF = await loadLibs();
+  const logo = await toDataURL(ctx.logoUrl).catch(() => null);
+  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'landscape'});
+  const W = 297, H = 210, M = 10;
+  const fill = c => doc.setFillColor(c[0], c[1], c[2]);
+  const stroke = c => doc.setDrawColor(c[0], c[1], c[2]);
+  const color = c => doc.setTextColor(c[0], c[1], c[2]);
+  const font = (style, size) => { doc.setFont('helvetica', style); doc.setFontSize(size); };
+  const text = (s, x, y, o) => doc.text(t(s), x, y, o);
+  const fit = (s, w) => { s = t(s); if (doc.getTextWidth(s) <= w) return s; while (s.length > 1 && doc.getTextWidth(s + '...') > w) s = s.slice(0, -1); return s.trimEnd() + '...'; };
+  const hex = h => { const m = String(h).replace('#', ''); return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)]; };
+  const COR = {...Object.fromEntries(Object.entries(ST).map(([k, v]) => [k, v.c])), concluida:[46,160,100], cancelada:[122,133,151]};
+  const NAO = ST.nao_iniciada.c, LAR = C.laranja;
+  const {ini, n, hoje, G} = ctx;
+  const days = Array.from({length:n}, (_, i) => ctx.addDays(ini, i));
+  const di = s => ctx.nightsBetween(ini, s), ti = di(hoje);
+  const we = d => { const x = ctx.parseYmd(d).getDay(); return x === 0 || x === 6; };
+  const DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
+  const labelW = 80, gx = M + labelW, gw = W - M - gx, cw = gw / n;
+  const headH = 10, rowH = 7.4, grpH = 6.4, bottom = H - 17;
+
+  // linhas do gráfico, já paginadas
+  const rows = [];
+  for (const gr of G){ rows.push({k:'g', gr}); for (const a of gr.items) rows.push({k:'a', a, gr}); }
+  const pages = []; let cur = null, y = 0;
+  const topOf = p => p === 0 ? (ctx.filtros ? 40 : 34) : 20;
+  rows.forEach(r => {
+    const h = r.k === 'g' ? grpH : rowH;
+    if (!cur || y + h > bottom || (r.k === 'g' && y + grpH + rowH > bottom)){ cur = {rows:[], top: topOf(pages.length)}; pages.push(cur); y = cur.top + headH; }
+    // grupo que continua na página seguinte repete o título
+    if (r.k === 'a' && cur.rows.length === 0){ cur.rows.push({k:'g', gr:r.gr, cont:true, y}); y += grpH; }
+    cur.rows.push({...r, y}); y += h; cur.end = y;
+  });
+
+  pages.forEach((pg, pi) => {
+    if (pi) doc.addPage();
+    // cabeçalho
+    if (pi === 0){
+      fill(C.graf); doc.rect(0, 0, W, 24, 'F'); fill(LAR); doc.rect(0, 24, W, 1.2, 'F');
+      if (logo) doc.addImage(logo, 'PNG', M, 7, 38, 38 * 83 / 306);
+      color(C.white); font('bold', 14); text(ctx.titulo, W - M, 11, {align:'right'});
+      color([169,173,180]); font('normal', 8.5); text(`${ctx.sub}  ·  ${ctx.acts.length} ${ctx.acts.length === 1 ? 'atividade' : 'atividades'}`, W - M, 17, {align:'right'});
+      if (ctx.filtros){
+        font('bold', 7.6); const fl = t('Filtro: ' + ctx.filtros), fw = doc.getTextWidth(fl) + 6;
+        fill(mix(LAR, .85)); doc.roundedRect(M, 28.5, fw, 6, 1.5, 1.5, 'F'); color(C.laranjaTx); text(fl, M + 3, 32.6);
+      }
+    } else {
+      fill(C.graf); doc.rect(0, 0, W, 13, 'F'); fill(LAR); doc.rect(0, 13, W, .8, 'F');
+      if (logo) doc.addImage(logo, 'PNG', M, 3.6, 22, 22 * 83 / 306);
+      color(C.white); font('bold', 8.6); text(ctx.titulo, W - M, 6.2, {align:'right'});
+      color([169,173,180]); font('normal', 7); text(ctx.sub, W - M, 10.2, {align:'right'});
+    }
+    const top = pg.top, gy = top + headH, end = pg.end;
+    // fundo: fins de semana e linhas dos dias
+    days.forEach((d, i) => { if (we(d)){ fill([245,246,248]); doc.rect(gx + i * cw, top, cw, end - top, 'F'); } });
+    stroke(C.line); doc.setLineWidth(.12);
+    for (let i = 0; i <= n; i++) doc.line(gx + i * cw, top, gx + i * cw, end);
+    // cabeçalho dos dias
+    color(C.laranjaTx); font('bold', 7.4);
+    const m1 = ctx.parseYmd(ini);
+    text(ctx.mesLbl.toUpperCase(), M + 1, top + 6.6);
+    days.forEach((d, i) => {
+      const dt = ctx.parseYmd(d), cx = gx + i * cw + cw / 2;
+      if (d === hoje){ fill(LAR); doc.circle(cx, top + 7.1, Math.min(2.2, cw / 2 - .3), 'F'); }
+      color(we(d) ? C.faint : C.muted); font('normal', cw < 7 ? 4.6 : 5.4); text(cw < 7 ? DOW[dt.getDay()][0] : DOW[dt.getDay()], cx, top + 3.2, {align:'center'});
+      color(d === hoje ? C.white : we(d) ? C.faint : C.ink); font('bold', cw < 7 ? 6 : 7.4); text(String(dt.getDate()), cx, top + 8.1, {align:'center'});
+      if (dt.getDate() === 1 && i){ stroke(C.muted); doc.setLineWidth(.3); doc.line(gx + i * cw, top, gx + i * cw, end); }
+    });
+    stroke(C.line); doc.setLineWidth(.3); doc.line(M, gy, W - M, gy);
+    // linhas
+    pg.rows.forEach(r => {
+      if (r.k === 'g'){
+        const gr = r.gr, isE = gr.k.startsWith('e:');
+        fill([238,240,243]); doc.rect(M, r.y, W - 2 * M, grpH, 'F');
+        if (isE){ fill(hex(ctx.tagCor(gr.label))); doc.circle(M + 2.6, r.y + grpH / 2, 1.1, 'F'); }
+        color(C.ink); font('bold', 7.2);
+        const lab = fit((isE ? gr.label : gr.label.toUpperCase()) + (r.cont ? ' (continuação)' : ''), labelW - 18 - (isE ? 4 : 0));
+        text(lab, M + (isE ? 5 : 2), r.y + 4.3);
+        if (gr.sub && !r.cont){ const lw = doc.getTextWidth(lab); color(C.faint); font('normal', 6); text(fit(gr.sub, labelW - 20 - lw - (isE ? 4 : 0)), M + (isE ? 5 : 2) + lw + 2, r.y + 4.3); }
+        const done = gr.items.filter(a => a.status === 'concluida').length;
+        color(C.muted); font('bold', 6.4); text(`${done}/${gr.items.length}`, gx - 2, r.y + 4.3, {align:'right'});
+        // barra-resumo do grupo
+        const gs = Math.max(0, Math.min(...gr.items.map(a => di(a.noite))));
+        const ge = Math.min(n - 1, Math.max(...gr.items.map(a => Math.max(di(ctx.fimOf(a)), a.aberta && ctx.fimOf(a) < hoje ? ti : -1))));
+        if (ge >= gs){ const x0 = gx + gs * cw + .8, x1 = gx + (ge + 1) * cw - .8, yy = r.y + grpH / 2; fill([150,156,166]); doc.rect(x0, yy - .55, x1 - x0, 1.1, 'F'); doc.rect(x0, yy - .55, .6, 2, 'F'); doc.rect(x1 - .6, yy - .55, .6, 2, 'F'); }
+        return;
+      }
+      const a = r.a, av = ctx.avOf(a), i0 = di(a.noite), i1 = di(ctx.fimOf(a)), s0 = Math.max(0, i0), e0 = Math.min(n - 1, i1), c = COR[a.status] || COR.programada;
+      stroke(C.line); doc.setLineWidth(.12); doc.line(M, r.y + rowH, W - M, r.y + rowH);
+      // rótulo
+      let lx = M + 2;
+      if (a.prioridade === 'critica' || a.prioridade === 'alta'){ fill(a.prioridade === 'critica' ? ST.impedida.c : ST.parcial.c); doc.circle(lx + .8, r.y + 2.7, .8, 'F'); lx += 2.6; }
+      color(C.ink); font('bold', 6.6); text(fit(a.titulo, gx - lx - 2), lx, r.y + 3.3);
+      const meta = [ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.criadoPor)].filter(Boolean).join(' · ');
+      color(C.faint); font('normal', 5.4); text(fit(meta, gx - M - 4), M + 2, r.y + 6.2);
+      const bh = 4.4, by = r.y + (rowH - bh) / 2;
+      // atraso: faixa até hoje
+      if (a.aberta && ctx.fimOf(a) < hoje){
+        const t0 = Math.max(0, i1 + 1), t1 = Math.min(n - 1, ti);
+        if (t1 >= t0){
+          const x0 = gx + t0 * cw - (i1 + 1 >= 0 ? .6 : -.6), w = (t1 - t0 + 1) * cw - .6;
+          fill(mix(NAO, .78)); doc.rect(x0, by + .7, w, bh - 1.4, 'F');
+          stroke(NAO); doc.setLineWidth(.2); doc.setLineDashPattern([.8, .6], 0); doc.rect(x0, by + .7, w, bh - 1.4, 'S'); doc.setLineDashPattern([], 0);
+          const d = ctx.nightsBetween(ctx.fimOf(a), hoje);
+          if (w > 8){ color(NAO.map(v => Math.round(v * .8))); font('bold', 5.2); text(`+${d}d`, x0 + w - 1, by + bh / 2 + .9, {align:'right'}); }
+        }
+      }
+      // barra planejada com o avanço
+      if (e0 >= s0){
+        const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2;
+        fill(mix(c, .72)); doc.roundedRect(x0, by, w, bh, 1, 1, 'F');
+        if (av > 0){ fill(c); doc.roundedRect(x0, by, Math.max(1.2, w * av / 100), bh, 1, 1, 'F'); }
+        const lab = w > 34 ? `${ctx.statusLabel(a.status)} · ${av}%` : w > 8 ? `${av}%` : '';
+        if (lab){ font('bold', 5.6); color(av >= 45 ? C.white : c.map(v => Math.round(v * .55))); text(lab, x0 + 1.4, by + bh / 2 + 1); }
+      }
+    });
+    // hoje
+    if (ti >= 0 && ti < n){ fill(LAR); doc.rect(gx + (ti + .5) * cw - .25, gy, .5, end - gy, 'F'); }
+    // legenda
+    let lx = M; const ly = H - 12.5; font('normal', 6.4);
+    ['programada','andamento','parcial','nao_iniciada','impedida','concluida'].forEach(k => {
+      fill(COR[k]); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); color(C.muted);
+      const lab = {programada:'Programada', andamento:'Em andamento', parcial:'Parcial', nao_iniciada:'Não iniciada', impedida:'Impedida', concluida:'Concluída'}[k];
+      text(lab, lx + 6.2, ly); lx += 8 + doc.getTextWidth(t(lab)) + 3;
+    });
+    fill(mix(NAO, .78)); doc.rect(lx, ly - 2, 5, 2.4, 'F'); stroke(NAO); doc.setLineWidth(.2); doc.setLineDashPattern([.8, .6], 0); doc.rect(lx, ly - 2, 5, 2.4, 'S'); doc.setLineDashPattern([], 0);
+    color(C.muted); text('Atraso (até hoje)', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Atraso (até hoje)') + 3;
+    fill(LAR); doc.rect(lx + 2, ly - 2.6, .6, 3.4, 'F'); text('Hoje', lx + 4, ly); lx += 14;
+    color(C.faint); text('Parte escura da barra = avanço executado.', lx, ly);
+  });
+  // rodapé
+  const N = doc.getNumberOfPages();
+  for (let i = 1; i <= N; i++){
+    doc.setPage(i);
+    stroke(C.line); doc.setLineWidth(.2); doc.line(M, H - 8.5, W - M, H - 8.5);
+    color(C.faint); font('normal', 6.8);
+    text(`SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP · emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`, M, H - 4.8);
+    text(`Página ${i} de ${N}`, W - M, H - 4.8, {align:'right'});
+  }
+  doc.save(ctx.arquivo);
+}

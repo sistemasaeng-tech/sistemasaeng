@@ -447,6 +447,49 @@ function gtShift(dir){
   g.jump = true; renderAll();
 }
 function gtSave(){ try { localStorage.setItem('pn-gt', JSON.stringify({zoom:S.gt.zoom, grp:S.gt.grp, conc:S.gt.conc})); } catch {} }
+// dados do calendário exatamente como estão na tela (período, turno, agrupamento, concluídas e filtros)
+function gtData(){
+  const g = S.gt, {ini, n} = gtRange(), fim = addDays(ini, n - 1), hoje = defaultNight(), ft = S.f.turno;
+  // atividades no período (e as em aberto atrasadas, cuja barra de atraso passa pelo período)
+  const acts = [...all().values()].filter(a => a.status !== 'cancelada' && (g.conc || a.status !== 'concluida') && (!ft || turnoOf(a) === ft) && matches(a)
+    && a.noite <= fim && (fimOf(a) >= ini || (a.aberta && hoje >= ini)));
+  const m1 = parseYmd(ini), m2 = parseYmd(fim);
+  const mesLbl = m1.getMonth() === m2.getMonth() ? `${MESES[m1.getMonth()]} ${m1.getFullYear()}` : `${MESES[m1.getMonth()]}–${MESES[m2.getMonth()]} ${m2.getFullYear()}`;
+  const groups = new Map();
+  for (const a of acts){
+    let k, label, sub, rank;
+    if (g.grp === 'etq'){ const t = tagsOf(a)[0]; k = t ? 'e:' + tagKey(t) : 'zz'; label = t || 'Sem etiqueta'; sub = ''; rank = t ? 0 : 1; }
+    else { const gk = groupKey(a); k = gk.k; label = gk.label; sub = gk.sub; rank = groupRank(gk.k); }
+    if (!groups.has(k)) groups.set(k, {k, label, sub, rank, items:[]});
+    groups.get(k).items.push(a);
+  }
+  const G = [...groups.values()].sort((x, y) => x.rank - y.rank || x.label.localeCompare(y.label, 'pt') || x.sub.localeCompare(y.sub, 'pt'));
+  for (const gr of G) gr.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
+  return {ini, n, fim, hoje, ft, acts, G, mesLbl};
+}
+let gerandoGt = false;
+async function exportGanttPdf(){
+  if (gerandoGt) return;
+  const D = gtData();
+  if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
+  gerandoGt = true; toast('Gerando o PDF do calendário…');
+  try {
+    const { gerarGanttPDF } = await import('./relatorio.js?v=17');
+    const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
+    await gerarGanttPDF({
+      ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
+      turnoDe: a => turnoOf(a), nomeDe: id => id ? shortName(nameOf(id)) : '', tagCor,
+      titulo: 'Calendário de atividades',
+      sub: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom]} · por ${S.gt.grp === 'etq' ? 'etiqueta' : 'setor'} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}${S.gt.conc ? '' : ' · sem concluídas'}`,
+      filtros: filtrosTxt(),
+      emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`,
+      emitidoPor: S.perfil?.nome || 'Usuário', logoUrl: 'logo-saeng.png',
+      arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`,
+    });
+    toast('PDF do calendário gerado.');
+  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  finally { gerandoGt = false; }
+}
 function renderGantt(){
   const g = S.gt, {ini, n} = gtRange(), fim = addDays(ini, n - 1), hoje = defaultNight(), ft = S.f.turno;
   if (ini < S.winFrom){ S.winFrom = addDays(ini, -7); subscribeWindow(); }
@@ -458,24 +501,11 @@ function renderGantt(){
   const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn, S.f.etq, S.f.autor, S.f.q].filter(Boolean).length;
   $('gt-filt').hidden = !nf;
   if (nf) $('gt-filt').innerHTML = `<span>Filtros da tela Atividades aplicados: <b>${esc(filtrosTxt())}</b></span><button type="button" class="link-btn" id="gt-fclear">Limpar</button>`;
-  // atividades no período (e as em aberto atrasadas, cuja barra de atraso passa pelo período)
-  const acts = [...all().values()].filter(a => a.status !== 'cancelada' && (g.conc || a.status !== 'concluida') && (!ft || turnoOf(a) === ft) && matches(a)
-    && a.noite <= fim && (fimOf(a) >= ini || (a.aberta && hoje >= ini)));
-  const m1 = parseYmd(ini), m2 = parseYmd(fim);
-  const mesLbl = m1.getMonth() === m2.getMonth() ? `${MESES[m1.getMonth()]} ${m1.getFullYear()}` : `${MESES[m1.getMonth()]}–${MESES[m2.getMonth()]} ${m2.getFullYear()}`;
+  const D = gtData(), acts = D.acts, mesLbl = D.mesLbl;
   $('gt-sub').textContent = `${fmtShort(ini)} a ${fmtShort(fim)}/${fim.slice(0, 4)} · ${acts.length} ${acts.length === 1 ? 'atividade' : 'atividades'}`;
   const wrap = $('gt-wrap');
   if (!acts.length){ wrap.innerHTML = `<div class="empty gt-empty"><b>Nenhuma atividade de ${fmtShort(ini)} a ${fmtShort(fim)}</b>Use as setas para ver outro período${nf ? ' ou limpe os filtros' : ''}.</div>`; $('gt-leg').innerHTML = ''; return; }
-  // grupos
-  const groups = new Map();
-  for (const a of acts){
-    let k, label, sub, rank;
-    if (g.grp === 'etq'){ const t = tagsOf(a)[0]; k = t ? 'e:' + tagKey(t) : 'zz'; label = t || 'Sem etiqueta'; sub = ''; rank = t ? 0 : 1; }
-    else { const gk = groupKey(a); k = gk.k; label = gk.label; sub = gk.sub; rank = groupRank(gk.k); }
-    if (!groups.has(k)) groups.set(k, {k, label, sub, rank, items:[]});
-    groups.get(k).items.push(a);
-  }
-  const G = [...groups.values()].sort((x, y) => x.rank - y.rank || x.label.localeCompare(y.label, 'pt') || x.sub.localeCompare(y.sub, 'pt'));
+  const G = D.G;
   // medidas
   const mob = innerWidth <= 760, lw = mob ? 138 : 300;
   const avail = Math.max(200, (wrap.clientWidth || innerWidth - 32) - lw - 2);
@@ -487,7 +517,7 @@ function renderGantt(){
   h += `<div class="gt-b"><div class="gt-cols">${days.map((d, i) => we(d) ? `<i style="left:${i * cw}px;width:${cw}px"></i>` : '').join('')}</div>`;
   if (ti >= 0 && ti < n) h += `<div class="gt-now" style="left:calc(var(--lw) + ${(ti + .5) * cw}px)"></div>`;
   for (const gr of G){
-    const items = gr.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
+    const items = gr.items;
     const gs = Math.max(0, Math.min(...items.map(a => di(a.noite)))), ge = Math.min(n - 1, Math.max(...items.map(a => Math.max(di(fimOf(a)), a.aberta && fimOf(a) < hoje ? ti : -1))));
     const done = items.filter(a => a.status === 'concluida').length;
     h += `<div class="gt-g"><div class="gt-gn${gr.k.startsWith('e:') ? ' etq-g' : ''}"${gr.k.startsWith('e:') ? ` style="--tc:${tagCor(gr.label)}"` : ''}>${gr.k.startsWith('e:') ? ICON_TAG : ''}<b>${esc(gr.label)}</b>${gr.sub && !mob ? `<span>${esc(gr.sub)}</span>` : ''}<em>${done}/${items.length}</em></div>
@@ -1208,7 +1238,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=16');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=17');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1230,7 +1260,7 @@ function filtrosTxt(){
   const f = S.f, p = [];
   if (f.autor) p.push(`inseridas por ${nameOf(f.autor)}`);
   if (f.status) p.push(`status ${STATUS[f.status].label.toLowerCase()}`);
-  if (f.tipo) p.push(TIPO_LABEL[f.tipo].toLowerCase());
+  if (f.tipo && !f.setor) p.push(TIPO_LABEL[f.tipo].toLowerCase());
   if (f.setor) p.push(f.tipo === 'setor' ? `setor ${f.setor}` : f.tipo === 'pilar' ? `pilar ${f.setor}` : f.setor);
   if (f.forn) p.push(`fornecedor ${f.forn}`);
   if (f.etq) p.push(`etiqueta ${f.etq}`);
@@ -1244,7 +1274,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=16');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=17');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1314,6 +1344,7 @@ $('f-etq').onchange = e => { S.f.etq = e.target.value; renderAll(); };
 $('f-autor').onchange = e => { S.f.autor = e.target.value; renderAll(); };
 try { const v = JSON.parse(localStorage.getItem('pn-gt') || '{}'); if (['sem','qui','mes'].includes(v.zoom)) S.gt.zoom = v.zoom; if (['local','etq'].includes(v.grp)) S.gt.grp = v.grp; if (typeof v.conc === 'boolean') S.gt.conc = v.conc; } catch {}
 $('gt-prev').onclick = () => gtShift(-1);
+$('gt-pdf').onclick = exportGanttPdf;
 $('gt-next').onclick = () => gtShift(1);
 $('gt-hoje').onclick = () => { S.gt.ref = defaultNight(); S.gt.jump = true; renderAll(); };
 $('gt-zoom').onclick = e => { const b = e.target.closest('button[data-z]'); if (!b) return; S.gt.zoom = b.dataset.z; S.gt.jump = true; gtSave(); renderAll(); };

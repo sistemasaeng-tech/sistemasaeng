@@ -965,3 +965,10 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
   .card .c-tags .etq-more.m-only{display:inline}
 }
 .f-sel select:disabled{opacity:.5;cursor:not-allowed}
+.gt-pdf{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 12px;margin-left:6px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-weight:700;font-size:13px}
+.gt-pdf svg{width:16px;height:16px;color:var(--brand-text)}
+.gt-pdf:hover{border-color:var(--brand)}
+@media (max-width:760px){
+  .gt-pdf{height:34px;width:34px;padding:0;justify-content:center;margin-left:4px;border:0;border-radius:50%;background:var(--surface-2)}
+  .gt-pdf span{display:none}
+}
