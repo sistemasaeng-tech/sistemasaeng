@@ -1007,3 +1007,44 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 }
 .grp-h .grp-ic{color:var(--gc);overflow:visible;white-space:normal}
 .grp-h .grp-tx{overflow:hidden;color:inherit}
+
+/* v21 · filtros com várias escolhas */
+.f-hint{font-weight:500;letter-spacing:0;text-transform:none;color:var(--faint);margin-left:6px;font-size:11px}
+.f-chips + .f-lbl,.f-chips + .f-grid{margin-top:14px}
+#f-tipo{margin-bottom:4px}
+.f-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.f-grid .f-lbl{margin-bottom:6px}
+.ms{position:relative;min-width:0}
+.ms-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;height:40px;padding:0 10px 0 12px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;font-size:14px;color:var(--fg);text-align:left}
+.ms-lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ms-caret{width:16px;height:16px;flex:none;color:var(--muted)}
+.ms.on .ms-btn{border-color:var(--brand);background:var(--brand-soft)}
+.ms.on .ms-lbl{color:var(--brand-text);font-weight:700}
+.ms-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:35;width:max(100%,300px);max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow-lg);padding:8px;display:flex;flex-direction:column;gap:6px}
+.f-grid > div:nth-child(4n) .ms-pop,.f-grid > div:nth-child(4n-1) .ms-pop{left:auto;right:0}
+.ms-q{height:38px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 10px;font-size:14px;width:100%}
+.ms-q:focus{outline:none;border-color:var(--brand)}
+.ms-list{max-height:300px;overflow:auto;display:flex;flex-direction:column;overscroll-behavior:contain}
+.ms-g{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-text);padding:10px 8px 4px}
+.ms-opt{display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:8px;cursor:pointer;font-size:14px}
+.ms-opt:hover{background:var(--surface-2)}
+.ms-opt input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--brand);flex:none}
+.ms-ol{display:flex;flex-direction:column;min-width:0}
+.ms-ol small{font-size:11.5px;color:var(--faint)}
+.ms-empty{padding:12px 8px;color:var(--muted);font-size:13px}
+.ms-foot{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:6px}
+.ms-foot .btn{min-height:34px;padding:0 16px}
+/* cadastro: setor de lojas e pilares */
+.cad-add-f select{border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:0 10px;min-height:var(--tap);font-size:14px;min-width:0}
+.ci-setor{flex:none;height:34px;border:1px solid var(--line);background:var(--surface-2);border-radius:9px;padding:0 8px;font-size:13px;max-width:130px}
+.ci-st{flex:none;font-size:12px;font-weight:700;color:var(--brand-text);background:var(--brand-soft);border-radius:999px;padding:2px 10px}
+@media (max-width:980px){ .f-grid{grid-template-columns:repeat(2,minmax(0,1fr))} .f-grid > div:nth-child(2n) .ms-pop{left:auto;right:0} .f-grid > div:nth-child(2n+1) .ms-pop{left:0;right:auto} }
+@media (max-width:760px){
+  .f-grid{grid-template-columns:minmax(0,1fr);gap:8px}
+  .f-grid > div .ms-pop{left:0;right:0;width:auto}
+  .ms-btn{border-color:transparent;background:var(--surface-2)}
+  .ms-list{max-height:46vh}
+  .ci-setor{max-width:110px}
+}
+.cad-add-f select{flex:1 1 160px}
+@media (max-width:760px){ .f-grid > div:nth-child(n) .ms-pop{left:0;right:0;width:auto;max-width:none} }

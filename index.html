@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=20">
+<link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
 
@@ -103,18 +103,16 @@
       <button class="btn pri" id="b-new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Nova atividade</span></button>
     </div>
     <div class="filters" id="filters" hidden>
-      <div class="f-lbl">Status</div>
+      <div class="f-lbl">Status <span class="f-hint">toque em um ou mais</span></div>
       <div class="f-chips" id="f-status"></div>
-      <div class="f-lbl">Inserido por</div>
-      <div class="f-sel one"><select id="f-autor" aria-label="Inserido por"><option value="">Todas as pessoas</option></select></div>
-      <div class="f-lbl">Local, setor e fornecedor</div>
-      <div class="f-sel">
-        <select id="f-tipo" aria-label="Tipo de local"><option value="">Todos os tipos de local</option><option value="setor">Setores</option><option value="pilar">Pilares</option><option value="shopping">Shopping</option></select>
-        <select id="f-setor" aria-label="Setor" disabled><option value="">Escolha primeiro o tipo de local</option></select>
-        <select id="f-forn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option></select>
+      <div class="f-lbl">Onde <span class="f-hint">um ou mais tipos</span></div>
+      <div class="f-chips" id="f-tipo"><button type="button" class="chip" data-tipo="setor">Setores</button><button type="button" class="chip" data-tipo="pilar">Pilares</button><button type="button" class="chip" data-tipo="shopping">Shopping</button></div>
+      <div class="f-grid">
+        <div><div class="f-lbl">Local</div><div class="ms" id="ms-loc"><button type="button" class="ms-btn" aria-haspopup="true" aria-expanded="false"><span class="ms-lbl">Todos os locais</span><svg class="ms-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg></button><div class="ms-pop" hidden><input class="ms-q" type="search" placeholder="Buscar…" autocomplete="off" aria-label="Buscar"><div class="ms-list"></div><div class="ms-foot"><button type="button" class="link-btn ms-clear">Limpar</button><button type="button" class="btn pri ms-ok">OK</button></div></div></div></div>
+        <div><div class="f-lbl">Fornecedor</div><div class="ms" id="ms-forn"><button type="button" class="ms-btn" aria-haspopup="true" aria-expanded="false"><span class="ms-lbl">Todos os fornecedores</span><svg class="ms-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg></button><div class="ms-pop" hidden><input class="ms-q" type="search" placeholder="Buscar…" autocomplete="off" aria-label="Buscar"><div class="ms-list"></div><div class="ms-foot"><button type="button" class="link-btn ms-clear">Limpar</button><button type="button" class="btn pri ms-ok">OK</button></div></div></div></div>
+        <div><div class="f-lbl">Etiqueta</div><div class="ms" id="ms-etq"><button type="button" class="ms-btn" aria-haspopup="true" aria-expanded="false"><span class="ms-lbl">Todas as etiquetas</span><svg class="ms-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg></button><div class="ms-pop" hidden><input class="ms-q" type="search" placeholder="Buscar…" autocomplete="off" aria-label="Buscar"><div class="ms-list"></div><div class="ms-foot"><button type="button" class="link-btn ms-clear">Limpar</button><button type="button" class="btn pri ms-ok">OK</button></div></div></div></div>
+        <div><div class="f-lbl">Inserido por</div><div class="ms" id="ms-autor"><button type="button" class="ms-btn" aria-haspopup="true" aria-expanded="false"><span class="ms-lbl">Todas as pessoas</span><svg class="ms-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m7 10 5 5 5-5"/></svg></button><div class="ms-pop" hidden><input class="ms-q" type="search" placeholder="Buscar…" autocomplete="off" aria-label="Buscar"><div class="ms-list"></div><div class="ms-foot"><button type="button" class="link-btn ms-clear">Limpar</button><button type="button" class="btn pri ms-ok">OK</button></div></div></div></div>
       </div>
-      <div class="f-lbl">Etiqueta</div>
-      <div class="f-sel one"><select id="f-etq" aria-label="Etiqueta"><option value="">Todas as etiquetas</option></select></div>
       <button class="link-btn" id="f-clear" type="button">Limpar filtros</button>
     </div>
     <div class="sec">
@@ -205,6 +203,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=20"></script>
+<script type="module" src="app.js?v=21"></script>
 </body>
 </html>

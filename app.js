@@ -117,7 +117,7 @@ const S = {
   usuarios:{}, cad:{fornecedores:[],setores:[],niveis:[],pilares:[],locais:[]}, cadLoaded:false,
   win:new Map(), open:new Map(), extra:new Map(), tagged:new Map(), feed:[], dwHist:[], etq:null,
   noite:defaultNight(), winFrom:addDays(defaultNight(), -35), tab:'noite', gt:{zoom:'qui', grp:'local', conc:true, ref:defaultNight(), jump:true},
-  f:{q:'',tipo:'',setor:'',forn:'',status:'',turno:'',etq:'',autor:''}, cadSub:null, cadDel:null, openId:null, dwMode:null,
+  f:{q:'',tipo:[],loc:[],forn:[],status:[],turno:'',etq:[],autor:[]}, cadSub:null, cadDel:null, openId:null, dwMode:null,
 };
 const isAdmin = () => S.perfil?.papel === 'admin';
 const canWrite = () => ['usuario','admin'].includes(S.perfil?.papel);
@@ -316,6 +316,38 @@ function subscribeWindow(){
 // filtro de local em cascata: o tipo (setor, pilar, shopping) define a lista do segundo seletor
 const pilarCode = s => (String(s || '').match(/P\s*\d+/i) || [''])[0].replace(/\s+/g, '').toUpperCase();
 const lc = s => String(s || '').trim().toLocaleLowerCase('pt-BR');
+// Lojas e pilares podem ter setor no cadastro: filtrar um setor traz também as lojas e pilares ligados a ele
+const locNome = x => typeof x === 'string' ? x : (x?.nome || '');
+const locSetor = x => typeof x === 'string' ? '' : (x?.setor || '');
+function setorOf(a){
+  if (a.tipoLocal === 'setor') return a.setor || '';
+  if (a.tipoLocal === 'shopping'){ const x = S.cad.locais.find(l => lc(locNome(l)) === lc(a.local)); return x ? locSetor(x) : ''; }
+  if (a.tipoLocal === 'pilar'){
+    const c = pilarCodeOf(a), loja = lc(pilarLojaOf(a)), es = S.cad.pilares.filter(x => (pilarCode(x.codigo) || x.codigo) === c);
+    const ex = es.find(x => lc(x.referencia) === loja && x.setor); if (ex) return ex.setor;
+    const ss = [...new Set(es.map(x => x.setor).filter(Boolean))]; return ss.length === 1 ? ss[0] : '';
+  }
+  return '';
+}
+function locItemMatch(a, v){
+  const t = v[0], val = v.slice(2);
+  if (t === 's') return setorOf(a) === val;
+  if (t === 'p') return a.tipoLocal === 'pilar' && pilarCodeOf(a) === val;
+  if (t === 'z') return a.tipoLocal === 'shopping' && lc(a.local) === lc(val);
+  return true;
+}
+// itens do filtro de local, conforme os tipos marcados em "Onde"
+function locItems(){
+  const tipos = S.f.tipo.length ? S.f.tipo : ['setor','pilar','shopping'], out = [];
+  if (tipos.includes('setor')) for (const [v, l] of locOptions('setor')){
+    const nl = S.cad.locais.filter(x => locSetor(x) === v).length, np = new Set(S.cad.pilares.filter(x => x.setor === v).map(x => pilarCode(x.codigo) || x.codigo)).size;
+    const inc = [nl ? `${nl} ${nl === 1 ? 'loja' : 'lojas'}` : '', np ? `${np} ${np === 1 ? 'pilar' : 'pilares'}` : ''].filter(Boolean).join(' e ');
+    out.push({v:'s:' + v, l, sub: inc ? 'inclui ' + inc : '', g:'Setores'});
+  }
+  if (tipos.includes('pilar')) for (const [v, l] of locOptions('pilar')) out.push({v:'p:' + v, l, g:'Pilares'});
+  if (tipos.includes('shopping')) for (const [v, l] of locOptions('shopping')){ const x = S.cad.locais.find(y => lc(locNome(y)) === lc(v)); out.push({v:'z:' + v, l, sub: x && locSetor(x) ? 'Setor ' + locSetor(x) : '', g:'Shopping'}); }
+  return out;
+}
 function locMatch(a, tipo, v){
   if (tipo === 'setor') return a.tipoLocal === 'setor' && a.setor === v;
   if (tipo === 'pilar') return a.tipoLocal === 'pilar' && pilarCode(a.pilar) === v;
@@ -337,7 +369,7 @@ function locOptions(tipo){
     return [...m.entries()].sort((x, y) => (parseInt(x[0].slice(1)) || 0) - (parseInt(y[0].slice(1)) || 0));
   }
   if (tipo === 'shopping'){
-    const m = new Map(S.cad.locais.map(x => [lc(x), x]));
+    const m = new Map(S.cad.locais.map(x => [lc(locNome(x)), locNome(x)]));
     for (const a of acts) if (a.tipoLocal === 'shopping' && a.local && !m.has(lc(a.local))) m.set(lc(a.local), a.local);
     return [...m.values()].sort((x, y) => x.localeCompare(y, 'pt')).map(x => [x, x]);
   }
@@ -345,12 +377,12 @@ function locOptions(tipo){
 }
 function matches(a){
   const f = S.f;
-  if (f.tipo && a.tipoLocal !== f.tipo) return false;
-  if (f.setor && !locMatch(a, f.tipo, f.setor)) return false;
-  if (f.forn && a.fornecedor !== f.forn) return false;
-  if (f.status && a.status !== f.status) return false;
-  if (f.etq && !hasTag(a, f.etq)) return false;
-  if (f.autor && a.criadoPor !== f.autor) return false;
+  if (f.tipo.length && !f.tipo.includes(a.tipoLocal)) return false;
+  if (f.loc.length && !f.loc.some(v => locItemMatch(a, v))) return false;
+  if (f.forn.length && !f.forn.includes(a.fornecedor || '__none__')) return false;
+  if (f.status.length && !f.status.includes(a.status)) return false;
+  if (f.etq.length && !f.etq.some(t => hasTag(a, t))) return false;
+  if (f.autor.length && !f.autor.includes(a.criadoPor)) return false;
   if (f.q){ const hay = [a.titulo,a.detalhes,a.fornecedor,a.responsavel,localLine(a),a.ultimaObs,a.motivo,...tagsOf(a)].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
   return true;
 }
@@ -377,8 +409,8 @@ function renderNight(){
   $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${cnt.concluida}</b><span>de ${total} concluídas</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
-  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status===k}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
-  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn, S.f.etq, S.f.autor].filter(Boolean).length;
+  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
+  const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor].filter(x => x.length).length;
   $('f-count').hidden = !nf; $('f-count').textContent = nf;
   const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
@@ -495,7 +527,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=20');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=21');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -519,7 +551,7 @@ function renderGantt(){
   for (const b of document.querySelectorAll('#gt-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
   $('gt-conc').checked = g.conc;
   $('gt-hoje').disabled = hoje >= ini && hoje <= fim;
-  const nf = [S.f.status, S.f.tipo, S.f.setor, S.f.forn, S.f.etq, S.f.autor, S.f.q].filter(Boolean).length;
+  const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor, S.f.q].filter(x => x.length).length;
   $('gt-filt').hidden = !nf;
   if (nf) $('gt-filt').innerHTML = `<span>Filtros da tela Atividades aplicados: <b>${esc(filtrosTxt())}</b></span><button type="button" class="link-btn" id="gt-fclear">Limpar</button>`;
   const D = gtData(), acts = D.acts, mesLbl = D.mesLbl;
@@ -692,10 +724,10 @@ const CAD_DEF = [
   {key:'fornecedores', title:'Fornecedores', hint:'Empresas que atuam na obra.', cols:[['nome','Nome da empresa'],['disciplina','Disciplina (opcional)']], k:'nome', v:'disciplina'},
   {key:'setores', title:'Setores', hint:'Código e frentes principais de cada setor.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
   {key:'niveis', title:'Níveis', hint:'Cotas de nível usadas nos relatos (m).', cols:[['valor','Nível (ex.: 114,30)']], k:'valor'},
-  {key:'pilares', title:'Pilares', hint:'Cadastre o mesmo pilar uma vez para cada loja ou ambiente que ele atravessa (ex.: P34 · Loja Lenny e P34 · Loja Corello).', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Loja / ambiente']], k:'codigo', v:'referencia', v2:'eixo'},
-  {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio fora dos setores.', cols:[['nome','Nome do local']], k:'nome'},
+  {key:'pilares', title:'Pilares', hint:'Cadastre o mesmo pilar uma vez para cada loja ou ambiente que ele atravessa (ex.: P34 · Loja Lenny e P34 · Loja Corello).', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Loja / ambiente'],['setor','Setor']], k:'codigo', v:'referencia', v2:'eixo'},
+  {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio. Informe o setor da obra a que cada local pertence: ao filtrar o setor, os trabalhos do local também aparecem.', cols:[['nome','Nome do local'],['setor','Setor']], k:'nome'},
 ];
-const cadItemText = (d, it) => { const o = typeof it === 'string' ? {[d.k]:it} : it; return {o, k:o[d.k], v:[d.v2 ? o[d.v2] : '', d.v ? o[d.v] : ''].filter(Boolean).join(' · ')}; };
+const cadItemText = (d, it) => { const o = typeof it === 'string' ? {[d.k]:it} : it || {}; return {o, k:o[d.k], v:[d.v2 ? o[d.v2] : '', d.v ? o[d.v] : ''].filter(Boolean).join(' · ')}; };
 
 function renderCad(){
   const admin = isAdmin();
@@ -726,7 +758,7 @@ function renderCad(){
   view.innerHTML = `<div class="cad-page">
     <button type="button" class="back" data-cad-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Cadastros</button>
     <div class="cad-title"><span class="cad-ico">${ico(S.cadSub)}</span><div><h1>${esc(title)}</h1><p>${esc(hint)}</p></div></div>
-    ${!isU && admin ? `<form class="cad-add" data-add="${d.key}"><div class="cad-add-h">Novo cadastro</div><div class="cad-add-f">${d.cols.map(([c,l]) => `<input id="cad-${d.key}-${c}" name="${c}" placeholder="${l}" aria-label="${l}" autocomplete="off">`).join('')}<button class="btn pri" type="submit">Adicionar</button></div></form>` : ''}
+    ${!isU && admin ? `<form class="cad-add" data-add="${d.key}"><div class="cad-add-h">Novo cadastro</div><div class="cad-add-f">${d.cols.map(([c,l]) => c === 'setor' ? `<select id="cad-${d.key}-${c}" name="${c}" aria-label="${l}"><option value="">Setor da obra (opcional)</option>${S.cad.setores.map(x => `<option value="${esc(x.codigo)}">Setor ${esc(x.codigo)}</option>`).join('')}</select>` : `<input id="cad-${d.key}-${c}" name="${c}" placeholder="${l}" aria-label="${l}" autocomplete="off">`).join('')}<button class="btn pri" type="submit">Adicionar</button></div></form>` : ''}
     <div class="search cad-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="cad-q" placeholder="Buscar em ${esc(title.toLowerCase())}…" aria-label="Buscar" autocomplete="off"></div>
     <div class="cad-list-h"><span id="cad-count"></span></div>
     <div class="cad-list" id="cad-list"></div>
@@ -757,6 +789,7 @@ function renderCadList(){
   $('cad-count').textContent = q ? `${items.length} de ${all.length}` : `${all.length} ${all.length === 1 ? 'item' : 'itens'}`;
   list.innerHTML = items.length ? items.map(x => `<div class="cad-item">
       <div class="ci-tx"><b>${esc(x.k)}</b>${x.v ? `<span>${esc(x.v)}</span>` : ''}</div>
+      ${d.key === 'pilares' || d.key === 'locais' ? (admin ? `<select class="ci-setor" data-cad-setor="${d.key}:${x.i}" aria-label="Setor de ${esc(x.k)}"><option value="">Sem setor</option>${S.cad.setores.map(z => `<option value="${esc(z.codigo)}" ${z.codigo === (x.o.setor || '') ? 'selected' : ''}>Setor ${esc(z.codigo)}</option>`).join('')}</select>` : (x.o.setor ? `<span class="ci-st">Setor ${esc(x.o.setor)}</span>` : '')) : ''}
       ${admin ? (S.cadDel === `${d.key}:${x.i}` ? `<div class="ci-conf"><span>Remover?</span><button type="button" class="btn danger" data-del="${d.key}:${x.i}">Sim</button><button type="button" class="btn" data-del-cancel>Não</button></div>`
         : `<button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
     </div>`).join('') : `<div class="empty">${S.cadLoaded ? (q ? 'Nada encontrado com essa busca.' : 'Lista vazia.') : 'Carregando…'}</div>`;
@@ -777,30 +810,44 @@ async function saveCad(next){
   try { await setDoc(doc(db, 'config', 'cadastros'), {...next, atualizadoPor:S.uid, atualizadoEm:serverTimestamp()}); return true; }
   catch (e) { toast(e?.code === 'permission-denied' ? 'Só administradores alteram os cadastros.' : 'Não foi possível salvar o cadastro.'); return false; }
 }
+const MS = {
+  'ms-loc':   {ph:'Todos os locais', key:'loc', opts: () => locItems()},
+  'ms-forn':  {ph:'Todos os fornecedores', key:'forn', opts: () => {
+    const used = new Set(S.cad.fornecedores.map(x => x.nome)); let none = false;
+    for (const a of all().values()){ if (a.fornecedor) used.add(a.fornecedor); else none = true; }
+    return [...(none ? [{v:'__none__', l:'Sem fornecedor informado'}] : []), ...[...used].sort((a, b) => a.localeCompare(b, 'pt')).map(n => ({v:n, l:n}))];
+  }},
+  'ms-etq':   {ph:'Todas as etiquetas', key:'etq', opts: () => [...tagCatalog().values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(x => ({v:x.nome, l:x.nome, sub:`${x.n} ${x.n === 1 ? 'atividade' : 'atividades'}`}))},
+  'ms-autor': {ph:'Todas as pessoas', key:'autor', opts: () => {
+    const ids = new Set();
+    for (const a of all().values()) if (a.criadoPor) ids.add(a.criadoPor);
+    for (const [id, u] of Object.entries(S.usuarios)) if (['usuario','admin'].includes(u.papel)) ids.add(id);
+    return [...ids].sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')).map(id => ({v:id, l:nameOf(id), sub:roleOf(id)}));
+  }},
+};
+function msLabel(id){
+  const c = MS[id], sel = S.f[c.key], el = $(id);
+  let t = c.ph;
+  if (sel.length === 1){ const o = c.opts().find(x => x.v === sel[0]); t = o ? o.l.split(' — ')[0] : sel[0]; }
+  else if (sel.length > 1) t = `${sel.length} selecionados`;
+  el.querySelector('.ms-lbl').textContent = t; el.classList.toggle('on', sel.length > 0);
+}
+function msRender(id){
+  const c = MS[id], el = $(id), q = tagKey(el.querySelector('.ms-q').value), sel = new Set(S.f[c.key]);
+  const opts = c.opts().filter(o => !q || tagKey(o.l + ' ' + (o.sub || '')).includes(q));
+  let g = null, h = '';
+  for (const o of opts){
+    if (o.g && o.g !== g){ g = o.g; h += `<div class="ms-g">${esc(g)}</div>`; }
+    h += `<label class="ms-opt"><input type="checkbox" value="${esc(o.v)}" ${sel.has(o.v) ? 'checked' : ''}><span class="ms-ol">${esc(o.l)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</span></label>`;
+  }
+  el.querySelector('.ms-list').innerHTML = h || '<div class="ms-empty">Nada encontrado.</div>';
+}
+function msClose(except){ for (const id of Object.keys(MS)) if (id !== except){ const p = $(id).querySelector('.ms-pop'); if (!p.hidden){ p.hidden = true; $(id).querySelector('.ms-btn').setAttribute('aria-expanded', 'false'); } } }
 function fillFilterOptions(){
-  const s = $('f-setor'), opts = locOptions(S.f.tipo);
-  const ph = {setor:'Todos os setores', pilar:'Todos os pilares', shopping:'Todos os locais do shopping'}[S.f.tipo] || 'Escolha primeiro o tipo de local';
-  s.innerHTML = `<option value="">${ph}</option>` + opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
-  s.disabled = !S.f.tipo;
-  s.setAttribute('aria-label', S.f.tipo === 'pilar' ? 'Pilar' : S.f.tipo === 'shopping' ? 'Local do shopping' : 'Setor');
-  if (S.f.setor && !opts.some(([v]) => v === S.f.setor)) S.f.setor = '';
-  s.value = S.f.setor;
-  const f = $('f-forn'), fv = f.value, used = new Set(S.cad.fornecedores.map(x => x.nome));
-  for (const a of all().values()) if (a.fornecedor) used.add(a.fornecedor);
-  f.innerHTML = '<option value="">Todos os fornecedores</option>' + [...used].sort((a,b) => a.localeCompare(b,'pt')).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
-  f.value = used.has(fv) ? fv : '';
-  const e = $('f-etq'), cat = [...tagCatalog().values()].sort((a,b) => a.nome.localeCompare(b.nome,'pt'));
-  e.innerHTML = '<option value="">Todas as etiquetas</option>' + cat.map(x => `<option value="${esc(x.nome)}">${esc(x.nome)}</option>`).join('');
-  e.value = S.f.etq && cat.some(x => x.k === tagKey(S.f.etq)) ? cat.find(x => x.k === tagKey(S.f.etq)).nome : '';
-  if (!e.value) S.f.etq = '';
-  // quem inseriu: pessoas com atividades lançadas + usuários liberados
-  const au = $('f-autor'), ids = new Set();
-  for (const a of all().values()) if (a.criadoPor) ids.add(a.criadoPor);
-  for (const [id, u] of Object.entries(S.usuarios)) if (['usuario','admin'].includes(u.papel)) ids.add(id);
-  const ord = [...ids].sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt'));
-  au.innerHTML = '<option value="">Todas as pessoas</option>' + ord.map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('');
-  au.value = ids.has(S.f.autor) ? S.f.autor : '';
-  if (!au.value) S.f.autor = '';
+  // remove do filtro de local o que não pertence mais aos tipos marcados
+  const okLoc = new Set(locItems().map(o => o.v)); S.f.loc = S.f.loc.filter(v => okLoc.has(v));
+  for (const id of Object.keys(MS)){ msLabel(id); if (!$(id).querySelector('.ms-pop').hidden) msRender(id); }
+  for (const b of document.querySelectorAll('#f-tipo .chip')) b.setAttribute('aria-pressed', String(S.f.tipo.includes(b.dataset.tipo)));
 }
 
 /* ================= render geral ================= */
@@ -1045,7 +1092,7 @@ function createAct(data, origem){
 function openForm(id, preset = {}){
   if (!canWrite()) return;
   const a = id ? all().get(id) : null;
-  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:S.f.tipo || 'setor', setor:S.f.tipo === 'setor' ? S.f.setor : '', pilar:S.f.tipo === 'pilar' ? S.f.setor : '', local:S.f.tipo === 'shopping' ? S.f.setor : '', prioridade:'normal', fornecedor:S.f.forn || '', etiquetas:S.f.etq ? [S.f.etq] : [], ...preset};
+  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:(S.f.tipo.length === 1 ? S.f.tipo[0] : '') || (S.f.loc.length === 1 ? {s:'setor', p:'pilar', z:'shopping'}[S.f.loc[0][0]] : '') || 'setor', setor:S.f.loc.length === 1 && S.f.loc[0][0] === 's' ? S.f.loc[0].slice(2) : '', pilar:S.f.loc.length === 1 && S.f.loc[0][0] === 'p' ? S.f.loc[0].slice(2) : '', local:S.f.loc.length === 1 && S.f.loc[0][0] === 'z' ? S.f.loc[0].slice(2) : '', prioridade:'normal', fornecedor:S.f.forn.length === 1 && S.f.forn[0] !== '__none__' ? S.f.forn[0] : '', etiquetas:[...S.f.etq], ...preset};
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
   <form id="af" novalidate>
     <div class="frow">
@@ -1077,7 +1124,7 @@ function openForm(id, preset = {}){
     <datalist id="dl-forn">${S.cad.fornecedores.map(x => `<option value="${esc(x.nome)}">${esc(x.disciplina||'')}</option>`).join('')}</datalist>
     <datalist id="dl-pilar">${locOptions('pilar').map(([c, l]) => `<option value="${esc(c)}">${esc(l)}</option>`).join('')}</datalist>
     <datalist id="dl-pilar-loja"></datalist>
-    <datalist id="dl-local">${S.cad.locais.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+    <datalist id="dl-local">${S.cad.locais.map(x => `<option value="${esc(locNome(x))}">${esc(locSetor(x) ? 'Setor ' + locSetor(x) : '')}</option>`).join('')}</datalist>
     <datalist id="dl-nivel">${S.cad.niveis.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
     <div class="acts"><button type="button" class="btn ghost" id="af-cancel">Cancelar</button><button class="btn pri" type="submit">${a ? 'Salvar alterações' : 'Inserir atividade'}</button></div>
   </form>`;
@@ -1276,7 +1323,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=20');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=21');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1295,13 +1342,13 @@ function openCronograma(opts = {}){
 let gerandoPdf = false;
 // texto dos filtros ativos (aparece no relatório)
 function filtrosTxt(){
-  const f = S.f, p = [];
-  if (f.autor) p.push(`inseridas por ${nameOf(f.autor)}`);
-  if (f.status) p.push(`status ${STATUS[f.status].label.toLowerCase()}`);
-  if (f.tipo && !f.setor) p.push(TIPO_LABEL[f.tipo].toLowerCase());
-  if (f.setor) p.push(f.tipo === 'setor' ? `setor ${f.setor}` : f.tipo === 'pilar' ? `pilar ${f.setor}` : f.setor);
-  if (f.forn) p.push(`fornecedor ${f.forn}`);
-  if (f.etq) p.push(`etiqueta ${f.etq}`);
+  const f = S.f, p = [], L = (arr, fn) => arr.map(fn).join(', ');
+  if (f.autor.length) p.push(`inseridas por ${L(f.autor, nameOf)}`);
+  if (f.status.length) p.push(`status ${L(f.status, k => STATUS[k].label.toLowerCase())}`);
+  if (f.tipo.length) p.push(L(f.tipo, t => ({setor:'setores', pilar:'pilares', shopping:'shopping'})[t]));
+  if (f.loc.length) p.push(L(f.loc, v => v[0] === 's' ? 'setor ' + v.slice(2) : v[0] === 'p' ? 'pilar ' + v.slice(2) : v.slice(2)));
+  if (f.forn.length) p.push(`fornecedor ${L(f.forn, x => x === '__none__' ? 'não informado' : x)}`);
+  if (f.etq.length) p.push(`etiqueta ${L(f.etq, x => x)}`);
   if (f.q) p.push(`busca "${f.q}"`);
   return p.join(' · ');
 }
@@ -1312,7 +1359,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=20');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=21');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1335,6 +1382,7 @@ async function exportPdf(){
 document.addEventListener('click', e => {
   const t = e.target;
   if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
+  if (!t.closest('.ms')) msClose();
   const etqEl = t.closest('[data-etq]'); if (etqEl) return openTag(etqEl.dataset.etq);
   if (t.closest('[data-etq-back]')){ S.etq = null; window.scrollTo({top:0}); return renderAll(); }
   if (t.closest('#etq-more-b')){ const mp = $('etq-more-pop'); mp.hidden = !mp.hidden; return; }
@@ -1344,7 +1392,11 @@ document.addEventListener('click', e => {
   if (t.closest('#etq-enc-tg')){ S.etqEnc = !S.etqEnc; return renderAll(); }
   const tab = t.closest('.tab'); if (tab) return setTab(tab.dataset.tab);
   const cardEl = t.closest('.card[data-id], .act[data-id], .gt-r[data-id]'); if (cardEl) return openDrawer(cardEl.dataset.id);
-  const chip = t.closest('.chip[data-st]'); if (chip){ S.f.status = S.f.status === chip.dataset.st ? '' : chip.dataset.st; return renderAll(); }
+  const chip = t.closest('.chip[data-st]'); if (chip){ const k = chip.dataset.st; S.f.status = S.f.status.includes(k) ? S.f.status.filter(x => x !== k) : [...S.f.status, k]; return renderAll(); }
+  const tch = t.closest('.chip[data-tipo]'); if (tch){ const k = tch.dataset.tipo; S.f.tipo = S.f.tipo.includes(k) ? S.f.tipo.filter(x => x !== k) : [...S.f.tipo, k]; fillFilterOptions(); return renderAll(); }
+  const msb = t.closest('.ms-btn'); if (msb){ const id = msb.closest('.ms').id, p = $(id).querySelector('.ms-pop'); msClose(id); p.hidden = !p.hidden; msb.setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden){ $(id).querySelector('.ms-q').value = ''; msRender(id); } return; }
+  const msc = t.closest('.ms-clear'); if (msc){ const id = msc.closest('.ms').id; S.f[MS[id].key] = []; msRender(id); msLabel(id); return renderAll(); }
+  if (t.closest('.ms-ok')){ msClose(); return; }
   if (t.closest('[data-jump]')) return $('sec-pend').scrollIntoView({behavior:'smooth', block:'start'});
   const m = t.closest('[data-mode]'); if (m && $('drawer').contains(m)) return setMode(m.dataset.mode || null);
   const cadRow = t.closest('[data-cad]'); if (cadRow){ S.cadSub = cadRow.dataset.cad; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
@@ -1362,9 +1414,10 @@ document.addEventListener('submit', e => {
   const key = f.dataset.add, d = CAD_DEF.find(x => x.key === key);
   const vals = Object.fromEntries(d.cols.map(([c]) => [c, f.elements[c].value.trim()]));
   if (!vals[d.k]) return toast('Preencha o primeiro campo.');
-  const simple = key === 'niveis' || key === 'locais', item = simple ? vals[d.k] : vals;
+  const simple = key === 'niveis', item = simple ? vals[d.k] : vals;
   const same = key === 'pilares'
     ? x => (pilarCode(x.codigo) || lc(x.codigo)) === (pilarCode(vals.codigo) || lc(vals.codigo)) && lc(x.referencia) === lc(vals.referencia)
+    : key === 'locais' ? x => lc(locNome(x)) === lc(vals.nome)
     : x => String(simple ? x : x[d.k]).toLowerCase() === vals[d.k].toLowerCase();
   if ((S.cad[key]||[]).some(same)) return toast(key === 'pilares' ? 'Esse pilar com essa loja já está na lista.' : 'Esse item já está na lista.');
   if (key === 'pilares' && pilarCode(vals.codigo)) vals.codigo = pilarCode(vals.codigo);
@@ -1379,13 +1432,8 @@ $('n-today').onclick = () => setNight(defaultNight());
 $('n-date').onchange = e => setNight(e.target.value);
 $('n-date').addEventListener('click', e => { try { e.target.showPicker(); } catch {} });
 $('f-q').oninput = e => { S.f.q = e.target.value.trim(); renderAll(); };
-$('f-tipo').onchange = e => { S.f.tipo = e.target.value; S.f.setor = ''; fillFilterOptions(); renderAll(); };
 try { const t = localStorage.getItem('pn-turno'); if (t === 'diurno' || t === 'noturno') S.f.turno = t; } catch {}
 $('f-turno').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.f.turno = b.dataset.t || ''; try { localStorage.setItem('pn-turno', S.f.turno); } catch {} renderAll(); };
-$('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
-$('f-forn').onchange = e => { S.f.forn = e.target.value; renderAll(); };
-$('f-etq').onchange = e => { S.f.etq = e.target.value; renderAll(); };
-$('f-autor').onchange = e => { S.f.autor = e.target.value; renderAll(); };
 try { const v = JSON.parse(localStorage.getItem('pn-gt') || '{}'); if (['sem','qui','mes'].includes(v.zoom)) S.gt.zoom = v.zoom; if (['local','etq'].includes(v.grp)) S.gt.grp = v.grp; if (typeof v.conc === 'boolean') S.gt.conc = v.conc; } catch {}
 $('gt-prev').onclick = () => gtShift(-1);
 $('gt-pdf').onclick = exportGanttPdf;
@@ -1399,11 +1447,25 @@ $('gt-filt').onclick = e => { if (e.target.closest('#gt-fclear')) $('f-clear').c
 $('gt-wrap').addEventListener('keydown', e => { const r = e.target.closest('.gt-r[data-id]'); if (r && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openDrawer(r.dataset.id); } });
 { let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (S.tab === 'gantt') renderGantt(); }, 150); }); }
 $('etq-q').oninput = () => renderAll();
+document.addEventListener('change', e => {
+  const cs = e.target.closest('[data-cad-setor]');
+  if (cs){
+    const [key, i] = cs.dataset.cadSetor.split(':'), arr = [...(S.cad[key] || [])], it = arr[Number(i)];
+    arr[Number(i)] = typeof it === 'string' ? {nome:it, setor:cs.value} : {...it, setor:cs.value};
+    saveCad({...S.cad, [key]:arr}).then(ok => ok && toast(cs.value ? `Ligado ao Setor ${cs.value}.` : 'Setor removido.'));
+    return;
+  }
+  const cb = e.target.closest('.ms-list input[type=checkbox]'); if (!cb) return;
+  const id = cb.closest('.ms').id, k = MS[id].key, v = cb.value;
+  S.f[k] = cb.checked ? [...new Set([...S.f[k], v])] : S.f[k].filter(x => x !== v);
+  msLabel(id); renderAll();
+});
+document.addEventListener('input', e => { const q = e.target.closest('.ms-q'); if (q) msRender(q.closest('.ms').id); });
 ['h-dias','h-user','h-tipo'].forEach(id => { $(id).onchange = renderAll; });
 $('b-new').onclick = () => openForm(null);
 $('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
 $('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
-$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = S.f.etq = S.f.autor = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = $('f-etq').value = $('f-autor').value = ''; fillFilterOptions(); renderAll(); };
+$('f-clear').onclick = () => { S.f.status = []; S.f.tipo = []; S.f.loc = []; S.f.forn = []; S.f.etq = []; S.f.autor = []; msClose(); fillFilterOptions(); renderAll(); };
 $('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
 $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
 $('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };
