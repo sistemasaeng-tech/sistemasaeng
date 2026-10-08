@@ -295,10 +295,38 @@ function subscribeWindow(){
 }
 
 /* ================= filtros e listas ================= */
+// filtro de local em cascata: o tipo (setor, pilar, shopping) define a lista do segundo seletor
+const pilarCode = s => (String(s || '').match(/P\s*\d+/i) || [''])[0].replace(/\s+/g, '').toUpperCase();
+const lc = s => String(s || '').trim().toLocaleLowerCase('pt-BR');
+function locMatch(a, tipo, v){
+  if (tipo === 'setor') return a.tipoLocal === 'setor' && a.setor === v;
+  if (tipo === 'pilar') return a.tipoLocal === 'pilar' && pilarCode(a.pilar) === v;
+  if (tipo === 'shopping') return a.tipoLocal === 'shopping' && lc(a.local) === lc(v);
+  return true;
+}
+function locOptions(tipo){
+  const acts = [...all().values()];
+  if (tipo === 'setor'){
+    const m = new Map(S.cad.setores.map(x => [x.codigo, `Setor ${x.codigo}${x.descricao ? ' — ' + x.descricao : ''}`]));
+    for (const a of acts) if (a.tipoLocal === 'setor' && a.setor && !m.has(a.setor)) m.set(a.setor, `Setor ${a.setor}`);
+    return [...m.entries()];
+  }
+  if (tipo === 'pilar'){
+    const m = new Map(S.cad.pilares.map(x => [pilarCode(x.codigo) || x.codigo, `${x.codigo}${x.eixo ? ' (' + x.eixo + ')' : ''}${x.referencia ? ' · ' + x.referencia : ''}`]));
+    for (const a of acts) if (a.tipoLocal === 'pilar'){ const c = pilarCode(a.pilar); if (c && !m.has(c)) m.set(c, c); }
+    return [...m.entries()].sort((x, y) => (parseInt(x[0].slice(1)) || 0) - (parseInt(y[0].slice(1)) || 0));
+  }
+  if (tipo === 'shopping'){
+    const m = new Map(S.cad.locais.map(x => [lc(x), x]));
+    for (const a of acts) if (a.tipoLocal === 'shopping' && a.local && !m.has(lc(a.local))) m.set(lc(a.local), a.local);
+    return [...m.values()].sort((x, y) => x.localeCompare(y, 'pt')).map(x => [x, x]);
+  }
+  return [];
+}
 function matches(a){
   const f = S.f;
   if (f.tipo && a.tipoLocal !== f.tipo) return false;
-  if (f.setor && !(a.tipoLocal === 'setor' && a.setor === f.setor)) return false;
+  if (f.setor && !locMatch(a, f.tipo, f.setor)) return false;
   if (f.forn && a.fornecedor !== f.forn) return false;
   if (f.status && a.status !== f.status) return false;
   if (f.etq && !hasTag(a, f.etq)) return false;
@@ -691,9 +719,13 @@ async function saveCad(next){
   catch (e) { toast(e?.code === 'permission-denied' ? 'Só administradores alteram os cadastros.' : 'Não foi possível salvar o cadastro.'); return false; }
 }
 function fillFilterOptions(){
-  const s = $('f-setor'), sv = s.value;
-  s.innerHTML = '<option value="">Todos os setores</option>' + S.cad.setores.map(x => `<option value="${esc(x.codigo)}">Setor ${esc(x.codigo)}</option>`).join('');
-  s.value = sv;
+  const s = $('f-setor'), opts = locOptions(S.f.tipo);
+  const ph = {setor:'Todos os setores', pilar:'Todos os pilares', shopping:'Todos os locais do shopping'}[S.f.tipo] || 'Escolha primeiro o tipo de local';
+  s.innerHTML = `<option value="">${ph}</option>` + opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  s.disabled = !S.f.tipo;
+  s.setAttribute('aria-label', S.f.tipo === 'pilar' ? 'Pilar' : S.f.tipo === 'shopping' ? 'Local do shopping' : 'Setor');
+  if (S.f.setor && !opts.some(([v]) => v === S.f.setor)) S.f.setor = '';
+  s.value = S.f.setor;
   const f = $('f-forn'), fv = f.value, used = new Set(S.cad.fornecedores.map(x => x.nome));
   for (const a of all().values()) if (a.fornecedor) used.add(a.fornecedor);
   f.innerHTML = '<option value="">Todos os fornecedores</option>' + [...used].sort((a,b) => a.localeCompare(b,'pt')).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
@@ -954,7 +986,7 @@ function createAct(data, origem){
 function openForm(id, preset = {}){
   if (!canWrite()) return;
   const a = id ? all().get(id) : null;
-  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:S.f.tipo || 'setor', setor:S.f.setor || '', prioridade:'normal', fornecedor:S.f.forn || '', etiquetas:S.f.etq ? [S.f.etq] : [], ...preset};
+  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:S.f.tipo || 'setor', setor:S.f.tipo === 'setor' ? S.f.setor : '', pilar:S.f.tipo === 'pilar' ? S.f.setor : '', local:S.f.tipo === 'shopping' ? S.f.setor : '', prioridade:'normal', fornecedor:S.f.forn || '', etiquetas:S.f.etq ? [S.f.etq] : [], ...preset};
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
   <form id="af" novalidate>
     <div class="frow">
@@ -1176,7 +1208,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=15');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=16');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1199,7 +1231,7 @@ function filtrosTxt(){
   if (f.autor) p.push(`inseridas por ${nameOf(f.autor)}`);
   if (f.status) p.push(`status ${STATUS[f.status].label.toLowerCase()}`);
   if (f.tipo) p.push(TIPO_LABEL[f.tipo].toLowerCase());
-  if (f.setor) p.push(`setor ${f.setor}`);
+  if (f.setor) p.push(f.tipo === 'setor' ? `setor ${f.setor}` : f.tipo === 'pilar' ? `pilar ${f.setor}` : f.setor);
   if (f.forn) p.push(`fornecedor ${f.forn}`);
   if (f.etq) p.push(`etiqueta ${f.etq}`);
   if (f.q) p.push(`busca "${f.q}"`);
@@ -1212,7 +1244,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=15');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=16');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1273,7 +1305,7 @@ $('n-today').onclick = () => setNight(defaultNight());
 $('n-date').onchange = e => setNight(e.target.value);
 $('n-date').addEventListener('click', e => { try { e.target.showPicker(); } catch {} });
 $('f-q').oninput = e => { S.f.q = e.target.value.trim(); renderAll(); };
-$('f-tipo').onchange = e => { S.f.tipo = e.target.value; renderAll(); };
+$('f-tipo').onchange = e => { S.f.tipo = e.target.value; S.f.setor = ''; fillFilterOptions(); renderAll(); };
 try { const t = localStorage.getItem('pn-turno'); if (t === 'diurno' || t === 'noturno') S.f.turno = t; } catch {}
 $('f-turno').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.f.turno = b.dataset.t || ''; try { localStorage.setItem('pn-turno', S.f.turno); } catch {} renderAll(); };
 $('f-setor').onchange = e => { S.f.setor = e.target.value; renderAll(); };
@@ -1296,7 +1328,7 @@ $('etq-q').oninput = () => renderAll();
 $('b-new').onclick = () => openForm(null);
 $('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
 $('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
-$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = S.f.etq = S.f.autor = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = $('f-etq').value = $('f-autor').value = ''; renderAll(); };
+$('f-clear').onclick = () => { S.f.status = S.f.tipo = S.f.setor = S.f.forn = S.f.etq = S.f.autor = ''; $('f-tipo').value = $('f-setor').value = $('f-forn').value = $('f-etq').value = $('f-autor').value = ''; fillFilterOptions(); renderAll(); };
 $('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
 $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
 $('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };

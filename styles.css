@@ -964,3 +964,4 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
   .card .c-tags .etq-more{display:none}
   .card .c-tags .etq-more.m-only{display:inline}
 }
+.f-sel select:disabled{opacity:.5;cursor:not-allowed}

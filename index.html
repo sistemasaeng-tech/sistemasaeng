@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 
@@ -109,8 +109,8 @@
       <div class="f-sel one"><select id="f-autor" aria-label="Inserido por"><option value="">Todas as pessoas</option></select></div>
       <div class="f-lbl">Local, setor e fornecedor</div>
       <div class="f-sel">
-        <select id="f-tipo" aria-label="Tipo de local"><option value="">Todos os locais</option><option value="setor">Setores</option><option value="pilar">Pilares</option><option value="shopping">Shopping</option></select>
-        <select id="f-setor" aria-label="Setor"><option value="">Todos os setores</option></select>
+        <select id="f-tipo" aria-label="Tipo de local"><option value="">Todos os tipos de local</option><option value="setor">Setores</option><option value="pilar">Pilares</option><option value="shopping">Shopping</option></select>
+        <select id="f-setor" aria-label="Setor" disabled><option value="">Escolha primeiro o tipo de local</option></select>
         <select id="f-forn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option></select>
       </div>
       <div class="f-lbl">Etiqueta</div>
@@ -204,6 +204,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>
