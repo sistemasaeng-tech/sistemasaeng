@@ -984,3 +984,26 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 @media (max-width:760px){ .gt-child .gt-gn{padding-left:22px} .gt-child .gt-gn::before{left:10px} .gt-child .gt-gn b{font-size:12px} }
 .gt-r.in-child .gt-n{padding-left:28px}
 @media (max-width:760px){ .gt-r.in-child .gt-n{padding-left:20px} }
+
+/* v19 · títulos de grupo (setor, pilar, local do shopping) com mais destaque */
+.grp{margin-top:18px}
+.grp-h{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:8px 12px 8px 8px;border-radius:12px;background:var(--surface-2);border-left:3px solid var(--gc,var(--brand));flex-wrap:nowrap;min-width:0}
+.grp-setores{--gc:var(--brand)}
+.grp-pilares{--gc:#b48ae0}
+.grp-locais{--gc:#4fc3b5}
+.grp-ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--gc) 16%,transparent);color:var(--gc)}
+.grp-ic svg{width:17px;height:17px}
+.grp-tx{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1}
+.grp-h .grp-tx b{font-size:15px;font-weight:800;letter-spacing:.01em;text-transform:none;color:var(--fg);flex:none}
+.grp-h .grp-tx span{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.grp-n{font-style:normal;flex:none;min-width:24px;height:22px;padding:0 7px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--gc) 18%,transparent);color:var(--gc);font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+@media (max-width:760px){
+  .grp{margin-top:14px}
+  .grp-h{padding:7px 10px 7px 7px;gap:9px;margin-bottom:7px}
+  .grp-ic{width:28px;height:28px}
+  .grp-tx{flex-direction:column;align-items:flex-start;gap:0}
+  .grp-h .grp-tx b{font-size:14.5px}
+  .grp-h .grp-tx span{font-size:11.5px;max-width:100%}
+}
+.grp-h .grp-ic{color:var(--gc);overflow:visible;white-space:normal}
+.grp-h .grp-tx{overflow:hidden;color:inherit}

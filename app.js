@@ -385,7 +385,8 @@ function grouped(list, isPend){
   const groups = new Map();
   for (const a of list){ const g = groupKey(a); if (!groups.has(g.k)) groups.set(g.k, {...g, items:[]}); groups.get(g.k).items.push(a); }
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
-    .map(g => `<div class="grp"><div class="grp-h"><b>${esc(g.label)}</b>${g.sub ? `<span>${esc(g.sub)}</span>` : ''}</div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`).join('');
+    .map(g => { const tp = g.k.startsWith('p:') ? 'pilares' : g.k.startsWith('z:') ? 'locais' : 'setores', lab = g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label, sub = g.k.startsWith('z:') ? 'Shopping' : g.sub;
+      return `<div class="grp grp-${tp}"><div class="grp-h"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em></div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`; }).join('');
 }
 function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), ref) : 0, av = avOf(a);
@@ -481,7 +482,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=18');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=19');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1253,7 +1254,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=18');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=19');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1289,7 +1290,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=18');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=19');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
