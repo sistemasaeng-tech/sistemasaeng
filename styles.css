@@ -1048,3 +1048,12 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 }
 .cad-add-f select{flex:1 1 160px}
 @media (max-width:760px){ .f-grid > div:nth-child(n) .ms-pop{left:0;right:0;width:auto;max-width:none} }
+
+/* v22 · grupos recolhíveis */
+.grp-h{cursor:pointer;user-select:none;-webkit-user-select:none;transition:background .15s}
+.grp-h:hover{background:color-mix(in srgb,var(--gc) 8%,var(--surface-2))}
+.grp-h:focus-visible{outline:2px solid var(--gc);outline-offset:2px}
+.grp-chev{width:18px;height:18px;flex:none;color:var(--muted);transition:transform .2s}
+.grp.col .grp-chev{transform:rotate(-90deg)}
+.grp.col .grp-h{margin-bottom:0;opacity:.85}
+.grp.col{margin-bottom:2px}

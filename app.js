@@ -275,7 +275,7 @@ function startApp(){
   renderWho();
   if (S.started){ renderAll(); return; }
   S.started = true;
-  try { const t = localStorage.getItem('pn-tab'); if (t) S.tab = t; } catch {}
+  S.tab = 'noite'; // o app abre sempre na aba Atividades
   setTab(S.tab);
   const fail = what => err => { console.warn(what, err); if (err?.code === 'permission-denied') return; toast('Conexão com o banco interrompida. Recarregue a página.'); };
   S.unsubs.push(onSnapshot(collection(db, 'usuarios'), s => {
@@ -419,19 +419,28 @@ function renderNight(){
   let html;
   if (!tonight.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
   else if (!t.length) html = '<div class="empty">Nenhuma atividade com esses filtros.</div>';
-  else if (ft) html = grouped(t, false);
-  else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false)}</div>` : ''; }).join('');
+  else if (ft) html = grouped(t, false, ft);
+  else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false, tr)}</div>` : ''; }).join('');
   $('l-tonight').innerHTML = html;
   $('sec-pend').hidden = !pend.length;
   $('l-pend').innerHTML = !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
   $('b-new').hidden = !canWrite();
 }
-function grouped(list, isPend){
+// grupos recolhíveis: tocar no título do setor / pilar / local esconde ou mostra as atividades
+S.colGrp = (() => { try { return new Set(JSON.parse(localStorage.getItem('pn-col') || '[]')); } catch { return new Set(); } })();
+function toggleGrp(key){
+  if (S.colGrp.has(key)) S.colGrp.delete(key); else S.colGrp.add(key);
+  try { localStorage.setItem('pn-col', JSON.stringify([...S.colGrp])); } catch {}
+  renderAll();
+}
+const CHEV = '<svg class="grp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+function grouped(list, isPend, scope = ''){
   const groups = new Map();
   for (const a of list){ const g = groupKey(a); if (!groups.has(g.k)) groups.set(g.k, {...g, items:[]}); groups.get(g.k).items.push(a); }
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
     .map(g => { const tp = g.k.startsWith('p:') ? 'pilares' : g.k.startsWith('z:') ? 'locais' : 'setores', lab = g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label, sub = g.k.startsWith('z:') ? 'Shopping' : g.sub;
-      return `<div class="grp grp-${tp}"><div class="grp-h"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em></div><div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div></div>`; }).join('');
+      const key = (isPend ? 'P' : 'T') + scope + '|' + g.k, col = S.colGrp.has(key);
+      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div>`}</div>`; }).join('');
 }
 function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), ref) : 0, av = avOf(a);
@@ -527,7 +536,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=21');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=22');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1323,7 +1332,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=21');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=22');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1359,7 +1368,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=21');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=22');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1383,6 +1392,7 @@ document.addEventListener('click', e => {
   const t = e.target;
   if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
   if (!t.closest('.ms')) msClose();
+  const gh = t.closest('[data-grp]'); if (gh) return toggleGrp(gh.dataset.grp);
   const etqEl = t.closest('[data-etq]'); if (etqEl) return openTag(etqEl.dataset.etq);
   if (t.closest('[data-etq-back]')){ S.etq = null; window.scrollTo({top:0}); return renderAll(); }
   if (t.closest('#etq-more-b')){ const mp = $('etq-more-pop'); mp.hidden = !mp.hidden; return; }
@@ -1474,6 +1484,7 @@ $('m-perfil').onclick = () => { $('who-pop').hidden = true; openPerfil(); };
 $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
 $('dw-close').onclick = closeDrawer;
 $('scrim').onclick = () => { if (!$('modal').hidden) closeModal(); else closeDrawer(); };
+document.addEventListener('keydown', e => { const gh = e.target.closest && e.target.closest('[data-grp]'); if (gh && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleGrp(gh.dataset.grp); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ if (!$('modal').hidden) closeModal(); else if (S.openId) closeDrawer(); } });
 const net = () => { $('offline').hidden = navigator.onLine; };
 window.addEventListener('online', net); window.addEventListener('offline', net); net();
