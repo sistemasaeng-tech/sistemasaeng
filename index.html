@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=23">
+<link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
 
@@ -103,7 +103,6 @@
       <button class="btn pri" id="b-new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Nova atividade</span></button>
     </div>
     <div class="filters" id="filters" hidden>
-      <button type="button" class="f-conc" id="f-conc" aria-pressed="false" hidden></button>
       <div class="f-lbl">Status <span class="f-hint">toque em um ou mais</span></div>
       <div class="f-chips" id="f-status"></div>
       <div class="f-lbl">Onde <span class="f-hint">um ou mais tipos</span></div>
@@ -119,10 +118,6 @@
     <div class="sec">
       <div class="sec-h"><h2 id="h-tonight">Programadas para hoje</h2><span id="c-tonight"></span></div>
       <div id="l-tonight"></div>
-    </div>
-    <div class="sec" id="sec-conc" hidden>
-      <div class="sec-h"><h2>Concluídas</h2><span id="c-conc"></span></div>
-      <div id="l-conc"></div>
     </div>
     <div class="sec" id="sec-pend">
       <div class="sec-h"><h2>Pendentes de dias anteriores</h2><span id="c-pend"></span></div>
@@ -208,6 +203,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=23"></script>
+<script type="module" src="app.js?v=24"></script>
 </body>
 </html>

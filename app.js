@@ -404,39 +404,34 @@ function renderNight(){
   for (const b of document.querySelectorAll('#f-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
   const acts = [...all().values()].filter(a => !ft || turnoOf(a) === ft);
   const tonightAll = acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite);
-  // concluídas saem da lista do dia; ficam na seção "Concluídas", aberta pelo filtro
-  const tonight = tonightAll.filter(a => a.status !== 'concluida');
+  // concluídas ficam fora da lista; o chip "Concluída" do filtro de status mostra só elas
   const concl = acts.filter(a => a.status === 'concluida' && ((a.noite <= S.noite && fimOf(a) >= S.noite) || concDay(a) === S.noite));
+  const verConc = S.f.status.includes('concluida');
+  const tonight = [...tonightAll.filter(a => a.status !== 'concluida'), ...(verConc ? concl : [])];
   const pend = acts.filter(a => a.aberta && fimOf(a) < S.noite);
   const cnt = {}; ORDER.forEach(k => cnt[k] = 0); tonightAll.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
-  const total = tonightAll.length;
+  const total = tonightAll.length, nConc = concl.length;
   const bar = total ? ORDER.filter(k => cnt[k]).map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
   const leg = ORDER.filter(k => k !== 'concluida' && cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`);
   if (pend.length) leg.push(`<button type="button" class="sum-pend" data-jump="pend"><i class="dot" style="--c:var(--st-nao)"></i>${pend.length} ${pend.length === 1 ? 'pendente' : 'pendentes'} de dias anteriores</button>`);
   $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${cnt.concluida}</b><span>de ${total} concluídas</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
-  $('f-status').innerHTML = ORDER.filter(k => k !== 'concluida').map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
+  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${k === 'concluida' ? nConc : cnt[k]}</b></button>`).join('');
   const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor].filter(x => x.length).length;
   $('f-count').hidden = !nf; $('f-count').textContent = nf;
-  const cf = sortActs(concl.filter(matches));
-  { const n = concl.length, b = $('f-conc');
-    b.hidden = !n; b.setAttribute('aria-pressed', String(!!S.showConc));
-    b.innerHTML = `<span class="f-conc-ic">✓</span><span><b>${n} ${n === 1 ? 'atividade concluída' : 'atividades concluídas'}</b>${cf.length !== n ? ` · ${cf.length} com esses filtros` : ''}</span><em>${S.showConc ? 'Ocultar' : 'Mostrar'}</em>`; }
-  $('sec-conc').hidden = !S.showConc || !concl.length;
-  if (S.showConc && concl.length){ $('c-conc').textContent = cf.length === concl.length ? `${cf.length}` : `${cf.length} de ${concl.length}`; $('l-conc').innerHTML = cf.length ? grouped(cf, false, 'c') : '<div class="empty">Nenhuma concluída com esses filtros.</div>'; }
   const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
   $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
   $('c-pend').textContent = p.length === pend.length ? `${p.length}` : `${p.length} de ${pend.length}`;
   $('h-tonight').textContent = today ? 'Programadas para hoje' : `Programadas para ${fmtShort(S.noite)}`;
   let html;
-  if (!tonight.length && tonightAll.length) html = `<div class="empty"><b>Todas as atividades ${today ? 'de hoje' : 'deste dia'} foram concluídas</b>Para vê-las, abra Filtros e toque em “${concl.length} ${concl.length === 1 ? 'atividade concluída' : 'atividades concluídas'}”.</div>`;
+  if (!tonight.length && tonightAll.length) html = `<div class="empty"><b>Todas as atividades ${today ? 'de hoje' : 'deste dia'} foram concluídas</b>Para vê-las, abra Filtros e toque em “Concluída”.</div>`;
   else if (!tonight.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
   else if (!t.length) html = '<div class="empty">Nenhuma atividade com esses filtros.</div>';
   else if (ft) html = grouped(t, false, ft);
   else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false, tr)}</div>` : ''; }).join('');
   $('l-tonight').innerHTML = html;
-  $('sec-pend').hidden = !pend.length;
+  $('sec-pend').hidden = !pend.length || (!p.length && S.f.status.length > 0);
   $('l-pend').innerHTML = !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
   $('b-new').hidden = !canWrite();
 }
@@ -550,7 +545,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=23');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=24');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1346,7 +1341,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=23');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=24');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1382,7 +1377,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=23');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=24');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1489,7 +1484,6 @@ document.addEventListener('input', e => { const q = e.target.closest('.ms-q'); i
 $('b-new').onclick = () => openForm(null);
 $('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
 $('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
-$('f-conc').onclick = () => { S.showConc = !S.showConc; renderAll(); if (S.showConc) setTimeout(() => $('sec-conc').scrollIntoView({behavior:'smooth', block:'start'}), 60); };
 $('f-clear').onclick = () => { S.f.status = []; S.f.tipo = []; S.f.loc = []; S.f.forn = []; S.f.etq = []; S.f.autor = []; msClose(); fillFilterOptions(); renderAll(); };
 $('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
 $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
