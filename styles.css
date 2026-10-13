@@ -1057,3 +1057,11 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 .grp.col .grp-chev{transform:rotate(-90deg)}
 .grp.col .grp-h{margin-bottom:0;opacity:.85}
 .grp.col{margin-bottom:2px}
+
+/* v23 · concluídas escondidas, abertas pelo filtro */
+.f-conc{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 14px;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--st-ok) 40%,transparent);background:color-mix(in srgb,var(--st-ok) 10%,transparent);color:var(--fg);text-align:left;font-size:13.5px}
+.f-conc b{font-weight:700}
+.f-conc em{margin-left:auto;font-style:normal;font-weight:700;color:var(--st-ok);font-size:13px}
+.f-conc-ic{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--st-ok);color:#0f2a1b;font-weight:900;font-size:13px;flex:none}
+.f-conc[aria-pressed="true"]{background:color-mix(in srgb,var(--st-ok) 20%,transparent);border-color:var(--st-ok)}
+#sec-conc .card{opacity:.85}
