@@ -465,7 +465,6 @@ button{cursor:pointer}
 .sum-leg span,.sum-pend{display:inline-flex;align-items:center;gap:6px}
 .sum-leg .dot{width:7px;height:7px}
 .sum-pend{background:none;border:0;padding:0;color:var(--st-nao);font-size:12.5px;font-weight:600}
-.sum-pend:hover{text-decoration:underline}
 
 /* barra de ferramentas */
 .tools{display:flex;flex-wrap:nowrap;gap:8px;margin-top:14px;align-items:center}

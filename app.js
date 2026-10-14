@@ -409,30 +409,31 @@ function renderNight(){
   const verConc = S.f.status.includes('concluida');
   const tonight = [...tonightAll.filter(a => a.status !== 'concluida'), ...(verConc ? concl : [])];
   const pend = acts.filter(a => a.aberta && fimOf(a) < S.noite);
-  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); tonightAll.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
-  const total = tonightAll.length, nConc = concl.length;
+  const dayAll = [...tonightAll, ...pend];
+  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); dayAll.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
+  const total = dayAll.length, nConc = concl.length;
   const bar = total ? ORDER.filter(k => cnt[k]).map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
   const leg = ORDER.filter(k => k !== 'concluida' && cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`);
-  if (pend.length) leg.push(`<button type="button" class="sum-pend" data-jump="pend"><i class="dot" style="--c:var(--st-nao)"></i>${pend.length} ${pend.length === 1 ? 'pendente' : 'pendentes'} de dias anteriores</button>`);
+  if (pend.length) leg.push(`<span class="sum-pend"><i class="dot" style="--c:var(--st-nao)"></i>${pend.length} ${pend.length === 1 ? 'vencida' : 'vencidas'}</span>`);
   $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${cnt.concluida}</b><span>de ${total} concluídas</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
   $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${k === 'concluida' ? nConc : cnt[k]}</b></button>`).join('');
   const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor].filter(x => x.length).length;
   $('f-count').hidden = !nf; $('f-count').textContent = nf;
-  const t = sortActs(tonight.filter(matches)), p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
-  $('c-tonight').textContent = t.length === tonight.length ? `${t.length}` : `${t.length} de ${tonight.length}`;
-  $('c-pend').textContent = p.length === pend.length ? `${p.length}` : `${p.length} de ${pend.length}`;
-  $('h-tonight').textContent = today ? 'Programadas para hoje' : `Programadas para ${fmtShort(S.noite)}`;
+  // vencidas entram no mesmo grupo (setor / pilar / local) das atividades do dia; no grupo, as vencidas vêm primeiro (mais antigas no topo)
+  const base = [...pend, ...tonight];
+  const p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
+  const t = [...p, ...sortActs(tonight.filter(matches))];
+  $('c-tonight').textContent = t.length === base.length ? `${t.length}` : `${t.length} de ${base.length}`;
+  $('h-tonight').textContent = today ? 'Atividades de hoje' : `Atividades de ${fmtShort(S.noite)}`;
   let html;
-  if (!tonight.length && tonightAll.length) html = `<div class="empty"><b>Todas as atividades ${today ? 'de hoje' : 'deste dia'} foram concluídas</b>Para vê-las, abra Filtros e toque em “Concluída”.</div>`;
-  else if (!tonight.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
+  if (!base.length && tonightAll.length) html = `<div class="empty"><b>Todas as atividades ${today ? 'de hoje' : 'deste dia'} foram concluídas</b>Para vê-las, abra Filtros e toque em “Concluída”.</div>`;
+  else if (!base.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
   else if (!t.length) html = '<div class="empty">Nenhuma atividade com esses filtros.</div>';
   else if (ft) html = grouped(t, false, ft);
   else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false, tr)}</div>` : ''; }).join('');
   $('l-tonight').innerHTML = html;
-  $('sec-pend').hidden = !pend.length || (!p.length && S.f.status.length > 0);
-  $('l-pend').innerHTML = !p.length ? '<div class="empty">Nenhuma pendência com esses filtros.</div>' : grouped(p, true);
   $('b-new').hidden = !canWrite();
 }
 // grupos recolhíveis: tocar no título do setor / pilar / local esconde ou mostra as atividades
@@ -449,7 +450,7 @@ function grouped(list, isPend, scope = ''){
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
     .map(g => { const tp = g.k.startsWith('p:') ? 'pilares' : g.k.startsWith('z:') ? 'locais' : 'setores', lab = g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label, sub = g.k.startsWith('z:') ? 'Shopping' : g.sub;
       const key = (isPend ? 'P' : 'T') + scope + '|' + g.k, col = S.colGrp.has(key);
-      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend)).join('')}</div>`}</div>`; }).join('');
+      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend || (a.aberta && fimOf(a) < S.noite))).join('')}</div>`}</div>`; }).join('');
 }
 function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), ref) : 0, av = avOf(a);
@@ -545,7 +546,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=24');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=25');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1341,7 +1342,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=24');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=25');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1377,7 +1378,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=24');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=25');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1416,7 +1417,6 @@ document.addEventListener('click', e => {
   const msb = t.closest('.ms-btn'); if (msb){ const id = msb.closest('.ms').id, p = $(id).querySelector('.ms-pop'); msClose(id); p.hidden = !p.hidden; msb.setAttribute('aria-expanded', String(!p.hidden)); if (!p.hidden){ $(id).querySelector('.ms-q').value = ''; msRender(id); } return; }
   const msc = t.closest('.ms-clear'); if (msc){ const id = msc.closest('.ms').id; S.f[MS[id].key] = []; msRender(id); msLabel(id); return renderAll(); }
   if (t.closest('.ms-ok')){ msClose(); return; }
-  if (t.closest('[data-jump]')) return $('sec-pend').scrollIntoView({behavior:'smooth', block:'start'});
   const m = t.closest('[data-mode]'); if (m && $('drawer').contains(m)) return setMode(m.dataset.mode || null);
   const cadRow = t.closest('[data-cad]'); if (cadRow){ S.cadSub = cadRow.dataset.cad; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
   if (t.closest('[data-cad-back]')){ S.cadSub = null; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
