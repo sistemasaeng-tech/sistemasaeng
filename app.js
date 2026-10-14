@@ -480,11 +480,13 @@ function evText(ev){
     case 'editou': return ev.mudancas?.length && ev.mudancas.every(m => m.campo === 'etiquetas') ? 'alterou as etiquetas' : 'alterou os dados';
     case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
     case 'excluiu': return 'excluiu a atividade';
+    case 'exportou': return `exportou ${EXP_LABEL[ev.formato] || 'um arquivo'}`;
     default: return esc(ev.tipo);
   }
 }
 const fmtVal = (campo, v) => (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
 function evExtra(ev){
+  if (ev.tipo === 'exportou') return `<div class="ch">${[ev.qtd ? `${ev.qtd} ${ev.qtd === 1 ? 'atividade' : 'atividades'}` : '', ev.periodo || '', ev.filtros ? 'filtros: ' + esc(ev.filtros) : 'sem filtros'].filter(Boolean).map(x => x.startsWith('filtros') || x === 'sem filtros' ? x : esc(x)).join(' · ')}${ev.arquivo ? `<br><span class="ro">${esc(ev.arquivo)}</span>` : ''}</div>`;
   let h = '';
   if (ev.mudancas?.length) h += `<div class="ch">${ev.mudancas.map(m => `${esc(FIELDS[m.campo]||m.campo)}: ${esc(fmtVal(m.campo,m.de)||'—')} → ${esc(fmtVal(m.campo,m.para)||'—')}`).join('<br>')}</div>`;
   if (ev.motivo || ev.obs) h += `<div class="q">${ev.motivo ? `<b>${esc(ev.motivo)}</b>${ev.obs ? ' — ' : ''}` : ''}${esc(ev.obs||'')}</div>`;
@@ -496,11 +498,11 @@ function renderFeed(){
   sel.innerHTML = '<option value="">Todas as pessoas</option>' + ids.map(id => `<option value="${esc(id)}">${esc(nameOf(id))}${roleOf(id) ? ' · '+esc(roleOf(id)) : ''}</option>`).join('');
   sel.value = ids.includes(cur) ? cur : '';
   const evs = S.feed.filter(ev => toDate(ev.t).getTime() >= since && (!fu || ev.u === fu) && (!ft || ev.tipo === ft));
-  if (!evs.length){ $('feed').innerHTML = '<div class="empty" style="margin-top:18px"><b>Sem registros no período</b>Cada inserção, alteração, observação e mudança de status aparece aqui com nome e horário.</div>'; return; }
+  if (!evs.length){ $('feed').innerHTML = '<div class="empty" style="margin-top:18px"><b>Sem registros no período</b>Cada inserção, alteração, observação, mudança de status e exportação aparece aqui com nome e horário.</div>'; return; }
   const days = new Map();
   for (const ev of evs){ const d = ymd(toDate(ev.t)); if (!days.has(d)) days.set(d, []); days.get(d).push(ev); }
   $('feed').innerHTML = [...days.entries()].map(([d, list]) => `<div class="feed-day"><h3>${DOW[parseYmd(d).getDay()]} ${fmtShort(d)}</h3>${list.map(ev => `
-    <div class="ev"><time>${fmtHM(ev.t)}</time><div><p><b>${esc(nameOf(ev.u))}</b>${roleOf(ev.u) ? ` <span class="ro">${esc(roleOf(ev.u))}</span>` : ''} ${evText(ev)} · ${ev.tipo === 'excluiu' ? `<span>${esc(ev.titulo)}</span>` : `<button type="button" class="act" data-id="${esc(ev.atividadeId)}">${esc(ev.titulo)}</button>`} <span class="ro">${esc(ev.local||'')}</span></p>${evExtra(ev)}</div></div>`).join('')}</div>`).join('');
+    <div class="ev"><time>${fmtHM(ev.t)}</time><div><p><b>${esc(nameOf(ev.u))}</b>${roleOf(ev.u) ? ` <span class="ro">${esc(roleOf(ev.u))}</span>` : ''} ${evText(ev)}${ev.tipo === 'exportou' ? '' : ' · '}${ev.tipo === 'exportou' ? '' : ev.tipo === 'excluiu' ? `<span>${esc(ev.titulo)}</span>` : `<button type="button" class="act" data-id="${esc(ev.atividadeId)}">${esc(ev.titulo)}</button>`} <span class="ro">${esc(ev.local||'')}</span></p>${evExtra(ev)}</div></div>`).join('')}</div>`).join('');
 }
 
 /* ================= calendário (Gantt) ================= */
@@ -546,7 +548,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=25');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=26');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -559,6 +561,7 @@ async function exportGanttPdf(){
       arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`,
     });
     toast('PDF do calendário gerado.');
+    logExport('calendario', {arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, qtd: D.acts.length, periodo: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom].toLowerCase()} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
   } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoGt = false; }
 }
@@ -1073,6 +1076,18 @@ function renderTimeline(){
 /* ================= escrita ================= */
 // Toda gravação vai num lote: a atividade + um registro novo e imutável em "historico".
 // As regras do Firestore recusam qualquer alteração de atividade que não venha com o seu registro.
+// Exportações (relatório PDF, calendário PDF, cronograma Excel, CSV) também ficam no histórico.
+// Se a gravação falhar (sem internet, regra antiga), o arquivo sai do mesmo jeito.
+const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV'};
+function logExport(formato, info = {}){
+  if (!S.uid) return;
+  const d = {atividadeId:'', tipo:'exportou', formato, t:serverTimestamp(), u:S.uid,
+    arquivo: String(info.arquivo || '').slice(0, 200), qtd: Number(info.qtd) || 0,
+    periodo: String(info.periodo || '').slice(0, 200), filtros: String(info.filtros || '').slice(0, 500)};
+  for (const k of ['arquivo','periodo','filtros']) if (!d[k]) delete d[k];
+  try { const b = writeBatch(db); b.set(doc(collection(db, 'historico')), d); b.commit().catch(e => console.warn('histórico da exportação', e)); }
+  catch (e) { console.warn('histórico da exportação', e); }
+}
 function evDoc(atividadeId, a, ev){
   const d = {atividadeId, t:serverTimestamp(), u:S.uid, titulo:a.titulo || '', local:localLine(a), noiteAtv:a.noite || '', turnoAtv:turnoOf(a), ...ev};
   for (const k of Object.keys(d)) if (d[k] === '' || d[k] === undefined || d[k] === null) delete d[k];
@@ -1271,9 +1286,10 @@ async function exportCsv(){
   const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Loja / ambiente do pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Pendente anterior', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Vencida', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
   const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.noite}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
+  logExport('csv', {arquivo: el.download, qtd: rows.length, periodo: `dia ${fmtShort(S.noite)}/${S.noite.slice(0, 4)} + vencidas · ${ft ? 'turno ' + TURNOS[ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
@@ -1342,7 +1358,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=25');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=26');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1352,6 +1368,7 @@ function openCronograma(opts = {}){
         arquivo: `4107_ROOFTOP_IGSP_ATIVIDADES_CRONOGRAMA_REV${rev}_${ini}${turno ? '_' + turno.toUpperCase() : ''}.xlsx`,
       });
       closeModal(); toast(`Cronograma gerado com ${r.linhas} ${r.linhas === 1 ? 'atividade' : 'atividades'}.`);
+      logExport('cronograma', {arquivo: `4107_ROOFTOP_IGSP_ATIVIDADES_CRONOGRAMA_REV${rev}_${ini}${turno ? '_' + turno.toUpperCase() : ''}.xlsx`, qtd: r.linhas, periodo: `${fmtShort(ini)} a ${fmtShort(fimP)}/${fimP.slice(0, 4)} · rev. ${rev} · ${turno ? 'turno ' + TURNOS[turno].toLowerCase() : 'turnos diurno e noturno'}${$('cf-conc').checked ? '' : ' · sem concluídas'}`, filtros: et ? `etiqueta ${et}` : ''});
     } catch (err) { console.warn(err); btn.disabled = false; btn.textContent = 'Gerar Excel'; toast(navigator.onLine ? 'Não foi possível gerar o cronograma. Tente de novo.' : 'Para gerar o Excel pela primeira vez é preciso internet.'); }
   };
   showModal();
@@ -1378,7 +1395,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=25');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=26');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1393,6 +1410,7 @@ async function exportPdf(){
       arquivo: `Relatorio_Atividades_em_Aberto_${hoje}${ft ? '_' + ft : ''}.pdf`,
     });
     toast('Relatório gerado.');
+    logExport('relatorio', {arquivo: `Relatorio_Atividades_em_Aberto_${hoje}${ft ? '_' + ft : ''}.pdf`, qtd: acts.length, periodo: `em aberto em ${fmtShort(hoje)}/${hoje.slice(0, 4)} · ${ft ? 'turno ' + TURNOS[ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
   } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o relatório. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoPdf = false; }
 }
