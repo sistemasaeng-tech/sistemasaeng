@@ -548,7 +548,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=26');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=27');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -901,6 +901,17 @@ function setTab(t){
   window.scrollTo({top:0});
   renderAll();
 }
+// Se o app ficou aberto de um dia para o outro, quem estava em "hoje" passa para o novo dia.
+S.hoje = defaultNight();
+function checkDayChange(){
+  const h = defaultNight(); if (h === S.hoje) return;
+  const era = S.hoje; S.hoje = h;
+  if (S.gt.ref === era) { S.gt.ref = h; S.gt.jump = true; }
+  if (S.noite === era) setNight(h); else renderAll();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayChange(); });
+window.addEventListener('focus', checkDayChange);
+setInterval(checkDayChange, 60000);
 function setNight(n){
   if (!n) return;
   S.noite = n;
@@ -1126,7 +1137,7 @@ function createAct(data, origem){
 function openForm(id, preset = {}){
   if (!canWrite()) return;
   const a = id ? all().get(id) : null;
-  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite, turno:S.f.turno || '', tipoLocal:(S.f.tipo.length === 1 ? S.f.tipo[0] : '') || (S.f.loc.length === 1 ? {s:'setor', p:'pilar', z:'shopping'}[S.f.loc[0][0]] : '') || 'setor', setor:S.f.loc.length === 1 && S.f.loc[0][0] === 's' ? S.f.loc[0].slice(2) : '', pilar:S.f.loc.length === 1 && S.f.loc[0][0] === 'p' ? S.f.loc[0].slice(2) : '', local:S.f.loc.length === 1 && S.f.loc[0][0] === 'z' ? S.f.loc[0].slice(2) : '', prioridade:'normal', fornecedor:S.f.forn.length === 1 && S.f.forn[0] !== '__none__' ? S.f.forn[0] : '', etiquetas:[...S.f.etq], ...preset};
+  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite < defaultNight() ? defaultNight() : S.noite, turno:S.f.turno || '', tipoLocal:(S.f.tipo.length === 1 ? S.f.tipo[0] : '') || (S.f.loc.length === 1 ? {s:'setor', p:'pilar', z:'shopping'}[S.f.loc[0][0]] : '') || 'setor', setor:S.f.loc.length === 1 && S.f.loc[0][0] === 's' ? S.f.loc[0].slice(2) : '', pilar:S.f.loc.length === 1 && S.f.loc[0][0] === 'p' ? S.f.loc[0].slice(2) : '', local:S.f.loc.length === 1 && S.f.loc[0][0] === 'z' ? S.f.loc[0].slice(2) : '', prioridade:'normal', fornecedor:S.f.forn.length === 1 && S.f.forn[0] !== '__none__' ? S.f.forn[0] : '', etiquetas:[...S.f.etq], ...preset};
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
   <form id="af" novalidate>
     <div class="frow">
@@ -1160,6 +1171,7 @@ function openForm(id, preset = {}){
     <datalist id="dl-pilar-loja"></datalist>
     <datalist id="dl-local">${S.cad.locais.map(x => `<option value="${esc(locNome(x))}">${esc(locSetor(x) ? 'Setor ' + locSetor(x) : '')}</option>`).join('')}</datalist>
     <datalist id="dl-nivel">${S.cad.niveis.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+    <div class="af-warn" id="af-warn" role="alert" hidden></div>
     <div class="acts"><button type="button" class="btn ghost" id="af-cancel">Cancelar</button><button class="btn pri" type="submit">${a ? 'Salvar alterações' : 'Inserir atividade'}</button></div>
   </form>`;
   let tipo = v.tipoLocal || 'setor', turno = v.turno || '';
@@ -1181,6 +1193,7 @@ function openForm(id, preset = {}){
   $('af-pilar').addEventListener('input', syncLojas); syncLojas();
   const pk = tagPicker($('af-etq'), tagsOf(v));
   $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
+  for (const id of ['af-noite','af-fim']) $(id).addEventListener('change', () => { $('af-warn').hidden = true; delete $('af-warn').dataset.ok; });
   $('af-noite').addEventListener('change', () => { if (!$('af-fim').value || $('af-fim').value < $('af-noite').value) $('af-fim').value = $('af-noite').value; });
   $('af-av').oninput = e => { $('af-av-n').textContent = e.target.value + '%'; };
   $('af-cancel').onclick = closeModal;
@@ -1198,6 +1211,12 @@ function openForm(id, preset = {}){
     if (tipo === 'pilar' && !d.pilar) return toast('Informe o pilar.');
     if (tipo === 'shopping' && !d.local) return toast('Informe o local no shopping.');
     if (!d.titulo) return toast('Descreva a atividade.');
+    { const hj = defaultNight(), w = $('af-warn'), mudouFim = !a || fimOf(a) !== d.fim;
+      if (d.fim < hj && mudouFim && w.dataset.ok !== d.fim){
+        w.dataset.ok = d.fim; w.hidden = false;
+        w.innerHTML = `<b>O término (${fmtShort(d.fim)}) já passou.</b> Hoje é ${fmtShort(hj)}: a atividade vai entrar como vencida. Confira as datas ou toque de novo em “${a ? 'Salvar alterações' : 'Inserir atividade'}” para confirmar.`;
+        w.scrollIntoView({behavior:'smooth', block:'center'}); return;
+      } }
     if (!a){ createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite); toast('Atividade inserida.'); return; }
     const gv = (o, k) => String((k === 'etiquetas' ? tagsOf(o).join(', ') : k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
     const mudancas = Object.keys(FIELDS).filter(k => gv(a, k) !== gv(d, k)).map(k => ({campo:k, de:gv(a, k), para:gv(d, k)}));
@@ -1358,7 +1377,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=26');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=27');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1395,7 +1414,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=26');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=27');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),

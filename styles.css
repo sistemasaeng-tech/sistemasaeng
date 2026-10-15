@@ -1057,3 +1057,7 @@ button.etq:hover{background:color-mix(in srgb,var(--tc) 22%,transparent)}
 .grp.col .grp-h{margin-bottom:0;opacity:.85}
 .grp.col{margin-bottom:2px}
 
+
+/* v27: aviso de término já vencido no formulário */
+.af-warn{margin:4px 0 12px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--st-nao) 14%,transparent);border:1px solid color-mix(in srgb,var(--st-nao) 45%,transparent);color:var(--fg);font-size:13.5px;line-height:1.45}
+.af-warn b{color:var(--st-nao)}
