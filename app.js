@@ -527,13 +527,13 @@ function renderPend(){
   $('pd-new').hidden = !w;
   const todas = [...S.pend.values()];
   const ab = todas.filter(p => !p.feita), mine = ab.filter(pdMine), feitas = todas.filter(p => p.feita);
-  $('pd-seg').innerHTML = [['abertas','Abertas',ab.length],['minhas','Minhas',mine.length],['feitas','Feitas',feitas.length]]
+  $('pd-seg').innerHTML = [['abertas','Abertos',ab.length],['minhas','Meus',mine.length],['feitas','Feitos',feitas.length]]
     .map(([k,l,n]) => `<button type="button" data-pdv="${k}" aria-pressed="${S.pdView === k}">${l} <b>${n}</b></button>`).join('');
-  if (S.pdErr){ $('pd-list').innerHTML = '<div class="empty"><b>Pendências indisponíveis</b>O banco ainda não aceita pendências. O administrador precisa publicar as regras novas do Firestore.</div>'; return; }
+  if (S.pdErr){ $('pd-list').innerHTML = '<div class="empty"><b>Lembretes indisponíveis</b>O banco ainda não aceita lembretes. O administrador precisa publicar as regras novas do Firestore.</div>'; return; }
   const hit = p => !q || lc([p.texto, p.responsavel, p.local, p.obs, nameOf(p.criadoPor)].join(' ')).includes(q);
   const base = (S.pdView === 'feitas' ? feitas : S.pdView === 'minhas' ? mine : ab).filter(hit);
   if (!base.length){
-    $('pd-list').innerHTML = `<div class="empty"><b>${q ? 'Nada encontrado' : S.pdView === 'feitas' ? 'Nenhuma pendência feita ainda' : 'Nenhuma pendência em aberto'}</b>${q ? 'Tente outra busca.' : S.pdView === 'feitas' ? '' : 'Use para providências da coordenação: programar equipe, solicitar material, cobrar liberação. O serviço de campo em si vai em Atividades.'}</div>`;
+    $('pd-list').innerHTML = `<div class="empty"><b>${q ? 'Nada encontrado' : S.pdView === 'feitas' ? 'Nenhum lembrete feito ainda' : 'Nenhum lembrete em aberto'}</b>${q ? 'Tente outra busca.' : S.pdView === 'feitas' ? '' : 'Use para providências da coordenação: programar equipe, solicitar material, cobrar liberação. O serviço de campo em si vai em Atividades.'}</div>`;
     return;
   }
   if (S.pdView === 'feitas'){
@@ -541,22 +541,22 @@ function renderPend(){
     $('pd-list').innerHTML = `<div class="pd-sec">${l.map(p => pdItem(p, hoje, w)).join('')}</div>`;
     return;
   }
-  const SEC = [['atr','Atrasadas'],['hoje','Para hoje'],['prox','Próximas'],['sem','Sem prazo']];
+  const SEC = [['atr','Atrasados'],['hoje','Para hoje'],['prox','Próximos'],['sem','Sem prazo']];
   const by = k => base.filter(p => pdState(p, hoje) === k).sort((x, y) => String(x.prazo).localeCompare(String(y.prazo)) || toDate(x.criadoEm) - toDate(y.criadoEm));
   $('pd-list').innerHTML = SEC.map(([k, l]) => { const items = by(k); return items.length ? `<div class="pd-sec pd-${k}"><div class="pd-h">${l}<em>${items.length}</em></div>${items.map(p => pdItem(p, hoje, w)).join('')}</div>` : ''; }).join('');
 }
 function pdItem(p, hoje, w){
   const st = pdState(p, hoje), n = st === 'atr' ? nightsBetween(p.prazo, hoje) : 0;
-  const prazo = st === 'feita' ? `feita ${p.feitaEm ? fmtTs(p.feitaEm) : ''}${p.feitaPor ? ' por ' + esc(shortName(nameOf(p.feitaPor))) : ''}`
+  const prazo = st === 'feita' ? `feito ${p.feitaEm ? fmtTs(p.feitaEm) : ''}${p.feitaPor ? ' por ' + esc(shortName(nameOf(p.feitaPor))) : ''}`
     : st === 'atr' ? `venceu ${fmtShort(p.prazo)} · ${n} ${n === 1 ? 'dia' : 'dias'}` : st === 'hoje' ? 'prazo hoje' : st === 'prox' ? `até ${fmtShort(p.prazo)}` : 'sem prazo';
   const meta = [`<span class="pd-c pd-c-${st}">${prazo}</span>`,
     p.responsavel ? `<span class="pd-c">${esc(p.responsavel)}</span>` : '',
     p.local ? `<span class="pd-c">${esc(p.local)}</span>` : '',
-    p.feita && p.feitaPor === p.criadoPor ? '' : `<span class="pd-c pd-by">${p.feita ? 'criada ' : ''}por ${esc(shortName(nameOf(p.criadoPor)))}</span>`,
+    p.feita && p.feitaPor === p.criadoPor ? '' : `<span class="pd-c pd-by">${p.feita ? 'criado ' : ''}por ${esc(shortName(nameOf(p.criadoPor)))}</span>`,
     p.atividadeId ? `<button type="button" class="pd-c pd-link" data-pd-act="${esc(p.atividadeId)}">virou atividade ›</button>` : '',
     w && !p.feita ? `<button type="button" class="pd-c pd-conv" data-pd-conv="${esc(p.id)}">→ Transformar em atividade</button>` : ''].filter(Boolean).join('');
   return `<div class="pd-item${p.feita ? ' done' : ''}">
-    <button type="button" class="pd-chk" data-pd-chk="${esc(p.id)}" aria-pressed="${!!p.feita}" aria-label="${p.feita ? 'Reabrir' : 'Marcar como feita'}"${w ? '' : ' disabled'}>${ICON_CHECK}</button>
+    <button type="button" class="pd-chk" data-pd-chk="${esc(p.id)}" aria-pressed="${!!p.feita}" aria-label="${p.feita ? 'Reabrir' : 'Marcar como feito'}"${w ? '' : ' disabled'}>${ICON_CHECK}</button>
     <div class="pd-body"${w ? ` role="button" tabindex="0" data-pd-open="${esc(p.id)}"` : ''}><div class="pd-t">${esc(p.texto)}</div>${p.obs ? `<div class="pd-obs">${esc(p.obs)}</div>` : ''}<div class="pd-meta">${meta}</div></div>
   </div>`;
 }
@@ -571,7 +571,7 @@ function pdSave(id, data, okMsg){
 function pdToggle(id){
   const p = S.pend.get(id); if (!p || !canWrite()) return;
   const v = !p.feita;
-  pdSave(id, {feita:v, feitaPor: v ? S.uid : '', feitaEm: v ? serverTimestamp() : null}, v ? 'Pendência feita.' : 'Pendência reaberta.');
+  pdSave(id, {feita:v, feitaPor: v ? S.uid : '', feitaEm: v ? serverTimestamp() : null}, v ? 'Lembrete feito.' : 'Lembrete reaberto.');
 }
 function openPendForm(id, preset = {}){
   if (!canWrite()) return;
@@ -579,7 +579,7 @@ function openPendForm(id, preset = {}){
   const pode = p && (isAdmin() || p.criadoPor === S.uid);
   const nomes = Object.keys(S.usuarios).filter(u => ['usuario','admin','visualizador'].includes(S.usuarios[u].papel)).map(u => S.usuarios[u].nome).filter(Boolean);
   const locs = [...S.cad.setores.map(x => 'Setor ' + x.codigo), ...S.cad.locais.map(locNome), ...S.cad.pilares.map(x => x.codigo).filter(Boolean)];
-  $('sheet').innerHTML = `<h2>${p ? 'Editar pendência' : 'Nova pendência'}</h2>
+  $('sheet').innerHTML = `<h2>${p ? 'Editar lembrete' : 'Novo lembrete'}</h2>
     <p class="ro" style="margin:-6px 0 14px">Providência da coordenação (programar, solicitar, cobrar, verificar). Quando virar serviço com data, transforme em atividade.</p>
     <form id="pdf" novalidate>
       <div class="f"><label for="pd-texto">O que precisa ser feito <span class="req">*</span></label><textarea id="pd-texto" rows="2" maxlength="300" placeholder="ex.: Programar eletricista para religar a iluminação do Setor D1">${esc(v.texto || '')}</textarea></div>
@@ -589,20 +589,20 @@ function openPendForm(id, preset = {}){
       </div>
       <div class="f"><label for="pd-local">Local</label><input id="pd-local" list="dl-pd-local" maxlength="120" value="${esc(v.local || '')}" placeholder="Setor, pilar ou local do shopping (opcional)"><datalist id="dl-pd-local">${locs.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>
       <div class="f"><label for="pd-obs">Observação</label><textarea id="pd-obs" rows="2" maxlength="1000">${esc(v.obs || '')}</textarea></div>
-      ${p ? `<div class="pd-extra">${!p.feita ? `<button type="button" class="btn ghost" id="pd-conv">→ Transformar em atividade</button>` : ''}${pode ? `<button type="button" class="link-btn danger" id="pd-del">Excluir pendência</button>` : ''}</div>` : ''}
-      <div class="acts"><button type="button" class="btn ghost" id="pd-cancel">Cancelar</button><button class="btn pri" type="submit">${p ? 'Salvar' : 'Criar pendência'}</button></div>
+      ${p ? `<div class="pd-extra">${!p.feita ? `<button type="button" class="btn ghost" id="pd-conv">→ Transformar em atividade</button>` : ''}${pode ? `<button type="button" class="link-btn danger" id="pd-del">Excluir lembrete</button>` : ''}</div>` : ''}
+      <div class="acts"><button type="button" class="btn ghost" id="pd-cancel">Cancelar</button><button class="btn pri" type="submit">${p ? 'Salvar' : 'Criar lembrete'}</button></div>
     </form>`;
   const val = () => ({texto:$('pd-texto').value.trim(), responsavel:$('pd-resp').value, prazo:$('pd-prazo').value, local:$('pd-local').value, obs:$('pd-obs').value});
   $('pd-cancel').onclick = closeModal;
   if ($('pd-conv')) $('pd-conv').onclick = () => { const d = val(); if (d.texto && (d.texto !== p.texto || d.prazo !== p.prazo || d.local !== (p.local||'') || d.responsavel !== (p.responsavel||'') || d.obs !== (p.obs||''))) pdSave(id, d); pdConvert(id, d); };
   if ($('pd-del')) $('pd-del').onclick = e => {
     const bt = e.currentTarget; if (bt.dataset.ok !== '1'){ bt.dataset.ok = '1'; bt.textContent = 'Toque de novo para excluir'; return; }
-    const b = writeBatch(db); b.delete(doc(db, 'pendencias', id)); commit(b, 'Pendência excluída.'); closeModal();
+    const b = writeBatch(db); b.delete(doc(db, 'pendencias', id)); commit(b, 'Lembrete excluído.'); closeModal();
   };
   $('pdf').onsubmit = e => {
     e.preventDefault(); const d = val();
     if (!d.texto) return toast('Escreva o que precisa ser feito.');
-    pdSave(id, d, p ? 'Pendência salva.' : 'Pendência criada.'); closeModal();
+    pdSave(id, d, p ? 'Lembrete salvo.' : 'Lembrete criado.'); closeModal();
   };
   showModal(); setTimeout(() => $('pd-texto').focus(), 50);
 }
@@ -661,7 +661,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=29');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=30');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1003,12 +1003,19 @@ function renderWho(){
   $('banner').hidden = !ro;
   if (ro) $('banner').innerHTML = '<b>Acesso de visualização.</b> Você consulta as atividades, o histórico e pode exportar, mas não insere nem altera nada.';
 }
+function closeMore(){ for (const id of ['tab-more-pop','bn-more-pop']){ const p = $(id); if (p) p.hidden = true; } for (const b of document.querySelectorAll('[data-more]')) b.setAttribute('aria-expanded', 'false'); }
 function setTab(t){
   if (t === 'cad' && S.tab === 'cad') S.cadSub = null;
   if (t === 'etq' && S.tab === 'etq') S.etq = null;
   S.tab = ['noite','pend','gantt','etq','hist','cad'].includes(t) ? t : 'noite';
   if (S.tab === 'gantt') S.gt.jump = true;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
+  // Etiquetas, Histórico e Cadastros ficam no menu "Mais"
+  { const inMore = ['etq','hist','cad'].includes(S.tab), LBL = {etq:'Etiquetas', hist:'Histórico', cad:'Cadastros'};
+    for (const b of document.querySelectorAll('.tab-more-b')) b.setAttribute('aria-selected', String(inMore));
+    const ml = document.querySelector('.tabs .tm-l'); if (ml) ml.textContent = inMore ? LBL[S.tab] : 'Mais';
+    for (const x of document.querySelectorAll('[data-go]')) x.classList.toggle('on', x.dataset.go === S.tab);
+    closeMore(); }
   $('v-noite').hidden = S.tab !== 'noite'; $('v-gantt').hidden = S.tab !== 'gantt'; $('v-etq').hidden = S.tab !== 'etq'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad'; $('v-pend').hidden = S.tab !== 'pend';
   try { localStorage.setItem('pn-tab', S.tab); } catch {}
   window.scrollTo({top:0});
@@ -1258,7 +1265,7 @@ function openForm(id, preset = {}){
   S.fromPend = !a && preset.fromPend ? preset.fromPend : null;
   const pdOrig = S.fromPend ? S.pend.get(S.fromPend) : null;
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
-  ${pdOrig ? `<div class="af-from"><b>Da pendência:</b> ${esc(pdOrig.texto)}<br>Descreva o <b>serviço que será executado em campo</b> (ex.: “Instalação da iluminação provisória – Setor D1”), com o fornecedor e a data em que acontece. Ao inserir, a pendência fica como feita.</div>` : ''}
+  ${pdOrig ? `<div class="af-from"><b>Do lembrete:</b> ${esc(pdOrig.texto)}<br>Descreva o <b>serviço que será executado em campo</b> (ex.: “Instalação da iluminação provisória – Setor D1”), com o fornecedor e a data em que acontece. Ao inserir, o lembrete fica como feito.</div>` : ''}
   <form id="af" novalidate>
     <div class="frow">
       <div class="f"><label for="af-noite">Início <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
@@ -1337,11 +1344,11 @@ function openForm(id, preset = {}){
     { const w = $('af-pwarn');
       if (!a && PEND_RX.test(d.titulo) && w.dataset.ok !== d.titulo){
         w.dataset.ok = d.titulo; w.hidden = false;
-        w.innerHTML = `<b>Isso parece um lembrete, não uma atividade de campo.</b> Atividade é o serviço que a equipe vai executar (ex.: “Instalação elétrica – Setor D1”). Providências como programar, solicitar ou cobrar vão em Pendências.
-          <div class="af-warn-a">${S.fromPend ? '' : '<button type="button" class="btn pri sm" id="af-to-pend">Salvar como pendência</button>'}<span class="ro">ou corrija o título${S.fromPend ? '' : ', ou toque de novo em “Inserir atividade” para manter'}</span></div>`;
+        w.innerHTML = `<b>Isso parece um lembrete, não uma atividade de campo.</b> Atividade é o serviço que a equipe vai executar (ex.: “Instalação elétrica – Setor D1”). Providências como programar, solicitar ou cobrar vão em Lembretes.
+          <div class="af-warn-a">${S.fromPend ? '' : '<button type="button" class="btn pri sm" id="af-to-pend">Salvar como lembrete</button>'}<span class="ro">ou corrija o título${S.fromPend ? '' : ', ou toque de novo em “Inserir atividade” para manter'}</span></div>`;
         if ($('af-to-pend')) $('af-to-pend').onclick = () => {
           const L = d.tipoLocal === 'setor' && d.setor ? 'Setor ' + d.setor : d.tipoLocal === 'pilar' ? [d.pilar, d.pilarLoja].filter(Boolean).join(' - ') : d.local;
-          pdSave(null, {texto:d.titulo.slice(0, 300), responsavel:d.responsavel, prazo:d.noite, local:L, obs:[d.fornecedor ? 'Fornecedor: ' + d.fornecedor : '', d.detalhes].filter(Boolean).join('\n')}, 'Salvo em Pendências.');
+          pdSave(null, {texto:d.titulo.slice(0, 300), responsavel:d.responsavel, prazo:d.noite, local:L, obs:[d.fornecedor ? 'Fornecedor: ' + d.fornecedor : '', d.detalhes].filter(Boolean).join('\n')}, 'Salvo em Lembretes.');
           closeModal();
         };
         w.scrollIntoView({behavior:'smooth', block:'center'}); return;
@@ -1354,7 +1361,7 @@ function openForm(id, preset = {}){
       } }
     if (!a){
       const fp = S.fromPend; createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite);
-      if (fp && S.pend.has(fp)){ pdSave(fp, {feita:true, feitaPor:S.uid, feitaEm:serverTimestamp(), atividadeId:S.lastActId}); toast('Atividade inserida. A pendência ficou como feita.'); }
+      if (fp && S.pend.has(fp)){ pdSave(fp, {feita:true, feitaPor:S.uid, feitaEm:serverTimestamp(), atividadeId:S.lastActId}); toast('Atividade inserida. O lembrete ficou como feito.'); }
       else toast('Atividade inserida.');
       S.fromPend = null; return;
     }
@@ -1518,7 +1525,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=29');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=30');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1555,7 +1562,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=29');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=30');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1583,6 +1590,7 @@ document.addEventListener('click', e => {
   { const x = t.closest('[data-pd-conv]'); if (x) return pdConvert(x.dataset.pdConv); }
   { const x = t.closest('[data-pd-act]'); if (x) return openDrawer(x.dataset.pdAct); }
   { const x = t.closest('[data-pd-open]'); if (x) return openPendForm(x.dataset.pdOpen); }
+  if (!t.closest('.tab-more, .bn-more')) closeMore();
   if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
   if (!t.closest('.ms')) msClose();
   const gh = t.closest('[data-grp]'); if (gh) return toggleGrp(gh.dataset.grp);
@@ -1593,7 +1601,9 @@ document.addEventListener('click', e => {
   if (t.closest('#etq-crono')) return openCronograma({etq:S.etq});
   if (t.closest('#etq-new')) return openForm(null, {etiquetas:[S.etq], noite:defaultNight()});
   if (t.closest('#etq-enc-tg')){ S.etqEnc = !S.etqEnc; return renderAll(); }
-  const tab = t.closest('.tab'); if (tab) return setTab(tab.dataset.tab);
+  { const mb = t.closest('[data-more]'); if (mb){ const pop = $(mb.dataset.more), abrir = pop.hidden; closeMore(); pop.hidden = !abrir; mb.setAttribute('aria-expanded', String(abrir)); return; } }
+  { const go = t.closest('[data-go]'); if (go){ closeMore(); return setTab(go.dataset.go); } }
+  const tab = t.closest('.tab[data-tab]'); if (tab) return setTab(tab.dataset.tab);
   const cardEl = t.closest('.card[data-id], .act[data-id], .gt-r[data-id]'); if (cardEl) return openDrawer(cardEl.dataset.id);
   const chip = t.closest('.chip[data-st]'); if (chip){ const k = chip.dataset.st; S.f.status = S.f.status.includes(k) ? S.f.status.filter(x => x !== k) : [...S.f.status, k]; return renderAll(); }
   const tch = t.closest('.chip[data-tipo]'); if (tch){ const k = tch.dataset.tipo; S.f.tipo = S.f.tipo.includes(k) ? S.f.tipo.filter(x => x !== k) : [...S.f.tipo, k]; fillFilterOptions(); return renderAll(); }
