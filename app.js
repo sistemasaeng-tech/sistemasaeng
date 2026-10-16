@@ -299,12 +299,15 @@ function startApp(){
   S.unsubs.push(onSnapshot(query(collection(db, 'historico'), where('t', '>=', since), orderBy('t', 'desc'), limit(2000)), s => {
     S.feed = s.docs.map(d => ({id:d.id, ...d.data(SNAP)})); if (S.tab === 'hist') renderAll();
   }, fail('historico')));
+  S.unsubs.push(onSnapshot(query(collection(db, 'pendencias'), limit(1500)), s => {
+    S.pend = snapToMap(s); S.pdErr = false; updPendBadge(); if (S.tab === 'pend') renderAll();
+  }, err => { S.pdErr = err?.code === 'permission-denied'; console.warn('pendencias', err); if (S.tab === 'pend') renderAll(); }));
 }
 function stopApp(){
   for (const u of S.unsubs) u(); S.unsubs = [];
   if (S.unsubWin){ S.unsubWin(); S.unsubWin = null; }
   closeDrawer(); closeModal();
-  S.started = false; S.win = new Map(); S.open = new Map(); S.extra = new Map(); S.tagged = new Map(); S.feed = []; S.usuarios = {};
+  S.started = false; S.win = new Map(); S.open = new Map(); S.extra = new Map(); S.tagged = new Map(); S.feed = []; S.usuarios = {}; S.pend = new Map();
 }
 function snapToMap(s){ const m = new Map(); s.forEach(d => m.set(d.id, {id:d.id, ...d.data(SNAP)})); return m; }
 function subscribeWindow(){
@@ -507,6 +510,114 @@ function renderFeed(){
     <div class="ev"><time>${fmtHM(ev.t)}</time><div><p><b>${esc(nameOf(ev.u))}</b>${roleOf(ev.u) ? ` <span class="ro">${esc(roleOf(ev.u))}</span>` : ''} ${evText(ev)}${ev.tipo === 'exportou' ? '' : ' · '}${ev.tipo === 'exportou' ? '' : ev.tipo === 'excluiu' ? `<span>${esc(ev.titulo)}</span>` : `<button type="button" class="act" data-id="${esc(ev.atividadeId)}">${esc(ev.titulo)}</button>`} <span class="ro">${esc(ev.local||'')}</span></p>${evExtra(ev)}</div></div>`).join('')}</div>`).join('');
 }
 
+/* ================= pendências (lembretes e providências de gestão) ================= */
+// Não são atividades de campo: não entram em totais, relatórios, calendário nem cronograma.
+S.pend = new Map(); S.pdView = 'abertas'; S.pdErr = false; S.fromPend = null; S.lastActId = null;
+// títulos que começam com verbo de gestão parecem lembrete, não serviço de campo
+const PEND_RX = /^\s*(re)?(programar|solicitar|verificar|cobrar|agendar|ver\s+com|providenciar|pedir|lembrar|avisar|confirmar|contatar|contactar|ligar|enviar|mandar|definir|aguardar|checar|alinhar|combinar|falar\s+com|marcar|or[çc]ar|cotar|comprar|acionar|chamar)(\s|$|:|-)/i;
+const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+const pdState = (p, hoje = defaultNight()) => p.feita ? 'feita' : !p.prazo ? 'sem' : p.prazo < hoje ? 'atr' : p.prazo === hoje ? 'hoje' : 'prox';
+const pdMine = p => p.criadoPor === S.uid || (p.responsavel && S.perfil?.nome && lc(p.responsavel) === lc(S.perfil.nome));
+function updPendBadge(){
+  const hoje = defaultNight(), ab = [...S.pend.values()].filter(p => !p.feita), atr = ab.some(p => pdState(p, hoje) === 'atr');
+  for (const el of document.querySelectorAll('[data-pend-n]')){ el.hidden = !ab.length; el.textContent = ab.length; el.classList.toggle('alert', atr); }
+}
+function renderPend(){
+  const hoje = defaultNight(), w = canWrite(), q = lc($('pd-q').value);
+  $('pd-new').hidden = !w;
+  const todas = [...S.pend.values()];
+  const ab = todas.filter(p => !p.feita), mine = ab.filter(pdMine), feitas = todas.filter(p => p.feita);
+  $('pd-seg').innerHTML = [['abertas','Abertas',ab.length],['minhas','Minhas',mine.length],['feitas','Feitas',feitas.length]]
+    .map(([k,l,n]) => `<button type="button" data-pdv="${k}" aria-pressed="${S.pdView === k}">${l} <b>${n}</b></button>`).join('');
+  if (S.pdErr){ $('pd-list').innerHTML = '<div class="empty"><b>Pendências indisponíveis</b>O banco ainda não aceita pendências. O administrador precisa publicar as regras novas do Firestore.</div>'; return; }
+  const hit = p => !q || lc([p.texto, p.responsavel, p.local, p.obs, nameOf(p.criadoPor)].join(' ')).includes(q);
+  const base = (S.pdView === 'feitas' ? feitas : S.pdView === 'minhas' ? mine : ab).filter(hit);
+  if (!base.length){
+    $('pd-list').innerHTML = `<div class="empty"><b>${q ? 'Nada encontrado' : S.pdView === 'feitas' ? 'Nenhuma pendência feita ainda' : 'Nenhuma pendência em aberto'}</b>${q ? 'Tente outra busca.' : S.pdView === 'feitas' ? '' : 'Use para providências da coordenação: programar equipe, solicitar material, cobrar liberação. O serviço de campo em si vai em Atividades.'}</div>`;
+    return;
+  }
+  if (S.pdView === 'feitas'){
+    const l = base.sort((x, y) => toDate(y.feitaEm || y.atualizadoEm) - toDate(x.feitaEm || x.atualizadoEm)).slice(0, 150);
+    $('pd-list').innerHTML = `<div class="pd-sec">${l.map(p => pdItem(p, hoje, w)).join('')}</div>`;
+    return;
+  }
+  const SEC = [['atr','Atrasadas'],['hoje','Para hoje'],['prox','Próximas'],['sem','Sem prazo']];
+  const by = k => base.filter(p => pdState(p, hoje) === k).sort((x, y) => String(x.prazo).localeCompare(String(y.prazo)) || toDate(x.criadoEm) - toDate(y.criadoEm));
+  $('pd-list').innerHTML = SEC.map(([k, l]) => { const items = by(k); return items.length ? `<div class="pd-sec pd-${k}"><div class="pd-h">${l}<em>${items.length}</em></div>${items.map(p => pdItem(p, hoje, w)).join('')}</div>` : ''; }).join('');
+}
+function pdItem(p, hoje, w){
+  const st = pdState(p, hoje), n = st === 'atr' ? nightsBetween(p.prazo, hoje) : 0;
+  const prazo = st === 'feita' ? `feita ${p.feitaEm ? fmtTs(p.feitaEm) : ''}${p.feitaPor ? ' por ' + esc(shortName(nameOf(p.feitaPor))) : ''}`
+    : st === 'atr' ? `venceu ${fmtShort(p.prazo)} · ${n} ${n === 1 ? 'dia' : 'dias'}` : st === 'hoje' ? 'prazo hoje' : st === 'prox' ? `até ${fmtShort(p.prazo)}` : 'sem prazo';
+  const meta = [`<span class="pd-c pd-c-${st}">${prazo}</span>`,
+    p.responsavel ? `<span class="pd-c">${esc(p.responsavel)}</span>` : '',
+    p.local ? `<span class="pd-c">${esc(p.local)}</span>` : '',
+    p.feita && p.feitaPor === p.criadoPor ? '' : `<span class="pd-c pd-by">${p.feita ? 'criada ' : ''}por ${esc(shortName(nameOf(p.criadoPor)))}</span>`,
+    p.atividadeId ? `<button type="button" class="pd-c pd-link" data-pd-act="${esc(p.atividadeId)}">virou atividade ›</button>` : '',
+    w && !p.feita ? `<button type="button" class="pd-c pd-conv" data-pd-conv="${esc(p.id)}">→ Transformar em atividade</button>` : ''].filter(Boolean).join('');
+  return `<div class="pd-item${p.feita ? ' done' : ''}">
+    <button type="button" class="pd-chk" data-pd-chk="${esc(p.id)}" aria-pressed="${!!p.feita}" aria-label="${p.feita ? 'Reabrir' : 'Marcar como feita'}"${w ? '' : ' disabled'}>${ICON_CHECK}</button>
+    <div class="pd-body"${w ? ` role="button" tabindex="0" data-pd-open="${esc(p.id)}"` : ''}><div class="pd-t">${esc(p.texto)}</div>${p.obs ? `<div class="pd-obs">${esc(p.obs)}</div>` : ''}<div class="pd-meta">${meta}</div></div>
+  </div>`;
+}
+function pdSave(id, data, okMsg){
+  const ref = id ? doc(db, 'pendencias', id) : doc(collection(db, 'pendencias')), b = writeBatch(db);
+  for (const k of ['texto','responsavel','prazo','local','obs']) if (k in data) data[k] = String(data[k] || '').trim();
+  if (id) b.update(ref, {...data, atualizadoPor:S.uid, atualizadoEm:serverTimestamp()});
+  else b.set(ref, {...data, feita:false, criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp()});
+  commit(b, okMsg);
+  return ref.id;
+}
+function pdToggle(id){
+  const p = S.pend.get(id); if (!p || !canWrite()) return;
+  const v = !p.feita;
+  pdSave(id, {feita:v, feitaPor: v ? S.uid : '', feitaEm: v ? serverTimestamp() : null}, v ? 'Pendência feita.' : 'Pendência reaberta.');
+}
+function openPendForm(id, preset = {}){
+  if (!canWrite()) return;
+  const p = id ? S.pend.get(id) : null, v = p || {prazo:'', ...preset};
+  const pode = p && (isAdmin() || p.criadoPor === S.uid);
+  const nomes = Object.keys(S.usuarios).filter(u => ['usuario','admin','visualizador'].includes(S.usuarios[u].papel)).map(u => S.usuarios[u].nome).filter(Boolean);
+  const locs = [...S.cad.setores.map(x => 'Setor ' + x.codigo), ...S.cad.locais.map(locNome), ...S.cad.pilares.map(x => x.codigo).filter(Boolean)];
+  $('sheet').innerHTML = `<h2>${p ? 'Editar pendência' : 'Nova pendência'}</h2>
+    <p class="ro" style="margin:-6px 0 14px">Providência da coordenação (programar, solicitar, cobrar, verificar). Quando virar serviço com data, transforme em atividade.</p>
+    <form id="pdf" novalidate>
+      <div class="f"><label for="pd-texto">O que precisa ser feito <span class="req">*</span></label><textarea id="pd-texto" rows="2" maxlength="300" placeholder="ex.: Programar eletricista para religar a iluminação do Setor D1">${esc(v.texto || '')}</textarea></div>
+      <div class="frow">
+        <div class="f"><label for="pd-resp">Responsável</label><input id="pd-resp" list="dl-pd-resp" maxlength="80" value="${esc(v.responsavel || '')}" placeholder="Quem vai providenciar"><datalist id="dl-pd-resp">${nomes.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>
+        <div class="f"><label for="pd-prazo">Prazo</label><input id="pd-prazo" type="date" value="${esc(v.prazo || '')}"></div>
+      </div>
+      <div class="f"><label for="pd-local">Local</label><input id="pd-local" list="dl-pd-local" maxlength="120" value="${esc(v.local || '')}" placeholder="Setor, pilar ou local do shopping (opcional)"><datalist id="dl-pd-local">${locs.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>
+      <div class="f"><label for="pd-obs">Observação</label><textarea id="pd-obs" rows="2" maxlength="1000">${esc(v.obs || '')}</textarea></div>
+      ${p ? `<div class="pd-extra">${!p.feita ? `<button type="button" class="btn ghost" id="pd-conv">→ Transformar em atividade</button>` : ''}${pode ? `<button type="button" class="link-btn danger" id="pd-del">Excluir pendência</button>` : ''}</div>` : ''}
+      <div class="acts"><button type="button" class="btn ghost" id="pd-cancel">Cancelar</button><button class="btn pri" type="submit">${p ? 'Salvar' : 'Criar pendência'}</button></div>
+    </form>`;
+  const val = () => ({texto:$('pd-texto').value.trim(), responsavel:$('pd-resp').value, prazo:$('pd-prazo').value, local:$('pd-local').value, obs:$('pd-obs').value});
+  $('pd-cancel').onclick = closeModal;
+  if ($('pd-conv')) $('pd-conv').onclick = () => { const d = val(); if (d.texto && (d.texto !== p.texto || d.prazo !== p.prazo || d.local !== (p.local||'') || d.responsavel !== (p.responsavel||'') || d.obs !== (p.obs||''))) pdSave(id, d); pdConvert(id, d); };
+  if ($('pd-del')) $('pd-del').onclick = e => {
+    const bt = e.currentTarget; if (bt.dataset.ok !== '1'){ bt.dataset.ok = '1'; bt.textContent = 'Toque de novo para excluir'; return; }
+    const b = writeBatch(db); b.delete(doc(db, 'pendencias', id)); commit(b, 'Pendência excluída.'); closeModal();
+  };
+  $('pdf').onsubmit = e => {
+    e.preventDefault(); const d = val();
+    if (!d.texto) return toast('Escreva o que precisa ser feito.');
+    pdSave(id, d, p ? 'Pendência salva.' : 'Pendência criada.'); closeModal();
+  };
+  showModal(); setTimeout(() => $('pd-texto').focus(), 50);
+}
+// pendência → formulário de atividade já preenchido; ao inserir, a pendência fica feita e ligada à atividade
+function pdConvert(id, d){
+  const p = S.pend.get(id) || {}; d = d || p;
+  const preset = {titulo:'', detalhes:[d.texto, d.obs].filter(Boolean).join('\n'), responsavel:'', fromPend:id};
+  if (d.prazo && d.prazo >= defaultNight()) preset.noite = d.prazo;
+  const L = String(d.local || '').trim(), sc = L.replace(/^setor\s+/i, '').toUpperCase();
+  if (S.cad.setores.some(x => x.codigo === sc)){ preset.tipoLocal = 'setor'; preset.setor = sc; }
+  else if (L && S.cad.locais.some(x => lc(locNome(x)) === lc(L))){ preset.tipoLocal = 'shopping'; preset.local = S.cad.locais.map(locNome).find(n => lc(n) === lc(L)); }
+  else if (L && /^p\s*-?\s*\d/i.test(L)){ preset.tipoLocal = 'pilar'; preset.pilar = pilarCode(L) || L; }
+  closeModal(); openForm(null, preset);
+}
+
 /* ================= calendário (Gantt) ================= */
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const DOW3 = ['dom','seg','ter','qua','qui','sex','sáb'];
@@ -550,7 +661,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=28');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=29');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -877,9 +988,9 @@ function fillFilterOptions(){
 /* ================= render geral ================= */
 function renderAll(){
   if (!S.started) return;
-  if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else renderCad();
+  if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else if (S.tab === 'pend') renderPend(); else renderCad();
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
-  renderWho();
+  updPendBadge(); renderWho();
 }
 const shortName = n => { const p = String(n||'').trim().split(/\s+/).filter(Boolean); return p.length > 2 ? `${p[0]} ${p[p.length-1]}` : p.join(' '); };
 function initials(n){ const p = String(n||'').trim().split(/\s+/).filter(Boolean); return ((p[0]||'?')[0] + (p.length > 1 ? p[p.length-1][0] : '')).toUpperCase(); }
@@ -895,10 +1006,10 @@ function renderWho(){
 function setTab(t){
   if (t === 'cad' && S.tab === 'cad') S.cadSub = null;
   if (t === 'etq' && S.tab === 'etq') S.etq = null;
-  S.tab = ['noite','gantt','etq','hist','cad'].includes(t) ? t : 'noite';
+  S.tab = ['noite','pend','gantt','etq','hist','cad'].includes(t) ? t : 'noite';
   if (S.tab === 'gantt') S.gt.jump = true;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
-  $('v-noite').hidden = S.tab !== 'noite'; $('v-gantt').hidden = S.tab !== 'gantt'; $('v-etq').hidden = S.tab !== 'etq'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad';
+  $('v-noite').hidden = S.tab !== 'noite'; $('v-gantt').hidden = S.tab !== 'gantt'; $('v-etq').hidden = S.tab !== 'etq'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad'; $('v-pend').hidden = S.tab !== 'pend';
   try { localStorage.setItem('pn-tab', S.tab); } catch {}
   window.scrollTo({top:0});
   renderAll();
@@ -1130,7 +1241,9 @@ function mutate(id, build, okMsg){
   S.dwMode = null; $('dw-panel').innerHTML = ''; renderDrawerActions();
 }
 function createAct(data, origem){
-  const actRef = doc(collection(db, 'atividades')), histRef = doc(collection(db, 'historico')), b = writeBatch(db);
+  delete data.fromPend;
+  const actRef = doc(collection(db, 'atividades')); S.lastActId = actRef.id;
+  const histRef = doc(collection(db, 'historico')), b = writeBatch(db);
   const et = tagsOf(data);
   b.set(actRef, {...data, etiquetas:et, temEtiqueta:et.length > 0, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:Number(data.avanco) > 0 ? 'andamento' : 'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
   b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
@@ -1142,7 +1255,10 @@ function openForm(id, preset = {}){
   if (!canWrite()) return;
   const a = id ? all().get(id) : null;
   const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite < defaultNight() ? defaultNight() : S.noite, turno:S.f.turno || '', tipoLocal:(S.f.tipo.length === 1 ? S.f.tipo[0] : '') || (S.f.loc.length === 1 ? {s:'setor', p:'pilar', z:'shopping'}[S.f.loc[0][0]] : '') || 'setor', setor:S.f.loc.length === 1 && S.f.loc[0][0] === 's' ? S.f.loc[0].slice(2) : '', pilar:S.f.loc.length === 1 && S.f.loc[0][0] === 'p' ? S.f.loc[0].slice(2) : '', local:S.f.loc.length === 1 && S.f.loc[0][0] === 'z' ? S.f.loc[0].slice(2) : '', prioridade:'normal', fornecedor:S.f.forn.length === 1 && S.f.forn[0] !== '__none__' ? S.f.forn[0] : '', etiquetas:[...S.f.etq], ...preset};
+  S.fromPend = !a && preset.fromPend ? preset.fromPend : null;
+  const pdOrig = S.fromPend ? S.pend.get(S.fromPend) : null;
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
+  ${pdOrig ? `<div class="af-from"><b>Da pendência:</b> ${esc(pdOrig.texto)}<br>Descreva o <b>serviço que será executado em campo</b> (ex.: “Instalação da iluminação provisória – Setor D1”), com o fornecedor e a data em que acontece. Ao inserir, a pendência fica como feita.</div>` : ''}
   <form id="af" novalidate>
     <div class="frow">
       <div class="f"><label for="af-noite">Início <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
@@ -1175,6 +1291,7 @@ function openForm(id, preset = {}){
     <datalist id="dl-pilar-loja"></datalist>
     <datalist id="dl-local">${S.cad.locais.map(x => `<option value="${esc(locNome(x))}">${esc(locSetor(x) ? 'Setor ' + locSetor(x) : '')}</option>`).join('')}</datalist>
     <datalist id="dl-nivel">${S.cad.niveis.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+    <div class="af-warn" id="af-pwarn" role="alert" hidden></div>
     <div class="af-warn" id="af-warn" role="alert" hidden></div>
     <div class="acts"><button type="button" class="btn ghost" id="af-cancel">Cancelar</button><button class="btn pri" type="submit">${a ? 'Salvar alterações' : 'Inserir atividade'}</button></div>
   </form>`;
@@ -1198,6 +1315,7 @@ function openForm(id, preset = {}){
   const pk = tagPicker($('af-etq'), tagsOf(v));
   $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
   for (const id of ['af-noite','af-fim']) $(id).addEventListener('change', () => { $('af-warn').hidden = true; delete $('af-warn').dataset.ok; });
+  $('af-titulo').addEventListener('input', () => { $('af-pwarn').hidden = true; delete $('af-pwarn').dataset.ok; });
   $('af-noite').addEventListener('change', () => { if (!$('af-fim').value || $('af-fim').value < $('af-noite').value) $('af-fim').value = $('af-noite').value; });
   $('af-av').oninput = e => { $('af-av-n').textContent = e.target.value + '%'; };
   $('af-cancel').onclick = closeModal;
@@ -1215,13 +1333,31 @@ function openForm(id, preset = {}){
     if (tipo === 'pilar' && !d.pilar) return toast('Informe o pilar.');
     if (tipo === 'shopping' && !d.local) return toast('Informe o local no shopping.');
     if (!d.titulo) return toast('Descreva a atividade.');
+    // título com cara de lembrete (programar, solicitar, cobrar...): sugere salvar como pendência
+    { const w = $('af-pwarn');
+      if (!a && PEND_RX.test(d.titulo) && w.dataset.ok !== d.titulo){
+        w.dataset.ok = d.titulo; w.hidden = false;
+        w.innerHTML = `<b>Isso parece um lembrete, não uma atividade de campo.</b> Atividade é o serviço que a equipe vai executar (ex.: “Instalação elétrica – Setor D1”). Providências como programar, solicitar ou cobrar vão em Pendências.
+          <div class="af-warn-a">${S.fromPend ? '' : '<button type="button" class="btn pri sm" id="af-to-pend">Salvar como pendência</button>'}<span class="ro">ou corrija o título${S.fromPend ? '' : ', ou toque de novo em “Inserir atividade” para manter'}</span></div>`;
+        if ($('af-to-pend')) $('af-to-pend').onclick = () => {
+          const L = d.tipoLocal === 'setor' && d.setor ? 'Setor ' + d.setor : d.tipoLocal === 'pilar' ? [d.pilar, d.pilarLoja].filter(Boolean).join(' - ') : d.local;
+          pdSave(null, {texto:d.titulo.slice(0, 300), responsavel:d.responsavel, prazo:d.noite, local:L, obs:[d.fornecedor ? 'Fornecedor: ' + d.fornecedor : '', d.detalhes].filter(Boolean).join('\n')}, 'Salvo em Pendências.');
+          closeModal();
+        };
+        w.scrollIntoView({behavior:'smooth', block:'center'}); return;
+      } }
     { const hj = defaultNight(), w = $('af-warn'), mudouFim = !a || fimOf(a) !== d.fim;
       if (d.fim < hj && mudouFim && w.dataset.ok !== d.fim){
         w.dataset.ok = d.fim; w.hidden = false;
         w.innerHTML = `<b>O término (${fmtShort(d.fim)}) já passou.</b> Hoje é ${fmtShort(hj)}: a atividade vai entrar como vencida. Confira as datas ou toque de novo em “${a ? 'Salvar alterações' : 'Inserir atividade'}” para confirmar.`;
         w.scrollIntoView({behavior:'smooth', block:'center'}); return;
       } }
-    if (!a){ createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite); toast('Atividade inserida.'); return; }
+    if (!a){
+      const fp = S.fromPend; createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite);
+      if (fp && S.pend.has(fp)){ pdSave(fp, {feita:true, feitaPor:S.uid, feitaEm:serverTimestamp(), atividadeId:S.lastActId}); toast('Atividade inserida. A pendência ficou como feita.'); }
+      else toast('Atividade inserida.');
+      S.fromPend = null; return;
+    }
     const gv = (o, k) => String((k === 'etiquetas' ? tagsOf(o).join(', ') : k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
     const mudancas = Object.keys(FIELDS).filter(k => gv(a, k) !== gv(d, k)).map(k => ({campo:k, de:gv(a, k), para:gv(d, k)}));
     if (mudancas.some(m => m.campo === 'avanco') && autoAnd(a.status, d.avanco)){ d.status = 'andamento'; d.motivo = ''; mudancas.push({campo:'status', de:a.status, para:'andamento'}); }
@@ -1382,7 +1518,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=28');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=29');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1419,7 +1555,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=28');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=29');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1442,6 +1578,11 @@ async function exportPdf(){
 /* ================= eventos ================= */
 document.addEventListener('click', e => {
   const t = e.target;
+  { const x = t.closest('[data-pdv]'); if (x){ S.pdView = x.dataset.pdv; return renderAll(); } }
+  { const x = t.closest('[data-pd-chk]'); if (x) return pdToggle(x.dataset.pdChk); }
+  { const x = t.closest('[data-pd-conv]'); if (x) return pdConvert(x.dataset.pdConv); }
+  { const x = t.closest('[data-pd-act]'); if (x) return openDrawer(x.dataset.pdAct); }
+  { const x = t.closest('[data-pd-open]'); if (x) return openPendForm(x.dataset.pdOpen); }
   if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
   if (!t.closest('.ms')) msClose();
   const gh = t.closest('[data-grp]'); if (gh) return toggleGrp(gh.dataset.grp);
@@ -1536,6 +1677,9 @@ $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
 $('dw-close').onclick = closeDrawer;
 $('scrim').onclick = () => { if (!$('modal').hidden) closeModal(); else closeDrawer(); };
 document.addEventListener('keydown', e => { const gh = e.target.closest && e.target.closest('[data-grp]'); if (gh && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleGrp(gh.dataset.grp); } });
+document.addEventListener('keydown', e => { const x = e.target.closest && e.target.closest('[data-pd-open]'); if (x && (e.key === 'Enter' || e.key === ' ') && e.target === x){ e.preventDefault(); openPendForm(x.dataset.pdOpen); } });
+$('pd-new').onclick = () => openPendForm(null);
+$('pd-q').oninput = () => renderPend();
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ if (!$('modal').hidden) closeModal(); else if (S.openId) closeDrawer(); } });
 const net = () => { $('offline').hidden = navigator.onLine; };
 window.addEventListener('online', net); window.addEventListener('offline', net); net();
