@@ -34,6 +34,8 @@ const TIPO_LABEL = {setor:'Setor', pilar:'Pilar', shopping:'Shopping'};
 const TURNOS = {diurno:'Diurno', noturno:'Noturno'};
 const turnoOf = a => a.turno === 'diurno' ? 'diurno' : 'noturno'; // atividades antigas, sem turno, contam como noturnas
 const fimOf = a => (a.fim && a.fim >= a.noite) ? a.fim : a.noite;          // término (sem término = mesmo dia do início)
+// avanço > 0 em atividade Programada ou Não iniciada passa automaticamente para Em andamento
+const autoAnd = (st, av) => Number(av) > 0 && (st === 'programada' || st === 'nao_iniciada');
 const avOf = a => a.status === 'concluida' ? 100 : Math.max(0, Math.min(100, Number(a.avanco) || (a.status === 'parcial' ? Number(a.pct) || 0 : 0)));
 const progBar = p => `<span class="prog" role="img" aria-label="Avanço ${p}%"><i style="width:${p}%"></i></span><b class="prog-n">${p}%</b>`;
 const ICON_SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
@@ -476,7 +478,7 @@ function evText(ev){
     case 'criou': return `inseriu ${ev.origem ? 'uma cópia' : 'a atividade'} para ${fmtShort(ev.noite || ev.noiteAtv)}${ev.turno || ev.turnoAtv ? ' (' + (TURNOS[ev.turno || ev.turnoAtv] || '').toLowerCase() + ')' : ''}`;
     case 'status': return `mudou o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
     case 'obs': return 'adicionou uma observação';
-    case 'avanco': return `atualizou o avanço de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>`;
+    case 'avanco': return `atualizou o avanço de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>${ev.statusPara ? ` e o status mudou de ${st(ev.statusDe)} para ${st(ev.statusPara)}` : ''}`;
     case 'editou': return ev.mudancas?.length && ev.mudancas.every(m => m.campo === 'etiquetas') ? 'alterou as etiquetas' : 'alterou os dados';
     case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
     case 'excluiu': return 'excluiu a atividade';
@@ -484,11 +486,11 @@ function evText(ev){
     default: return esc(ev.tipo);
   }
 }
-const fmtVal = (campo, v) => (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
+const fmtVal = (campo, v) => campo === 'status' ? (STATUS[v]?.label || v || '') : (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
 function evExtra(ev){
   if (ev.tipo === 'exportou') return `<div class="ch">${[ev.qtd ? `${ev.qtd} ${ev.qtd === 1 ? 'atividade' : 'atividades'}` : '', ev.periodo || '', ev.filtros ? 'filtros: ' + esc(ev.filtros) : 'sem filtros'].filter(Boolean).map(x => x.startsWith('filtros') || x === 'sem filtros' ? x : esc(x)).join(' · ')}${ev.arquivo ? `<br><span class="ro">${esc(ev.arquivo)}</span>` : ''}</div>`;
   let h = '';
-  if (ev.mudancas?.length) h += `<div class="ch">${ev.mudancas.map(m => `${esc(FIELDS[m.campo]||m.campo)}: ${esc(fmtVal(m.campo,m.de)||'—')} → ${esc(fmtVal(m.campo,m.para)||'—')}`).join('<br>')}</div>`;
+  if (ev.mudancas?.length) h += `<div class="ch">${ev.mudancas.map(m => `${esc(FIELDS[m.campo] || (m.campo === 'status' ? 'Status' : m.campo))}: ${esc(fmtVal(m.campo,m.de)||'—')} → ${esc(fmtVal(m.campo,m.para)||'—')}`).join('<br>')}</div>`;
   if (ev.motivo || ev.obs) h += `<div class="q">${ev.motivo ? `<b>${esc(ev.motivo)}</b>${ev.obs ? ' — ' : ''}` : ''}${esc(ev.obs||'')}</div>`;
   return h;
 }
@@ -548,7 +550,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=27');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=28');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -973,8 +975,10 @@ function renderAv(a){
     const nv = Number($('av-r').value), cur = all().get(S.openId) || a;
     S.avEdit = false;
     if (nv === avOf(cur)){ renderAv(cur); return toast('O avanço não mudou.'); }
-    mutate(S.openId, c => ({changes:{avanco:nv}, ev:{tipo:'avanco', de:avOf(c), para:nv}}), nv === 100 && cur.status !== 'concluida' ? 'Avanço em 100%. Quando finalizar, mude o status para Concluída.' : `Avanço atualizado para ${nv}%.`);
-    renderAv({...cur, avanco:nv});
+    const vira = autoAnd(cur.status, nv);
+    mutate(S.openId, c => { const au = autoAnd(c.status, nv); return {changes:{avanco:nv, ...(au ? {status:'andamento', motivo:''} : {})}, ev:{tipo:'avanco', de:avOf(c), para:nv, ...(au ? {statusDe:c.status, statusPara:'andamento'} : {})}}; },
+      nv === 100 && cur.status !== 'concluida' ? `Avanço em 100%.${vira ? ' Status: Em andamento.' : ''} Quando finalizar, mude o status para Concluída.` : `Avanço atualizado para ${nv}%.${vira ? ' Status: Em andamento.' : ''}`);
+    renderAv({...cur, avanco:nv, ...(vira ? {status:'andamento'} : {})});
   };
 }
 function renderDrawerActions(){
@@ -1038,7 +1042,7 @@ function setMode(mode){
     $('pf-obs').focus();
   } else if (mode === 'reprog'){
     const t0 = turnoOf(a);
-    p.innerHTML = `<form class="panel" id="pf"><h4>Reprogramar</h4><p class="ro" style="margin:0 0 10px">A atividade volta para “Programada” a partir do novo início, mantendo a duração. O histórico continua junto.</p>
+    p.innerHTML = `<form class="panel" id="pf"><h4>Reprogramar</h4><p class="ro" style="margin:0 0 10px">A atividade volta para “Programada” (ou “Em andamento”, se já tiver avanço) a partir do novo início, mantendo a duração. O histórico continua junto.</p>
       <div class="frow"><div class="f"><label for="pf-date">Novo início <span class="req">*</span></label><input id="pf-date" type="date" value="${esc(addDays(a.noite,1))}"></div>
       <div class="f"><label>Turno</label><div class="seg" id="pf-turno">${['diurno','noturno'].map(x => `<button type="button" data-t="${x}" aria-pressed="${x === t0}">${TURNOS[x]}</button>`).join('')}</div></div></div>
       <div class="f"><label for="pf-obs">Motivo da reprogramação</label><textarea id="pf-obs"></textarea></div><div class="acts">${cancel}<button class="btn pri" type="submit">Reprogramar</button></div></form>`;
@@ -1047,7 +1051,7 @@ function setMode(mode){
     $('pf').onsubmit = e => {
       e.preventDefault(); const d = $('pf-date').value, obs = $('pf-obs').value.trim();
       if (!d) return toast('Escolha o novo dia.'); if (d === a.noite && tsel === t0) return toast('A atividade já está nesse dia e turno.');
-      mutate(S.openId, cur => ({changes:{noite:d, fim:addDays(d, durOf(cur)), turno:tsel, status:'programada', aberta:true, motivo:'', pct:'', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'reprogramou', de:cur.noite, para:d, turnoDe:turnoOf(cur), turnoPara:tsel, obs}}), `Reprogramada para ${fmtShort(d)} (${TURNOS[tsel].toLowerCase()}).`);
+      mutate(S.openId, cur => ({changes:{noite:d, fim:addDays(d, durOf(cur)), turno:tsel, status:avOf(cur) > 0 ? 'andamento' : 'programada', aberta:true, motivo:'', pct:'', ...(obs ? {ultimaObs:obs} : {})}, ev:{tipo:'reprogramou', de:cur.noite, para:d, turnoDe:turnoOf(cur), turnoPara:tsel, obs}}), `Reprogramada para ${fmtShort(d)} (${TURNOS[tsel].toLowerCase()}).`);
     };
   } else if (mode === 'dup'){
     p.innerHTML = `<form class="panel" id="pf"><h4>Duplicar para outro dia</h4><p class="ro" style="margin:0 0 10px">Cria uma nova atividade igual, com status “Programada” e histórico próprio. A original não muda.</p>
@@ -1128,7 +1132,7 @@ function mutate(id, build, okMsg){
 function createAct(data, origem){
   const actRef = doc(collection(db, 'atividades')), histRef = doc(collection(db, 'historico')), b = writeBatch(db);
   const et = tagsOf(data);
-  b.set(actRef, {...data, etiquetas:et, temEtiqueta:et.length > 0, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
+  b.set(actRef, {...data, etiquetas:et, temEtiqueta:et.length > 0, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:Number(data.avanco) > 0 ? 'andamento' : 'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
   b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
   return commit(b);
 }
@@ -1220,6 +1224,7 @@ function openForm(id, preset = {}){
     if (!a){ createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite); toast('Atividade inserida.'); return; }
     const gv = (o, k) => String((k === 'etiquetas' ? tagsOf(o).join(', ') : k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
     const mudancas = Object.keys(FIELDS).filter(k => gv(a, k) !== gv(d, k)).map(k => ({campo:k, de:gv(a, k), para:gv(d, k)}));
+    if (mudancas.some(m => m.campo === 'avanco') && autoAnd(a.status, d.avanco)){ d.status = 'andamento'; d.motivo = ''; mudancas.push({campo:'status', de:a.status, para:'andamento'}); }
     closeModal();
     if (mudancas.length) mutate(a.id, () => ({changes:d, ev:{tipo:'editou', mudancas}}), 'Alterações salvas.');
   };
@@ -1377,7 +1382,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=27');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=28');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1414,7 +1419,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=27');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=28');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
