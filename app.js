@@ -398,46 +398,63 @@ function concDay(a){
   const v = a.concluidoEm || (a.status === 'concluida' ? a.atualizadoEm : null); if (!v) return '';
   const d = toDate(v); if (d.getHours() < 6) d.setDate(d.getDate() - 1); return ymd(d);
 }
+// Lista de Atividades: por padrão mostra TUDO em aberto (vencidas, em curso e a iniciar).
+// Um dia específico é escolhido pelo Calendário (toque no dia) — aí a lista mostra só aquele dia (S.dia).
+S.dia = null;
 function renderNight(){
-  const today = S.noite === defaultNight(), ft = S.f.turno;
-  $('night-title').textContent = today ? 'Hoje' : fmtDay(S.noite);
-  { const tt = ft === 'noturno' ? 'turno noturno' : ft === 'diurno' ? 'turno diurno' : 'turnos diurno e noturno';
-    $('night-sub').innerHTML = today ? `${esc(fmtDay(S.noite))}<span class="sub-t"> · ${tt}</span>` : `<span class="sub-t">${tt}</span>`; }
-  { const d = parseYmd(S.noite); $('night-label').textContent = `${DOW[d.getDay()].slice(0,3)} ${fmtShort(S.noite)}`; }
-  $('n-date').value = S.noite;
-  $('n-today').hidden = today;
+  const hoje = defaultNight(), ft = S.f.turno, dia = S.dia;
+  if (!dia) S.noite = hoje;
+  const tt = ft === 'noturno' ? 'turno noturno' : ft === 'diurno' ? 'turno diurno' : 'turnos diurno e noturno';
+  $('night-title').textContent = !dia ? 'Atividades' : dia === hoje ? 'Hoje' : fmtDay(dia);
+  $('night-sub').innerHTML = !dia ? `Todas em aberto<span class="sub-t"> · ${tt}</span>` : dia === hoje ? `${esc(fmtDay(dia))}<span class="sub-t"> · ${tt}</span>` : `<span class="sub-t">${tt}</span>`;
+  document.querySelector('#v-noite .day-head .nav').hidden = !dia;
+  if (dia){ const d = parseYmd(dia); $('night-label').textContent = `${DOW[d.getDay()].slice(0,3)} ${fmtShort(dia)}`; $('n-date').value = dia; }
+  $('n-today').hidden = !dia;
   for (const b of document.querySelectorAll('#f-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
   const acts = [...all().values()].filter(a => !ft || turnoOf(a) === ft);
-  const tonightAll = acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite);
-  // concluídas ficam fora da lista; o chip "Concluída" do filtro de status mostra só elas
-  const concl = acts.filter(a => a.status === 'concluida' && ((a.noite <= S.noite && fimOf(a) >= S.noite) || concDay(a) === S.noite));
-  const verConc = S.f.status.includes('concluida');
-  const tonight = [...tonightAll.filter(a => a.status !== 'concluida'), ...(verConc ? concl : [])];
-  const pend = acts.filter(a => a.aberta && fimOf(a) < S.noite);
-  const dayAll = [...tonightAll, ...pend];
-  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); dayAll.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
-  const total = dayAll.length, nConc = concl.length;
-  const bar = total ? ORDER.filter(k => cnt[k]).map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
-  const leg = ORDER.filter(k => k !== 'concluida' && cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`);
+  const ref = S.noite, rv = S.refVenc = dia && dia > hoje ? hoje : ref, verConc = S.f.status.includes('concluida'), verCanc = S.f.status.includes('cancelada');
+  let pend, cur, fut, concl, canc, contados;
+  if (dia){
+    const doDia = acts.filter(a => a.noite <= ref && fimOf(a) >= ref);
+    pend = acts.filter(a => a.aberta && fimOf(a) < rv); // num dia futuro, vencida = já vencida hoje
+    cur = doDia.filter(a => a.status !== 'concluida' && a.status !== 'cancelada'); fut = [];
+    concl = acts.filter(a => a.status === 'concluida' && (doDia.includes(a) || concDay(a) === ref));
+    canc = doDia.filter(a => a.status === 'cancelada');
+  } else {
+    const ab = acts.filter(a => a.aberta && STATUS[a.status]?.aberta), desde = addDays(hoje, -30);
+    pend = ab.filter(a => fimOf(a) < hoje); cur = ab.filter(a => a.noite <= hoje && fimOf(a) >= hoje); fut = ab.filter(a => a.noite > hoje);
+    concl = acts.filter(a => a.status === 'concluida' && (concDay(a) >= desde || fimOf(a) >= hoje));
+    canc = acts.filter(a => a.status === 'cancelada' && fimOf(a) >= desde);
+  }
+  contados = [...pend, ...cur, ...fut];
+  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); contados.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
+  cnt.concluida = concl.length; cnt.cancelada = canc.length;
+  const total = contados.length;
+  const bar = total ? ORDER.filter(k => cnt[k] && k !== 'concluida' && k !== 'cancelada').map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
+  const leg = [];
   if (pend.length) leg.push(`<span class="sum-pend"><i class="dot" style="--c:var(--st-nao)"></i>${pend.length} ${pend.length === 1 ? 'vencida' : 'vencidas'}</span>`);
-  $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${cnt.concluida}</b><span>de ${total} concluídas</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
+  if (fut.length) leg.push(`<span><i class="dot" style="--c:var(--faint)"></i>${fut.length} a iniciar</span>`);
+  leg.push(...ORDER.filter(k => k !== 'concluida' && k !== 'cancelada' && cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`));
+  $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${total}</b><span>${total === 1 ? 'em aberto' : 'em aberto'}${dia ? (dia === hoje ? ' hoje' : ' no dia') : ''}</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
-  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${k === 'concluida' ? nConc : cnt[k]}</b></button>`).join('');
+  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
   const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor].filter(x => x.length).length;
   $('f-count').hidden = !nf; $('f-count').textContent = nf;
-  // vencidas entram no mesmo grupo (setor / pilar / local) das atividades do dia; no grupo, as vencidas vêm primeiro (mais antigas no topo)
-  const base = [...pend, ...tonight];
-  const p = pend.filter(matches).sort((x,y) => String(fimOf(x)).localeCompare(String(fimOf(y))));
-  const t = [...p, ...sortActs(tonight.filter(matches))];
+  // concluídas e canceladas só aparecem quando o chip correspondente está marcado
+  const base = [...pend, ...cur, ...fut, ...(verConc ? concl : []), ...(verCanc ? canc : [])];
+  const byFim = (x, y) => String(fimOf(x)).localeCompare(String(fimOf(y)));
+  const t = [...pend.filter(matches).sort(byFim), ...sortActs(cur.filter(matches)), ...fut.filter(matches).sort((x, y) => x.noite.localeCompare(y.noite) || prRank(x.prioridade) - prRank(y.prioridade)),
+    ...(verConc ? concl.filter(matches).sort((x, y) => concDay(y).localeCompare(concDay(x))) : []), ...(verCanc ? canc.filter(matches) : [])];
+  S.listaAtual = t;
   $('c-tonight').textContent = t.length === base.length ? `${t.length}` : `${t.length} de ${base.length}`;
-  $('h-tonight').textContent = today ? 'Atividades de hoje' : `Atividades de ${fmtShort(S.noite)}`;
+  $('h-tonight').textContent = !dia ? (verConc && S.f.status.length === 1 ? 'Concluídas (últimos 30 dias)' : 'Em aberto') : dia === hoje ? 'Atividades de hoje' : `Atividades de ${fmtShort(dia)}`;
   let html;
-  if (!base.length && tonightAll.length) html = `<div class="empty"><b>Todas as atividades ${today ? 'de hoje' : 'deste dia'} foram concluídas</b>Para vê-las, abra Filtros e toque em “Concluída”.</div>`;
-  else if (!base.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${today ? 'hoje' : 'neste dia'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
+  if (!base.length && (concl.length || canc.length) && !contados.length) html = `<div class="empty"><b>Nada em aberto${dia ? ' neste dia' : ''}</b>As concluídas aparecem em Filtros → “Concluída”.</div>`;
+  else if (!base.length) html = `<div class="empty"><b>Nenhuma atividade ${ft ? 'no turno ' + TURNOS[ft].toLowerCase() : ''} ${dia ? 'neste dia' : 'em aberto'}</b>${canWrite() ? 'Toque em “+” para programar o que a equipe vai executar.' : 'Quando coordenadores e residentes programarem atividades, elas aparecem aqui.'}</div>`;
   else if (!t.length) html = '<div class="empty">Nenhuma atividade com esses filtros.</div>';
   else if (ft) html = grouped(t, false, ft);
-  else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${tr === 'diurno' ? fmtDay(S.noite) : fmtNightLong(S.noite)}</span><b>${l.length}</b></div>${grouped(l, false, tr)}</div>` : ''; }).join('');
+  else html = ['diurno','noturno'].map(tr => { const l = t.filter(a => turnoOf(a) === tr); return l.length ? `<div class="turno-sec"><div class="turno-h">${turnoTag(tr)}<span class="th-d">${dia ? (tr === 'diurno' ? fmtDay(dia) : fmtNightLong(dia)) : ''}</span><b>${l.length}</b></div>${grouped(l, false, tr)}</div>` : ''; }).join('');
   $('l-tonight').innerHTML = html;
   $('b-new').hidden = !canWrite();
 }
@@ -455,14 +472,15 @@ function grouped(list, isPend, scope = ''){
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
     .map(g => { const tp = g.k.startsWith('p:') ? 'pilares' : g.k.startsWith('z:') ? 'locais' : 'setores', lab = g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label, sub = g.k.startsWith('z:') ? 'Shopping' : g.sub;
       const key = (isPend ? 'P' : 'T') + scope + '|' + g.k, col = S.colGrp.has(key);
-      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend || (a.aberta && fimOf(a) < S.noite))).join('')}</div>`}</div>`; }).join('');
+      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend || (a.aberta && fimOf(a) < (S.refVenc || S.noite)), S.refVenc || S.noite, !S.dia)).join('')}</div>`}</div>`; }).join('');
 }
 function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), ref) : 0, av = avOf(a);
   const meta = [localLine(a), a.fornecedor].filter(Boolean).join(' · ');
   const tags = [];
   if (a.prioridade === 'critica' || a.prioridade === 'alta') tags.push(`<span class="tag ${a.prioridade}">${esc(PRIOR[a.prioridade])}</span>`);
-  if (showDate || fimOf(a) !== a.noite) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`);
+  if (!isPend && (showDate || fimOf(a) !== a.noite)) tags.push(`<span class="tag per">${fmtPeriodo(a)}</span>`); // vencida: o selo "venceu dd/mm" já mostra a data
+  if (a.aberta && a.noite > ref && STATUS[a.status]?.aberta) tags.push('<span class="tag fut">a iniciar</span>');
   if (isPend) tags.push(`<span class="tag since">venceu ${fmtShort(fimOf(a))} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
   const et = tagsOf(a).filter(t => !hideTag || tagKey(t) !== tagKey(hideTag)); if (et.length) tags.push(et.slice(0, 2).map(t => tagChip(t, 'sm')).join('') + (et.length > 2 ? `<span class="etq-more">+${et.length - 2}</span>` : '') + (et.length > 1 ? `<span class="etq-more m-only">+${et.length - 1}</span>` : ''));
   const alerta = (a.status === 'impedida' || a.status === 'nao_iniciada') && (a.motivo || a.ultimaObs) ? `<div class="c-alert">${esc(a.motivo || a.ultimaObs)}</div>` : '';
@@ -661,7 +679,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=30');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=31');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -701,7 +719,7 @@ function renderGantt(){
   const days = Array.from({length:n}, (_, i) => addDays(ini, i)), di = s => nightsBetween(ini, s), ti = di(hoje);
   const we = d => { const x = parseYmd(d).getDay(); return x === 0 || x === 6; };
   let h = `<div class="gt" style="--lw:${lw}px;--cw:${cw}px;width:${lw + n * cw}px">`;
-  h += `<div class="gt-h"><div class="gt-corner">${mesLbl}</div>${days.map(d => { const dt = parseYmd(d); return `<div class="gt-d${we(d) ? ' we' : ''}${d === hoje ? ' today' : ''}${dt.getDate() === 1 && d !== ini ? ' m1' : ''}">${dt.getDate() === 1 && d !== ini ? `<em>${MESES[dt.getMonth()]}</em>` : ''}<span>${DOW3[dt.getDay()]}</span><b>${dt.getDate()}</b></div>`; }).join('')}</div>`;
+  h += `<div class="gt-h"><div class="gt-corner">${mesLbl}</div>${days.map(d => { const dt = parseYmd(d); return `<div class="gt-d${we(d) ? ' we' : ''}${d === hoje ? ' today' : ''}${dt.getDate() === 1 && d !== ini ? ' m1' : ''}" data-dia="${d}" role="button" tabindex="0" title="Ver as atividades de ${fmtShort(d)}">${dt.getDate() === 1 && d !== ini ? `<em>${MESES[dt.getMonth()]}</em>` : ''}<span>${DOW3[dt.getDay()]}</span><b>${dt.getDate()}</b></div>`; }).join('')}</div>`;
   h += `<div class="gt-b"><div class="gt-cols">${days.map((d, i) => we(d) ? `<i style="left:${i * cw}px;width:${cw}px"></i>` : '').join('')}</div>`;
   if (ti >= 0 && ti < n) h += `<div class="gt-now" style="left:calc(var(--lw) + ${(ti + .5) * cw}px)"></div>`;
   const span = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => Math.max(di(fimOf(a)), a.aberta && fimOf(a) < hoje ? ti : -1))))];
@@ -744,7 +762,7 @@ function renderGantt(){
   if (g.jump){ g.jump = false; wrap.scrollTop = 0; wrap.scrollLeft = ti >= 0 && ti < n ? Math.max(0, ti * cw - avail / 3) : 0; }
   else { wrap.scrollLeft = sl; wrap.scrollTop = st; }
   $('gt-leg').innerHTML = ['programada','andamento','parcial','nao_iniciada','impedida','concluida'].map(k => `<span><i class="sw" style="--c:${cvar(k)}"></i>${esc(STATUS[k].label)}</span>`).join('')
-    + '<span><i class="sw tail"></i>Atraso</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">A parte mais forte da barra é o avanço. Toque numa atividade para abrir.</span>';
+    + '<span><i class="sw tail"></i>Atraso</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">A parte mais forte da barra é o avanço. Toque numa atividade para abrir, ou num dia para ver só as atividades dele.</span>';
 }
 
 /* ================= etiquetas ================= */
@@ -1027,14 +1045,14 @@ function checkDayChange(){
   const h = defaultNight(); if (h === S.hoje) return;
   const era = S.hoje; S.hoje = h;
   if (S.gt.ref === era) { S.gt.ref = h; S.gt.jump = true; }
-  if (S.noite === era) setNight(h); else renderAll();
+  if (S.dia === era) setNight(h); else renderAll();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayChange(); });
 window.addEventListener('focus', checkDayChange);
 setInterval(checkDayChange, 60000);
 function setNight(n){
   if (!n) return;
-  S.noite = n;
+  S.dia = n; S.noite = n;
   if (n < S.winFrom){ S.winFrom = addDays(n, -7); subscribeWindow(); }
   renderAll();
 }
@@ -1360,7 +1378,7 @@ function openForm(id, preset = {}){
         w.scrollIntoView({behavior:'smooth', block:'center'}); return;
       } }
     if (!a){
-      const fp = S.fromPend; createAct(d); closeModal(); if (d.noite !== S.noite) setNight(d.noite);
+      const fp = S.fromPend; createAct(d); closeModal(); if (S.dia && d.noite !== S.dia) setNight(d.noite);
       if (fp && S.pend.has(fp)){ pdSave(fp, {feita:true, feitaPor:S.uid, feitaEm:serverTimestamp(), atividadeId:S.lastActId}); toast('Atividade inserida. O lembrete ficou como feito.'); }
       else toast('Atividade inserida.');
       S.fromPend = null; return;
@@ -1439,9 +1457,10 @@ function openPerfil(){
 
 /* ================= exportar ================= */
 async function exportCsv(){
-  const acts = [...all().values()];
-  const ft = S.f.turno, inT = a => !ft || turnoOf(a) === ft;
-  const rows = [...sortActs(acts.filter(a => a.noite <= S.noite && fimOf(a) >= S.noite && inT(a) && matches(a))), ...acts.filter(a => a.aberta && fimOf(a) < S.noite && inT(a) && matches(a)).sort((x,y) => fimOf(x).localeCompare(fimOf(y)))];
+  const ft = S.f.turno, hoje = defaultNight();
+  if (S.tab !== 'noite' || !S.listaAtual) renderNight();
+  const rows = [...(S.listaAtual || [])];
+  if (!rows.length) return toast('Nenhuma atividade na lista para exportar.');
   const hist = {};
   try {
     const ids = rows.map(a => a.id);
@@ -1453,10 +1472,10 @@ async function exportCsv(){
   const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Loja / ambiente do pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], fimOf(a) >= S.noite ? 'Do dia' : 'Vencida', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < S.noite ? 'Vencida' : a.noite > S.noite ? 'A iniciar' : 'Em curso', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
-  const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.noite}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
-  logExport('csv', {arquivo: el.download, qtd: rows.length, periodo: `dia ${fmtShort(S.noite)}/${S.noite.slice(0, 4)} + vencidas · ${ft ? 'turno ' + TURNOS[ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
+  const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.dia ? S.dia : 'em_aberto_' + hoje}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
+  logExport('csv', {arquivo: el.download, qtd: rows.length, periodo: `${S.dia ? 'dia ' + fmtShort(S.dia) + '/' + S.dia.slice(0, 4) + ' + vencidas' : 'todas em aberto em ' + fmtShort(hoje) + '/' + hoje.slice(0, 4)} · ${ft ? 'turno ' + TURNOS[ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
@@ -1525,7 +1544,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=30');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=31');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1562,7 +1581,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=30');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=31');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1601,6 +1620,7 @@ document.addEventListener('click', e => {
   if (t.closest('#etq-crono')) return openCronograma({etq:S.etq});
   if (t.closest('#etq-new')) return openForm(null, {etiquetas:[S.etq], noite:defaultNight()});
   if (t.closest('#etq-enc-tg')){ S.etqEnc = !S.etqEnc; return renderAll(); }
+  { const dd = t.closest('.gt-d[data-dia]'); if (dd){ setNight(dd.dataset.dia); return setTab('noite'); } }
   { const mb = t.closest('[data-more]'); if (mb){ const pop = $(mb.dataset.more), abrir = pop.hidden; closeMore(); pop.hidden = !abrir; mb.setAttribute('aria-expanded', String(abrir)); return; } }
   { const go = t.closest('[data-go]'); if (go){ closeMore(); return setTab(go.dataset.go); } }
   const tab = t.closest('.tab[data-tab]'); if (tab) return setTab(tab.dataset.tab);
@@ -1640,7 +1660,7 @@ document.addEventListener('submit', e => {
 });
 $('n-prev').onclick = () => setNight(addDays(S.noite,-1));
 $('n-next').onclick = () => setNight(addDays(S.noite,1));
-$('n-today').onclick = () => setNight(defaultNight());
+$('n-today').onclick = () => { S.dia = null; window.scrollTo({top:0}); renderAll(); };
 $('n-date').onchange = e => setNight(e.target.value);
 $('n-date').addEventListener('click', e => { try { e.target.showPicker(); } catch {} });
 $('f-q').oninput = e => { S.f.q = e.target.value.trim(); renderAll(); };

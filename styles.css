@@ -1123,3 +1123,8 @@ button.pd-c{cursor:pointer}
 .bn-pop{top:auto;bottom:calc(var(--bnav-h) + env(safe-area-inset-bottom,0px) + 8px);right:10px;min-width:210px;position:fixed}
 .bn-pop button{padding:13px 12px;font-size:15px}
 .bnav:has(.bn-pop:not([hidden])){z-index:40}
+
+/* v31: lista geral + dia escolhido pelo calendário */
+.tag.fut{color:var(--muted);border-color:var(--line-2);background:transparent}
+.gt-d[data-dia]{cursor:pointer}
+.gt-d[data-dia]:hover b{color:var(--brand-text)}
