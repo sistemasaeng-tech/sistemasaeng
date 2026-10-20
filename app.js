@@ -679,7 +679,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=32');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=33');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1009,6 +1009,7 @@ function renderAll(){
   if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else if (S.tab === 'pend') renderPend(); else renderCad();
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
   updPendBadge(); renderWho();
+  $('exp-ia').hidden = !isAdmin(); // exportação para o Claude: só administradores
 }
 const shortName = n => { const p = String(n||'').trim().split(/\s+/).filter(Boolean); return p.length > 2 ? `${p[0]} ${p[p.length-1]}` : p.join(' '); };
 function initials(n){ const p = String(n||'').trim().split(/\s+/).filter(Boolean); return ((p[0]||'?')[0] + (p.length > 1 ? p[p.length-1][0] : '')).toUpperCase(); }
@@ -1544,7 +1545,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=32');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=33');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1564,6 +1565,7 @@ function openCronograma(opts = {}){
 // Gera um texto com TODAS as informações de cada atividade (dados + histórico completo), lembretes e cadastros,
 // pronto para colar ou anexar no Claude e fazer perguntas. Não usa API: é só um arquivo.
 function openExportIA(){
+  if (!isAdmin()) return toast('Somente administradores podem exportar para o Claude.');
   $('sheet').innerHTML = `<h2>Exportar para o Claude</h2>
     <p class="ro" style="margin:-6px 0 14px">Gera um arquivo com todas as informações de cada atividade (dados, observações e histórico completo), além dos lembretes e cadastros. Anexe no Claude (ou cole o texto) e peça análises, resumos ou cobranças.</p>
     <form id="iaf" novalidate>
@@ -1691,7 +1693,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=32');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=33');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
