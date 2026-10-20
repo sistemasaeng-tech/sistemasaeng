@@ -679,7 +679,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=31');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=32');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1229,7 +1229,7 @@ function renderTimeline(){
 // As regras do Firestore recusam qualquer alteração de atividade que não venha com o seu registro.
 // Exportações (relatório PDF, calendário PDF, cronograma Excel, CSV) também ficam no histórico.
 // Se a gravação falhar (sem internet, regra antiga), o arquivo sai do mesmo jeito.
-const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV'};
+const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV', claude:'o arquivo de atividades para o Claude (IA)'};
 function logExport(formato, info = {}){
   if (!S.uid) return;
   const d = {atividadeId:'', tipo:'exportou', formato, t:serverTimestamp(), u:S.uid,
@@ -1544,7 +1544,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=31');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=32');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1558,6 +1558,116 @@ function openCronograma(opts = {}){
     } catch (err) { console.warn(err); btn.disabled = false; btn.textContent = 'Gerar Excel'; toast(navigator.onLine ? 'Não foi possível gerar o cronograma. Tente de novo.' : 'Para gerar o Excel pela primeira vez é preciso internet.'); }
   };
   showModal();
+}
+
+/* ================= exportar para o Claude (arquivo de contexto em Markdown) ================= */
+// Gera um texto com TODAS as informações de cada atividade (dados + histórico completo), lembretes e cadastros,
+// pronto para colar ou anexar no Claude e fazer perguntas. Não usa API: é só um arquivo.
+function openExportIA(){
+  $('sheet').innerHTML = `<h2>Exportar para o Claude</h2>
+    <p class="ro" style="margin:-6px 0 14px">Gera um arquivo com todas as informações de cada atividade (dados, observações e histórico completo), além dos lembretes e cadastros. Anexe no Claude (ou cole o texto) e peça análises, resumos ou cobranças.</p>
+    <form id="iaf" novalidate>
+      <div class="f"><label>Período</label><div class="seg" id="ia-per">${[['30','Últimos 30 dias'],['90','Últimos 90 dias'],['all','Tudo']].map(([k,l]) => `<button type="button" data-p="${k}" aria-pressed="${k === '90'}">${l}</button>`).join('')}</div>
+        <span class="ro" style="display:block;margin-top:6px">Entram as atividades em aberto (de qualquer data) e as que terminaram no período.</span></div>
+      <div class="f"><label class="chk"><input type="checkbox" id="ia-conc" checked> Incluir concluídas e canceladas do período</label></div>
+      <div class="f"><label class="chk"><input type="checkbox" id="ia-filt"${filtrosTxt() ? '' : ' disabled'}> Usar os filtros da lista${filtrosTxt() ? ` <span class="ro">(${esc(filtrosTxt())})</span>` : ' <span class="ro">(nenhum filtro ativo)</span>'}</label></div>
+      <div class="cf-prev" id="ia-prev">Clique em gerar para montar o arquivo.</div>
+      <div class="acts"><button type="button" class="btn ghost" id="ia-copy">Copiar texto</button><button class="btn pri" type="submit">Baixar arquivo</button></div>
+    </form>`;
+  let per = '90';
+  $('ia-per').onclick = e => { const b = e.target.closest('button[data-p]'); if (!b) return; per = b.dataset.p; for (const x of $('ia-per').children) x.setAttribute('aria-pressed', String(x === b)); };
+  const gerar = async () => {
+    $('ia-prev').textContent = 'Buscando atividades e histórico no banco…';
+    const r = await montarExportIA({per, conc:$('ia-conc').checked, filt:$('ia-filt').checked});
+    $('ia-prev').textContent = r.n ? `${r.n} ${r.n === 1 ? 'atividade' : 'atividades'}, ${r.nEv} registros de histórico · ${Math.round(r.txt.length / 1000)} mil caracteres.` : 'Nenhuma atividade nesse período.';
+    return r;
+  };
+  $('ia-copy').onclick = async () => {
+    try { const r = await gerar(); if (!r.n) return; await navigator.clipboard.writeText(r.txt); closeModal(); toast('Texto copiado. Cole no Claude e faça sua pergunta.'); logExport('claude', {qtd:r.n, periodo:r.periodo + ' · copiado', filtros:r.filtros}); }
+    catch (err) { console.warn(err); toast('Não foi possível copiar. Use “Baixar arquivo”.'); }
+  };
+  $('iaf').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const r = await gerar(); if (!r.n) return;
+      const url = URL.createObjectURL(new Blob([r.txt], {type:'text/markdown;charset=utf-8'}));
+      const el = document.createElement('a'); el.href = url; el.download = r.arquivo; document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      closeModal(); toast('Arquivo gerado. Anexe no Claude e faça sua pergunta.');
+      logExport('claude', {arquivo:r.arquivo, qtd:r.n, periodo:r.periodo, filtros:r.filtros});
+    } catch (err) { console.warn(err); $('ia-prev').textContent = navigator.onLine ? 'Não foi possível gerar. Tente de novo.' : 'Sem internet: é preciso estar online para buscar o histórico.'; }
+  };
+  showModal();
+}
+async function montarExportIA({per, conc, filt}){
+  const hoje = defaultNight(), desde = per === 'all' ? '' : addDays(hoje, -Number(per));
+  // busca tudo no banco (a tela só mantém em memória as últimas semanas)
+  const m = new Map(all());
+  try { const s = await getDocs(query(collection(db, 'atividades'), limit(5000))); s.forEach(d => m.set(d.id, {id:d.id, ...d.data(SNAP)})); } catch (e) { console.warn(e); }
+  let acts = [...m.values()].filter(a => (a.aberta && STATUS[a.status]?.aberta) || (conc && (!desde || fimOf(a) >= desde || concDay(a) >= desde)));
+  if (filt) acts = acts.filter(a => matches(a) && (!S.f.turno || turnoOf(a) === S.f.turno));
+  const hist = {}; let nEv = 0;
+  try { const s = await getDocs(query(collection(db, 'historico'), limit(20000))); s.forEach(d => { const v = d.data(SNAP); if (v.atividadeId){ (hist[v.atividadeId] ||= []).push(v); } }); } catch (e) { console.warn(e); }
+  const L = [], ln = x => L.push(x), dt = s => s ? `${fmtShort(s)}/${String(s).slice(0, 4)}` : '—';
+  const now = new Date(), emit = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const periodo = per === 'all' ? 'todo o histórico' : `últimos ${per} dias`, filtros = filt ? filtrosTxt() : '';
+  const situ = a => a.status === 'concluida' ? `concluída${concDay(a) ? ' em ' + dt(concDay(a)) : ''}` : a.status === 'cancelada' ? 'cancelada'
+    : fimOf(a) < hoje ? `VENCIDA há ${nightsBetween(fimOf(a), hoje)} ${nightsBetween(fimOf(a), hoje) === 1 ? 'dia' : 'dias'}` : a.noite > hoje ? `a iniciar (começa em ${nightsBetween(hoje, a.noite)} ${nightsBetween(hoje, a.noite) === 1 ? 'dia' : 'dias'})` : 'em curso';
+  const evTxt = ev => { let t = evText(ev).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    if (ev.mudancas?.length) t += ' [' + ev.mudancas.map(x => `${FIELDS[x.campo] || (x.campo === 'status' ? 'Status' : x.campo)}: ${fmtVal(x.campo, x.de) || '—'} → ${fmtVal(x.campo, x.para) || '—'}`).join('; ') + ']';
+    if (ev.motivo) t += ` · motivo: ${ev.motivo}`; if (ev.obs) t += ` · obs.: ${ev.obs}`; return t; };
+  // identificação curta e estável na ordem do arquivo
+  const grupos = new Map();
+  for (const a of acts){ const g = groupKey(a); if (!grupos.has(g.k)) grupos.set(g.k, {...g, items:[]}); grupos.get(g.k).items.push(a); }
+  const G = [...grupos.values()].sort((x, y) => groupRank(x.k) - groupRank(y.k) || String(x.sub).localeCompare(String(y.sub), 'pt') || x.label.localeCompare(y.label, 'pt'));
+  for (const g of G) g.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)));
+  const cnt = {}; for (const a of acts) cnt[a.status] = (cnt[a.status] || 0) + 1;
+  const venc = acts.filter(a => a.aberta && STATUS[a.status]?.aberta && fimOf(a) < hoje).length, fut = acts.filter(a => a.aberta && a.noite > hoje).length;
+  ln('# Programação de Atividades — Obra 4107 · Rooftop Iguatemi SP (SAENG)');
+  ln(''); ln(`Exportado em ${emit} por ${S.perfil?.nome || 'usuário'}. Data de referência (hoje): ${dt(hoje)}.`);
+  ln(`Escopo: atividades em aberto de qualquer data${conc ? ` + concluídas/canceladas (${periodo})` : ''}${filtros ? ` · filtros: ${filtros}` : ''}.`);
+  ln(''); ln('## Instruções para o assistente');
+  ln('- Responda somente com base nas informações deste arquivo. Se algo não estiver aqui, diga que não consta.');
+  ln('- Ao citar uma atividade, use o código entre colchetes (ex.: [A012]) e o título.');
+  ln('- "Vencida" = em aberto com término anterior à data de referência. Turno noturno começa na noite da data de início.');
+  ln('- Os status possíveis são: Programada, Em andamento, Parcial, Não iniciada, Impedida, Concluída, Cancelada.');
+  ln(''); ln('## Resumo');
+  ln(`- Total de atividades no arquivo: ${acts.length}`);
+  ln(`- Por status: ${ORDER.filter(k => cnt[k]).map(k => `${STATUS[k].label} ${cnt[k]}`).join(' · ') || '—'}`);
+  ln(`- Em aberto vencidas: ${venc} · a iniciar: ${fut}`);
+  ln(`- Por local: ${G.map(g => `${g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label} (${g.items.length})`).join(' · ')}`);
+  let i = 0; ln(''); ln('## Atividades (agrupadas por setor, pilar ou local do shopping)');
+  for (const g of G){
+    const nomeG = g.k.startsWith('z:') ? `${g.sub || 'Shopping'} — Shopping` : `${g.label}${g.sub ? ' — ' + g.sub : ''}`;
+    ln(''); ln(`### ${nomeG}`);
+    for (const a of g.items){
+      i++; const id = 'A' + String(i).padStart(3, '0'), et = tagsOf(a), hs = (hist[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t)); nEv += hs.length;
+      ln(''); ln(`#### [${id}] ${a.titulo || '(sem título)'}`);
+      ln(`- Local: ${localLine(a) || '—'}${a.tipoLocal ? ` (${TIPO_LABEL[a.tipoLocal] || a.tipoLocal})` : ''}`);
+      ln(`- Período: ${dt(a.noite)} → ${dt(fimOf(a))} (${durOf(a) + 1} ${durOf(a) ? 'dias' : 'dia'}) · turno ${TURNOS[turnoOf(a)].toLowerCase()}`);
+      ln(`- Status: ${STATUS[a.status]?.label || a.status} · avanço ${avOf(a)}% · situação: ${situ(a)}`);
+      ln(`- Prioridade: ${PRIOR[a.prioridade] || 'Normal'}`);
+      ln(`- Fornecedor: ${a.fornecedor || 'não informado'} · Responsável no turno: ${a.responsavel || 'não informado'} · Efetivo previsto: ${a.efetivo || 'não informado'}`);
+      if (et.length) ln(`- Etiquetas (serviço macro): ${et.join(', ')}`);
+      if (a.detalhes) ln(`- Detalhes: ${String(a.detalhes).replace(/\s*\n\s*/g, ' / ')}`);
+      if (a.motivo) ln(`- Motivo atual: ${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}`);
+      if (a.ultimaObs) ln(`- Última observação: ${String(a.ultimaObs).replace(/\s*\n\s*/g, ' / ')}`);
+      ln(`- Inserida por ${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}${a.atualizadoPor ? ` · última alteração por ${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}` : ''}`);
+      if (hs.length){ ln('- Histórico:'); for (const ev of hs) ln(`  - ${fmtTs(ev.t)} — ${nameOf(ev.u)}: ${evTxt(ev)}`); }
+    }
+  }
+  const pend = [...S.pend.values()].filter(p => !p.feita || !desde || String(p.prazo || '') >= desde || ymd(toDate(p.feitaEm || p.atualizadoEm)) >= desde);
+  if (pend.length){
+    ln(''); ln('## Lembretes (providências da coordenação — não são atividades de campo)');
+    for (const p of pend.sort((x, y) => (x.feita - y.feita) || String(x.prazo || '9').localeCompare(String(y.prazo || '9'))))
+      ln(`- [${p.feita ? 'feito' : 'aberto'}] ${p.texto}${p.responsavel ? ` · responsável: ${p.responsavel}` : ''}${p.prazo ? ` · prazo: ${dt(p.prazo)}${!p.feita && p.prazo < hoje ? ' (ATRASADO)' : ''}` : ''}${p.local ? ` · local: ${p.local}` : ''}${p.obs ? ` · obs.: ${String(p.obs).replace(/\s*\n\s*/g, ' / ')}` : ''} · criado por ${nameOf(p.criadoPor)}`);
+  }
+  ln(''); ln('## Cadastros da obra');
+  if (S.cad.setores.length) ln(`- Setores: ${S.cad.setores.map(x => `${x.codigo}${x.descricao ? ' (' + x.descricao + ')' : ''}`).join(' · ')}`);
+  if (S.cad.pilares.length) ln(`- Pilares: ${S.cad.pilares.map(x => [x.codigo, x.referencia, x.setor ? 'setor ' + x.setor : ''].filter(Boolean).join(' – ')).join(' · ')}`);
+  if (S.cad.locais.length) ln(`- Locais do shopping: ${S.cad.locais.map(x => locNome(x) + (locSetor(x) ? ` (setor ${locSetor(x)})` : '')).join(' · ')}`);
+  if (S.cad.fornecedores.length) ln(`- Fornecedores: ${S.cad.fornecedores.map(x => typeof x === 'string' ? x : (x.nome ? x.nome + (x.disciplina ? ` (${x.disciplina})` : '') : '')).filter(Boolean).join(' · ')}`);
+  return {txt: L.join('\n') + '\n', n: acts.length, nEv, periodo, filtros, arquivo: `4107_Atividades_para_Claude_${hoje}.md`};
 }
 
 /* ================= relatório PDF ================= */
@@ -1581,7 +1691,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=31');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=32');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1698,6 +1808,7 @@ $('b-new').onclick = () => openForm(null);
 $('b-tools').onclick = () => { const p = $('tools-pop'); p.hidden = !p.hidden; $('b-tools').setAttribute('aria-expanded', String(!p.hidden)); };
 $('b-filtros').onclick = () => { const f = $('filters'); f.hidden = !f.hidden; $('b-filtros').setAttribute('aria-expanded', String(!f.hidden)); };
 $('f-clear').onclick = () => { S.f.status = []; S.f.tipo = []; S.f.loc = []; S.f.forn = []; S.f.etq = []; S.f.autor = []; msClose(); fillFilterOptions(); renderAll(); };
+$('exp-ia').onclick = () => { $('tools-pop').hidden = true; openExportIA(); };
 $('exp-csv').onclick = () => { $('tools-pop').hidden = true; exportCsv(); };
 $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma(); };
 $('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };

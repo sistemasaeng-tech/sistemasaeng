@@ -1128,3 +1128,4 @@ button.pd-c{cursor:pointer}
 .tag.fut{color:var(--muted);border-color:var(--line-2);background:transparent}
 .gt-d[data-dia]{cursor:pointer}
 .gt-d[data-dia]:hover b{color:var(--brand-text)}
+.exp-ic.ia{background:var(--brand-soft);color:var(--brand-text)}
