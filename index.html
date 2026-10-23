@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=33">
+<link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body>
 
@@ -186,25 +186,38 @@
 
 <div id="scrim" class="scrim" hidden></div>
 <aside id="drawer" class="drawer" hidden aria-label="Detalhe da atividade">
-  <div class="dw-top"><span id="dw-pill"></span><span class="sp"></span><button class="ibtn" id="dw-close" type="button" aria-label="Fechar">×</button></div>
+  <div class="dw-top"><span id="dw-pill"></span><span class="sp"></span><button class="btn sm dw-pdf" id="dw-pdf" type="button" title="Exportar PDF da atividade, com fotos e histórico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg><span>PDF</span></button><button class="ibtn" id="dw-close" type="button" aria-label="Fechar">×</button></div>
   <div class="dw-scroll">
-    <div id="dw-head"></div>
-    <div id="dw-av"></div>
-    <div id="dw-actions"></div>
-    <div id="dw-panel"></div>
-    <div id="dw-info"></div>
-    <div class="dw-hist">
-      <div class="lbl">Última atualização</div>
-      <ol class="tl" id="dw-last"></ol>
-      <button type="button" class="link-btn" id="dw-hist-tg" hidden></button>
-      <ol class="tl" id="dw-tl" hidden></ol>
+    <div class="dw-grid">
+      <div class="dw-main">
+        <div id="dw-head"></div>
+        <div id="dw-av"></div>
+        <div id="dw-actions"></div>
+        <div id="dw-panel"></div>
+        <div id="dw-info"></div>
+      </div>
+      <div class="dw-side">
+        <section class="fx" id="dw-fotos" aria-label="Fotos da atividade"></section>
+        <div class="dw-hist">
+          <div class="lbl">Última atualização</div>
+          <ol class="tl" id="dw-last"></ol>
+          <button type="button" class="link-btn" id="dw-hist-tg" hidden></button>
+          <ol class="tl" id="dw-tl" hidden></ol>
+        </div>
+      </div>
     </div>
   </div>
 </aside>
+<div id="lb" class="lb" hidden role="dialog" aria-modal="true" aria-label="Foto">
+  <div class="lb-top"><span class="lb-n" id="lb-n"></span><span class="sp"></span><a class="lb-btn" id="lb-dl" download>Baixar</a><button type="button" class="lb-btn danger" id="lb-del" hidden>Excluir</button><button type="button" class="lb-x" id="lb-x" aria-label="Fechar">×</button></div>
+  <button type="button" class="lb-nav prev" id="lb-prev" aria-label="Foto anterior">‹</button>
+  <figure class="lb-fig"><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+  <button type="button" class="lb-nav next" id="lb-next" aria-label="Próxima foto">›</button>
+</div>
 <div id="modal" class="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=33"></script>
+<script type="module" src="app.js?v=34"></script>
 </body>
 </html>

@@ -448,3 +448,138 @@ export async function gerarGanttPDF(ctx){
   }
   doc.save(ctx.arquivo);
 }
+
+// ======================================================================
+// PDF de UMA atividade: dados, fotos (grade 2 colunas) e histórico completo
+// ======================================================================
+const STC = {programada:[79,111,153], andamento:[27,132,170], parcial:[201,160,30], nao_iniciada:[196,86,44], impedida:[184,50,76], concluida:[46,150,96], cancelada:[122,133,151]};
+export async function gerarAtividadePDF(ctx){
+  const jsPDF = await loadLibs();
+  const logo = await toDataURL(ctx.logoUrl).catch(() => null);
+  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  const W = 210, H = 297, M = 14, CW = W - 2*M, TOP = 22, BOT = H - 16;
+  const fill = c => doc.setFillColor(c[0], c[1], c[2]);
+  const stroke = c => doc.setDrawColor(c[0], c[1], c[2]);
+  const color = c => doc.setTextColor(c[0], c[1], c[2]);
+  const font = (style, size) => { doc.setFont('helvetica', style); doc.setFontSize(size); };
+  const text = (s, x, y, o) => doc.text(t(s), x, y, o);
+  const wrap = (s, w) => doc.splitTextToSize(t(s), w);
+  let y;
+  const novaPagina = () => { doc.addPage(); y = TOP + 6; };
+  const garante = h => { if (y + h > BOT) novaPagina(); };
+  const secao = (titulo, extra) => {
+    garante(14); y += 3;
+    fill(C.laranja); doc.rect(M, y - 3.6, 1.6, 4.6, 'F');
+    color(C.ink); font('bold', 11.5); text(titulo, M + 4, y); const tw = doc.getTextWidth(t(titulo));
+    if (extra){ color(C.faint); font('normal', 8.5); text(extra, M + 4 + tw + 3, y); }
+    y += 5;
+  };
+  // ---------- cabeçalho da 1ª página ----------
+  fill(C.graf); doc.rect(0, 0, W, 30, 'F'); fill(C.laranja); doc.rect(0, 30, W, 1.3, 'F');
+  if (logo) doc.addImage(logo, 'PNG', M, 9.5, 40, 40 * 83 / 306);
+  color(C.white); font('bold', 13.5); text('Relatório da atividade', W - M, 14, {align:'right'});
+  color([169,173,180]); font('normal', 8.2); text('Obra 4107 · Rooftop Iguatemi SP', W - M, 19.5, {align:'right'});
+  text(`Emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`, W - M, 24, {align:'right'});
+  y = 42;
+  // título
+  color(C.ink); font('bold', 16);
+  const tl = wrap(ctx.titulo, CW); for (const l of tl){ doc.text(l, M, y); y += 6.6; }
+  // status + avanço
+  y += 1;
+  const sc = STC[ctx.status] || C.graf, sl = t(ctx.statusLabel);
+  font('bold', 8.6); const pw = doc.getTextWidth(sl) + 8;
+  fill(mix(sc, .84)); doc.roundedRect(M, y - 4.4, pw, 6.6, 3.3, 3.3, 'F'); fill(sc); doc.circle(M + 3.2, y - 1.1, 1.05, 'F');
+  color(sc); text(sl, M + 5.4, y);
+  const bx = M + pw + 8, bw = 60;
+  color(C.muted); font('bold', 8.6); text('Avanço', bx, y);
+  const bx2 = bx + 14; fill(C.soft); doc.roundedRect(bx2, y - 3, bw, 3.6, 1.8, 1.8, 'F');
+  if (ctx.avanco > 0){ fill(C.laranja); doc.roundedRect(bx2, y - 3, Math.max(3.6, bw * ctx.avanco / 100), 3.6, 1.8, 1.8, 'F'); }
+  color(C.ink); font('bold', 9.5); text(`${ctx.avanco}%`, bx2 + bw + 3, y);
+  y += 8;
+  // ---------- informações (2 colunas) ----------
+  stroke(C.line); doc.setLineWidth(.25);
+  const colW = (CW - 8) / 2, rows = [];
+  for (let i = 0; i < ctx.info.length; i += 2) rows.push([ctx.info[i], ctx.info[i + 1]]);
+  fill(C.soft); const y0 = y;
+  // calcula altura total para o fundo
+  font('normal', 9);
+  const altLinha = par => Math.max(...par.filter(Boolean).map(([k, v]) => 4.2 + wrap(v, colW - 6).length * 4.4)) + 3;
+  const totalH = rows.reduce((s, r) => s + altLinha(r), 0) + 4;
+  if (y + totalH > BOT) novaPagina();
+  doc.roundedRect(M, y, CW, totalH, 2.5, 2.5, 'F');
+  y += 6;
+  for (const par of rows){
+    const h = altLinha(par);
+    par.forEach((kv, j) => { if (!kv) return; const x = M + 4 + j * (colW + 8);
+      color(C.faint); font('bold', 7); text(kv[0].toUpperCase(), x, y);
+      color(C.ink); font('normal', 9); let yy = y + 4.4; for (const l of wrap(kv[1], colW - 6)){ doc.text(l, x, yy); yy += 4.4; } });
+    y += h;
+  }
+  y = y0 + totalH + 6;
+  // ---------- textos ----------
+  const bloco = (titulo, corpo, cor) => {
+    if (!corpo) return;
+    font('normal', 9.2); const ls = wrap(corpo, CW - 10), h = 8 + ls.length * 4.6;
+    garante(h + 2);
+    fill(cor ? mix(cor, .9) : C.white); stroke(cor ? mix(cor, .55) : C.line); doc.roundedRect(M, y, CW, h, 2, 2, 'FD');
+    color(cor || C.faint); font('bold', 7); text(titulo.toUpperCase(), M + 5, y + 5);
+    color(C.ink); font('normal', 9.2); let yy = y + 9.6; for (const l of ls){ doc.text(l, M + 5, yy); yy += 4.6; }
+    y += h + 4;
+  };
+  bloco('Detalhes / orientações para a equipe', ctx.detalhes);
+  bloco('Motivo', ctx.motivo, STC.nao_iniciada);
+  bloco('Última observação', ctx.obs);
+  // ---------- fotos ----------
+  secao('Fotos', ctx.fotos.length ? `${ctx.fotos.length} ${ctx.fotos.length === 1 ? 'registro' : 'registros'}` : 'nenhuma foto registrada');
+  if (ctx.fotos.length){
+    const gap = 6, fw = (CW - gap) / 2, fh = fw * .72;
+    for (let i = 0; i < ctx.fotos.length; i += 2){
+      const par = ctx.fotos.slice(i, i + 2);
+      font('bold', 8.4);
+      const capH = Math.max(...par.map(f => (f.legenda ? wrap(f.legenda, fw).length * 3.8 : 0) + 4.4));
+      garante(fh + capH + 4);
+      par.forEach((f, j) => {
+        const x = M + j * (fw + gap);
+        fill(C.soft); doc.roundedRect(x, y, fw, fh, 1.8, 1.8, 'F');
+        try {
+          const r = Math.min(fw / (f.w || 4), fh / (f.h || 3)), iw = (f.w || 4) * r, ih = (f.h || 3) * r;
+          doc.addImage(f.img, 'JPEG', x + (fw - iw) / 2, y + (fh - ih) / 2, iw, ih, undefined, 'FAST');
+        } catch (e) { color(C.faint); font('normal', 8); text('imagem indisponível', x + fw / 2, y + fh / 2, {align:'center'}); }
+        let yy = y + fh + 4.2;
+        if (f.legenda){ color(C.ink); font('bold', 8.4); for (const l of wrap(f.legenda, fw)){ doc.text(l, x, yy); yy += 3.8; } }
+        color(C.faint); font('normal', 7.4); text(f.sub, x, yy);
+      });
+      y += fh + capH + 6;
+    }
+  }
+  // ---------- histórico ----------
+  secao('Histórico', `${ctx.hist.length} ${ctx.hist.length === 1 ? 'registro' : 'registros'}`);
+  if (ctx.hist.length){
+    doc.autoTable({
+      startY: y, margin:{left:M, right:M, top:TOP + 4, bottom:H - BOT + 2},
+      head:[['Data / hora', 'Quem', 'Registro']],
+      body: ctx.hist.map(h => [t(h.quando), t(h.quem), t(h.texto)]),
+      styles:{font:'helvetica', fontSize:8.2, cellPadding:{top:2.2, bottom:2.2, left:2.4, right:2.4}, textColor:C.ink, lineColor:C.line, lineWidth:.15, valign:'top'},
+      headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:8},
+      alternateRowStyles:{fillColor:[250,250,251]},
+      columnStyles:{0:{cellWidth:26, textColor:C.muted}, 1:{cellWidth:38, fontStyle:'bold'}, 2:{cellWidth:'auto'}},
+    });
+  }
+  // ---------- cabeçalho das demais páginas e rodapé ----------
+  const N = doc.getNumberOfPages();
+  for (let i = 1; i <= N; i++){
+    doc.setPage(i);
+    if (i > 1){
+      fill(C.graf); doc.rect(0, 0, W, 14, 'F'); fill(C.laranja); doc.rect(0, 14, W, .9, 'F');
+      if (logo) doc.addImage(logo, 'PNG', M, 3.8, 24, 24 * 83 / 306);
+      color(C.white); font('bold', 8.6); const tt = wrap(ctx.titulo, 120)[0]; text(tt + (wrap(ctx.titulo, 120).length > 1 ? '...' : ''), W - M, 6.6, {align:'right'});
+      color([169,173,180]); font('normal', 7); text(`Relatório da atividade · emitido em ${ctx.emitidoEm}`, W - M, 10.8, {align:'right'});
+    }
+    stroke(C.line); doc.setLineWidth(.2); doc.line(M, H - 10, W - M, H - 10);
+    fill(C.laranja); doc.rect(M, H - 7.4, 2, 2, 'F');
+    color(C.faint); font('normal', 7.2);
+    text('SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP', M + 3.5, H - 5.8);
+    text(`Página ${i} de ${N}`, W - M, H - 5.8, {align:'right'});
+  }
+  doc.save(ctx.arquivo);
+}
