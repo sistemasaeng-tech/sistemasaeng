@@ -1213,3 +1213,17 @@ button.pd-c{cursor:pointer}
 .fx-zip{gap:6px}
 .fx-zip svg{width:16px;height:16px}
 @media (max-width:760px){ .fx-zip span{display:none} .fx-zip{width:36px;padding:0;justify-content:center} }
+
+/* v36: página do local */
+.grp-open{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;margin-left:6px;border-radius:8px;border:1px solid var(--line-2);background:var(--bg);color:var(--fg);font-size:12px;font-weight:600;cursor:pointer;flex:none}
+.grp-open svg{width:13px;height:13px;color:var(--gc,var(--brand-text))}
+.grp-open:hover{border-color:var(--gc,var(--brand));color:var(--gc,var(--brand-text))}
+.loc-head{display:flex;align-items:center;gap:14px;margin:6px 0 18px}
+.loc-head .grp-ic.lg{width:52px;height:52px;border-radius:14px}
+.loc-head .grp-ic.lg svg{width:26px;height:26px}
+.loc-ht h1{font-size:26px;line-height:1.15;margin:2px 0 2px;letter-spacing:-.02em}
+.loc-ht p{margin:0;color:var(--muted);font-size:14px}
+.loc-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
+.loc-load{margin:10px 0 0}
+.etq-acts .btn svg{width:16px;height:16px}
+@media (max-width:760px){ .grp-open span{display:none} .grp-open{width:30px;padding:0;justify-content:center} .loc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} .loc-ht h1{font-size:22px} }

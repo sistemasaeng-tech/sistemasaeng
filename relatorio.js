@@ -450,21 +450,24 @@ export async function gerarGanttPDF(ctx){
 }
 
 // ======================================================================
-// PDF de UMA atividade: dados, fotos (grade 2 colunas) e histórico completo
+// Ficha de atividade (dados, fotos e histórico) — usada no PDF de uma atividade
+// e, repetida por atividade, no PDF de um local (setor, pilar ou loja)
 // ======================================================================
 const STC = {programada:[79,111,153], andamento:[27,132,170], parcial:[201,160,30], nao_iniciada:[196,86,44], impedida:[184,50,76], concluida:[46,150,96], cancelada:[122,133,151]};
-export async function gerarAtividadePDF(ctx){
-  const jsPDF = await loadLibs();
-  const logo = await toDataURL(ctx.logoUrl).catch(() => null);
-  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
-  const W = 210, H = 297, M = 14, CW = W - 2*M, TOP = 22, BOT = H - 16;
+const PG = {W:210, H:297, M:14, TOP:22, BOT:297 - 16};
+function kit(doc){
   const fill = c => doc.setFillColor(c[0], c[1], c[2]);
   const stroke = c => doc.setDrawColor(c[0], c[1], c[2]);
   const color = c => doc.setTextColor(c[0], c[1], c[2]);
   const font = (style, size) => { doc.setFont('helvetica', style); doc.setFontSize(size); };
   const text = (s, x, y, o) => doc.text(t(s), x, y, o);
   const wrap = (s, w) => doc.splitTextToSize(t(s), w);
-  let y;
+  return {fill, stroke, color, font, text, wrap};
+}
+// desenha a ficha a partir de st.y; devolve o y final
+function fichaAtividade(doc, ctx, st, opt = {}){
+  const {fill, stroke, color, font, text, wrap} = kit(doc), {W, M, TOP, BOT} = PG, CW = W - 2*M;
+  let y = st.y;
   const novaPagina = () => { doc.addPage(); y = TOP + 6; };
   const garante = h => { if (y + h > BOT) novaPagina(); };
   const secao = (titulo, extra) => {
@@ -474,17 +477,9 @@ export async function gerarAtividadePDF(ctx){
     if (extra){ color(C.faint); font('normal', 8.5); text(extra, M + 4 + tw + 3, y); }
     y += 5;
   };
-  // ---------- cabeçalho da 1ª página ----------
-  fill(C.graf); doc.rect(0, 0, W, 30, 'F'); fill(C.laranja); doc.rect(0, 30, W, 1.3, 'F');
-  if (logo) doc.addImage(logo, 'PNG', M, 9.5, 40, 40 * 83 / 306);
-  color(C.white); font('bold', 13.5); text('Relatório da atividade', W - M, 14, {align:'right'});
-  color([169,173,180]); font('normal', 8.2); text('Obra 4107 · Rooftop Iguatemi SP', W - M, 19.5, {align:'right'});
-  text(`Emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`, W - M, 24, {align:'right'});
-  y = 42;
-  // título
+  if (opt.rotulo){ color(C.laranjaTx); font('bold', 8); text(opt.rotulo.toUpperCase(), M, y); y += 5.5; }
   color(C.ink); font('bold', 16);
-  const tl = wrap(ctx.titulo, CW); for (const l of tl){ doc.text(l, M, y); y += 6.6; }
-  // status + avanço
+  for (const l of wrap(ctx.titulo, CW)){ doc.text(l, M, y); y += 6.6; }
   y += 1;
   const sc = STC[ctx.status] || C.graf, sl = t(ctx.statusLabel);
   font('bold', 8.6); const pw = doc.getTextWidth(sl) + 8;
@@ -496,17 +491,15 @@ export async function gerarAtividadePDF(ctx){
   if (ctx.avanco > 0){ fill(C.laranja); doc.roundedRect(bx2, y - 3, Math.max(3.6, bw * ctx.avanco / 100), 3.6, 1.8, 1.8, 'F'); }
   color(C.ink); font('bold', 9.5); text(`${ctx.avanco}%`, bx2 + bw + 3, y);
   y += 8;
-  // ---------- informações (2 colunas) ----------
+  // informações (2 colunas)
   stroke(C.line); doc.setLineWidth(.25);
   const colW = (CW - 8) / 2, rows = [];
   for (let i = 0; i < ctx.info.length; i += 2) rows.push([ctx.info[i], ctx.info[i + 1]]);
-  fill(C.soft); const y0 = y;
-  // calcula altura total para o fundo
   font('normal', 9);
   const altLinha = par => Math.max(...par.filter(Boolean).map(([k, v]) => 4.2 + wrap(v, colW - 6).length * 4.4)) + 3;
-  const totalH = rows.reduce((s, r) => s + altLinha(r), 0) + 4;
-  if (y + totalH > BOT) novaPagina();
-  doc.roundedRect(M, y, CW, totalH, 2.5, 2.5, 'F');
+  const totalH = rows.reduce((s2, r) => s2 + altLinha(r), 0) + 4;
+  garante(totalH);
+  const y0 = y; fill(C.soft); doc.roundedRect(M, y, CW, totalH, 2.5, 2.5, 'F');
   y += 6;
   for (const par of rows){
     const h = altLinha(par);
@@ -516,7 +509,6 @@ export async function gerarAtividadePDF(ctx){
     y += h;
   }
   y = y0 + totalH + 6;
-  // ---------- textos ----------
   const bloco = (titulo, corpo, cor) => {
     if (!corpo) return;
     font('normal', 9.2); const ls = wrap(corpo, CW - 10), h = 8 + ls.length * 4.6;
@@ -529,51 +521,59 @@ export async function gerarAtividadePDF(ctx){
   bloco('Detalhes / orientações para a equipe', ctx.detalhes);
   bloco('Motivo', ctx.motivo, STC.nao_iniciada);
   bloco('Última observação', ctx.obs);
-  // ---------- fotos ----------
-  secao('Fotos', ctx.fotos.length ? `${ctx.fotos.length} ${ctx.fotos.length === 1 ? 'registro' : 'registros'}` : 'nenhuma foto registrada');
-  if (ctx.fotos.length){
-    const gap = 6, fw = (CW - gap) / 2, fh = fw * .72;
-    for (let i = 0; i < ctx.fotos.length; i += 2){
-      const par = ctx.fotos.slice(i, i + 2);
-      font('bold', 8.4);
-      const capH = Math.max(...par.map(f => (f.legenda ? wrap(f.legenda, fw).length * 3.8 : 0) + 4.4));
-      garante(fh + capH + 4);
-      par.forEach((f, j) => {
-        const x = M + j * (fw + gap);
-        fill(C.soft); doc.roundedRect(x, y, fw, fh, 1.8, 1.8, 'F');
-        try {
-          const r = Math.min(fw / (f.w || 4), fh / (f.h || 3)), iw = (f.w || 4) * r, ih = (f.h || 3) * r;
-          doc.addImage(f.img, 'JPEG', x + (fw - iw) / 2, y + (fh - ih) / 2, iw, ih, undefined, 'FAST');
-        } catch (e) { color(C.faint); font('normal', 8); text('imagem indisponível', x + fw / 2, y + fh / 2, {align:'center'}); }
-        let yy = y + fh + 4.2;
-        if (f.legenda){ color(C.ink); font('bold', 8.4); for (const l of wrap(f.legenda, fw)){ doc.text(l, x, yy); yy += 3.8; } }
-        color(C.faint); font('normal', 7.4); text(f.sub, x, yy);
-      });
-      y += fh + capH + 6;
+  if (opt.fotos !== false){
+    if (ctx.fotos.length) garante((CW - 6) / 2 * .72 + 26); // título junto com a 1ª linha de fotos
+    secao('Fotos', ctx.fotos.length ? `${ctx.fotos.length} ${ctx.fotos.length === 1 ? 'registro' : 'registros'}` : 'nenhuma foto registrada');
+    if (ctx.fotos.length){
+      const gap = 6, fw = (CW - gap) / 2, fh = fw * .72;
+      for (let i = 0; i < ctx.fotos.length; i += 2){
+        const par = ctx.fotos.slice(i, i + 2);
+        font('bold', 8.4);
+        const capH = Math.max(...par.map(f => (f.legenda ? wrap(f.legenda, fw).length * 3.8 : 0) + 4.4));
+        garante(fh + capH + 4);
+        par.forEach((f, j) => {
+          const x = M + j * (fw + gap);
+          fill(C.soft); doc.roundedRect(x, y, fw, fh, 1.8, 1.8, 'F');
+          try {
+            const r = Math.min(fw / (f.w || 4), fh / (f.h || 3)), iw = (f.w || 4) * r, ih = (f.h || 3) * r;
+            doc.addImage(f.img, 'JPEG', x + (fw - iw) / 2, y + (fh - ih) / 2, iw, ih, undefined, 'FAST');
+          } catch (e) { color(C.faint); font('normal', 8); text('imagem indisponível', x + fw / 2, y + fh / 2, {align:'center'}); }
+          let yy = y + fh + 4.2;
+          if (f.legenda){ color(C.ink); font('bold', 8.4); for (const l of wrap(f.legenda, fw)){ doc.text(l, x, yy); yy += 3.8; } }
+          color(C.faint); font('normal', 7.4); text(f.sub, x, yy);
+        });
+        y += fh + capH + 6;
+      }
     }
   }
-  // ---------- histórico ----------
-  secao('Histórico', `${ctx.hist.length} ${ctx.hist.length === 1 ? 'registro' : 'registros'}`);
-  if (ctx.hist.length){
-    doc.autoTable({
-      startY: y, margin:{left:M, right:M, top:TOP + 4, bottom:H - BOT + 2},
-      head:[['Data / hora', 'Quem', 'Registro']],
-      body: ctx.hist.map(h => [t(h.quando), t(h.quem), t(h.texto)]),
-      styles:{font:'helvetica', fontSize:8.2, cellPadding:{top:2.2, bottom:2.2, left:2.4, right:2.4}, textColor:C.ink, lineColor:C.line, lineWidth:.15, valign:'top'},
-      headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:8},
-      alternateRowStyles:{fillColor:[250,250,251]},
-      columnStyles:{0:{cellWidth:26, textColor:C.muted}, 1:{cellWidth:38, fontStyle:'bold'}, 2:{cellWidth:'auto'}},
-    });
+  if (opt.hist !== false){
+    if (ctx.hist.length) garante(34); // título junto com as primeiras linhas
+    secao('Histórico', `${ctx.hist.length} ${ctx.hist.length === 1 ? 'registro' : 'registros'}`);
+    if (ctx.hist.length){
+      doc.autoTable({
+        startY: y, margin:{left:M, right:M, top:TOP + 4, bottom:PG.H - BOT + 2},
+        head:[['Data / hora', 'Quem', 'Registro']],
+        body: ctx.hist.map(h => [t(h.quando), t(h.quem), t(h.texto)]),
+        styles:{font:'helvetica', fontSize:8.2, cellPadding:{top:2.2, bottom:2.2, left:2.4, right:2.4}, textColor:C.ink, lineColor:C.line, lineWidth:.15, valign:'top'},
+        headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:8},
+        alternateRowStyles:{fillColor:[250,250,251]},
+        columnStyles:{0:{cellWidth:26, textColor:C.muted}, 1:{cellWidth:38, fontStyle:'bold'}, 2:{cellWidth:'auto'}},
+      });
+      y = doc.lastAutoTable.finalY + 6;
+    }
   }
-  // ---------- cabeçalho das demais páginas e rodapé ----------
+  return y;
+}
+function cabecalhoRodape(doc, logo, tituloPg1, linhaPgN, emitidoEm){
+  const {fill, stroke, color, font, text, wrap} = kit(doc), {W, H, M} = PG;
   const N = doc.getNumberOfPages();
   for (let i = 1; i <= N; i++){
     doc.setPage(i);
     if (i > 1){
       fill(C.graf); doc.rect(0, 0, W, 14, 'F'); fill(C.laranja); doc.rect(0, 14, W, .9, 'F');
       if (logo) doc.addImage(logo, 'PNG', M, 3.8, 24, 24 * 83 / 306);
-      color(C.white); font('bold', 8.6); const tt = wrap(ctx.titulo, 120)[0]; text(tt + (wrap(ctx.titulo, 120).length > 1 ? '...' : ''), W - M, 6.6, {align:'right'});
-      color([169,173,180]); font('normal', 7); text(`Relatório da atividade · emitido em ${ctx.emitidoEm}`, W - M, 10.8, {align:'right'});
+      color(C.white); font('bold', 8.6); const ls = wrap(tituloPg1, 120); text(ls[0] + (ls.length > 1 ? '...' : ''), W - M, 6.6, {align:'right'});
+      color([169,173,180]); font('normal', 7); text(`${linhaPgN} · emitido em ${emitidoEm}`, W - M, 10.8, {align:'right'});
     }
     stroke(C.line); doc.setLineWidth(.2); doc.line(M, H - 10, W - M, H - 10);
     fill(C.laranja); doc.rect(M, H - 7.4, 2, 2, 'F');
@@ -581,5 +581,63 @@ export async function gerarAtividadePDF(ctx){
     text('SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP', M + 3.5, H - 5.8);
     text(`Página ${i} de ${N}`, W - M, H - 5.8, {align:'right'});
   }
+}
+function capa(doc, logo, titulo, emitidoEm, emitidoPor){
+  const {fill, color, font, text} = kit(doc), {W, M} = PG;
+  fill(C.graf); doc.rect(0, 0, W, 30, 'F'); fill(C.laranja); doc.rect(0, 30, W, 1.3, 'F');
+  if (logo) doc.addImage(logo, 'PNG', M, 9.5, 40, 40 * 83 / 306);
+  color(C.white); font('bold', 13.5); text(titulo, W - M, 14, {align:'right'});
+  color([169,173,180]); font('normal', 8.2); text('Obra 4107 · Rooftop Iguatemi SP', W - M, 19.5, {align:'right'});
+  text(`Emitido em ${emitidoEm} por ${emitidoPor}`, W - M, 24, {align:'right'});
+}
+export async function gerarAtividadePDF(ctx){
+  const jsPDF = await loadLibs();
+  const logo = await toDataURL(ctx.logoUrl).catch(() => null);
+  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  capa(doc, logo, 'Relatório da atividade', ctx.emitidoEm, ctx.emitidoPor);
+  fichaAtividade(doc, ctx, {y:42});
+  cabecalhoRodape(doc, logo, ctx.titulo, 'Relatório da atividade', ctx.emitidoEm);
+  doc.save(ctx.arquivo);
+}
+// PDF de um local: capa com resumo e lista, depois uma ficha por atividade (cada uma começa numa página)
+export async function gerarLocalPDF(ctx){
+  const jsPDF = await loadLibs();
+  const logo = await toDataURL(ctx.logoUrl).catch(() => null);
+  const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
+  const {fill, color, font, text, wrap} = kit(doc), {W, M, TOP} = PG, CW = W - 2*M;
+  capa(doc, logo, 'Relatório do local', ctx.emitidoEm, ctx.emitidoPor);
+  let y = 42;
+  color(C.laranjaTx); font('bold', 8); text(ctx.tipo.toUpperCase(), M, y); y += 7;
+  color(C.ink); font('bold', 20); for (const l of wrap(ctx.nome, CW)){ doc.text(l, M, y); y += 8; }
+  if (ctx.sub){ color(C.muted); font('normal', 10); for (const l of wrap(ctx.sub, CW)){ doc.text(l, M, y); y += 5; } }
+  color(C.faint); font('normal', 8.4); text(ctx.escopo, M, y + 1); y += 9;
+  // indicadores
+  const k = ctx.kpis, kw = (CW - 4 * 4) / 5;
+  k.forEach((x, i) => { const xx = M + i * (kw + 4);
+    fill(C.soft); doc.roundedRect(xx, y, kw, 17, 2, 2, 'F');
+    color(C.faint); font('bold', 6.8); text(x[0].toUpperCase(), xx + 4, y + 5.5);
+    color(x[2] || C.ink); font('bold', 15); text(String(x[1]), xx + 4, y + 13.4); });
+  y += 24;
+  // lista das atividades
+  fill(C.laranja); doc.rect(M, y - 3.6, 1.6, 4.6, 'F'); color(C.ink); font('bold', 11.5); text('Atividades deste relatório', M + 4, y); y += 4;
+  doc.autoTable({
+    startY: y, margin:{left:M, right:M, top:TOP + 4, bottom:20},
+    head:[['#', 'Atividade', 'Período', 'Status', 'Avanço', 'Fornecedor', 'Fotos']],
+    body: ctx.itens.map((a, i) => [String(i + 1), t(a.titulo), t(a.periodo), t(a.statusLabel), `${a.avanco}%`, t(a.fornecedor), String(a.fotos)]),
+    styles:{font:'helvetica', fontSize:8, cellPadding:{top:2, bottom:2, left:2.2, right:2.2}, textColor:C.ink, lineColor:C.line, lineWidth:.15, valign:'top'},
+    headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:7.8},
+    alternateRowStyles:{fillColor:[250,250,251]},
+    columnStyles:{0:{cellWidth:8, textColor:C.muted}, 1:{cellWidth:'auto', fontStyle:'bold'}, 2:{cellWidth:28}, 3:{cellWidth:24}, 4:{cellWidth:15, halign:'right'}, 5:{cellWidth:32}, 6:{cellWidth:12, halign:'right'}},
+    didParseCell: d => { if (d.section === 'body' && d.column.index === 3){ const c = STC[ctx.itens[d.row.index].status]; if (c) d.cell.styles.textColor = c; } },
+  });
+  // fichas
+  // fichas: a primeira começa numa página nova; as seguintes continuam na mesma página se couber o começo da ficha
+  let yf = null;
+  ctx.fichas.forEach((f, i) => {
+    if (yf === null || yf > PG.BOT - 95){ doc.addPage(); yf = TOP + 8; }
+    else { doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(.4); doc.line(M, yf + 2, W - M, yf + 2); yf += 12; }
+    yf = fichaAtividade(doc, f, {y: yf}, {rotulo:`Atividade ${i + 1} de ${ctx.fichas.length} · ${ctx.nome}`, fotos: ctx.comFotos, hist: ctx.comHist});
+  });
+  cabecalhoRodape(doc, logo, ctx.nome, 'Relatório do local', ctx.emitidoEm);
   doc.save(ctx.arquivo);
 }

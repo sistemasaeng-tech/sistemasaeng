@@ -472,7 +472,7 @@ function grouped(list, isPend, scope = ''){
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
     .map(g => { const tp = g.k.startsWith('p:') ? 'pilares' : g.k.startsWith('z:') ? 'locais' : 'setores', lab = g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label, sub = g.k.startsWith('z:') ? 'Shopping' : g.sub;
       const key = (isPend ? 'P' : 'T') + scope + '|' + g.k, col = S.colGrp.has(key);
-      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend || (a.aberta && fimOf(a) < (S.refVenc || S.noite)), S.refVenc || S.noite, !S.dia)).join('')}</div>`}</div>`; }).join('');
+      return `<div class="grp grp-${tp}${col ? ' col' : ''}"><div class="grp-h" role="button" tabindex="0" data-grp="${esc(key)}" aria-expanded="${!col}" title="${col ? 'Mostrar' : 'Recolher'} as atividades"><span class="grp-ic">${ico(tp)}</span><span class="grp-tx"><b>${esc(lab)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span><em class="grp-n">${g.items.length}</em><button type="button" class="grp-open" data-loc="${esc(g.k)}" title="Abrir a página de ${esc(lab)}, com todas as atividades e o relatório">${ICON_OPEN}<span>Abrir</span></button>${CHEV}</div>${col ? '' : `<div class="cards">${g.items.map(a => card(a, isPend || (a.aberta && fimOf(a) < (S.refVenc || S.noite)), S.refVenc || S.noite, !S.dia)).join('')}</div>`}</div>`; }).join('');
 }
 function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   const st = STATUS[a.status] || STATUS.programada, n = isPend ? nightsBetween(fimOf(a), ref) : 0, av = avOf(a);
@@ -681,7 +681,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=35');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=36');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1008,7 +1008,7 @@ function fillFilterOptions(){
 /* ================= render geral ================= */
 function renderAll(){
   if (!S.started) return;
-  if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else if (S.tab === 'pend') renderPend(); else renderCad();
+  if (S.loc) renderLocal(); else if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else if (S.tab === 'pend') renderPend(); else renderCad();
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
   updPendBadge(); renderWho();
   $('exp-ia').hidden = !isAdmin(); // exportação para o Claude: só administradores
@@ -1028,6 +1028,7 @@ function closeMore(){ for (const id of ['tab-more-pop','bn-more-pop']){ const p 
 function setTab(t){
   if (t === 'cad' && S.tab === 'cad') S.cadSub = null;
   if (t === 'etq' && S.tab === 'etq') S.etq = null;
+  S.loc = null; $('v-local').hidden = true;
   S.tab = ['noite','pend','gantt','etq','hist','cad'].includes(t) ? t : 'noite';
   if (S.tab === 'gantt') S.gt.jump = true;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
@@ -1343,11 +1344,12 @@ async function fotoGrande(f){
   return f.thumb;
 }
 // para o PDF a imagem precisa vir como dados (Storage exige CORS liberado; se não, usa a miniatura)
-async function fotoPdf(f){
-  if (!f.url) return {img: await fotoGrande(f), w: f.w, h: f.h};
+async function fotoPdf(f, max = 1600){
+  if (!f.url){ const im = await fotoGrande(f); if (max >= 1600) return {img: im, w: f.w, h: f.h};
+    try { const src = await lerImagem(await (await fetch(im)).blob()), j = paraJpeg(src, max, .8, 3000000); if (src.close) src.close(); return {img: j.url, w: j.w, h: j.h}; } catch { return {img: im, w: f.w, h: f.h}; } }
   try {
     const bl = await (await comPrazo(fetch(f.url), 30000)).blob(), src = await lerImagem(bl);
-    const j = paraJpeg(src, 1600, .8, 3000000); if (src.close) src.close();
+    const j = paraJpeg(src, max, .8, 3000000); if (src.close) src.close();
     return {img: j.url, w: j.w, h: j.h};
   } catch (e) { console.warn('foto do Storage no PDF: usando miniatura', e); return {img: f.thumb, w: f.w, h: f.h, mini: true}; }
 }
@@ -1380,6 +1382,10 @@ function fotoExcluir(){
 }
 // ---------- baixar todas as fotos da atividade (.zip) ----------
 let zipando = false;
+async function blobFoto(f){
+  try { const src = f.url || await fotoGrande(f); return {blob: await (await comPrazo(fetch(src), 30000)).blob()}; }
+  catch (e) { console.warn('zip: usando miniatura', e); return {blob: await (await fetch(f.thumb)).blob(), mini: true}; }
+}
 async function carregarJSZip(){
   if (window.JSZip) return window.JSZip;
   await new Promise((ok, fail) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'; sc.onload = ok; sc.onerror = () => fail(new Error('JSZip')); document.head.appendChild(sc); });
@@ -1397,9 +1403,7 @@ async function baixarZipFotos(){
     const linhas = [`Atividade: ${a.titulo}`, `Local: ${localLine(a)}`, `Período: ${fmtPeriodo(a)}/${fimOf(a).slice(0, 4)} · turno ${TURNOS[turnoOf(a)].toLowerCase()}`, `Status: ${STATUS[a.status]?.label || a.status} · avanço ${avOf(a)}%`, `Fotos: ${fs.length} · baixadas em ${fmtTs(new Date())} por ${S.perfil?.nome || ''}`, ''];
     for (let i = 0; i < fs.length; i++){
       const f = fs[i]; toast(`Baixando foto ${i + 1} de ${fs.length}…`);
-      let blob = null;
-      try { const src = f.url || await fotoGrande(f); blob = await (await comPrazo(fetch(src), 30000)).blob(); }
-      catch (e) { console.warn('zip: usando miniatura', e); blob = await (await fetch(f.thumb)).blob(); mini++; }
+      const r = await blobFoto(f), blob = r.blob; if (r.mini) mini++;
       const quando = f.t ? toDate(f.t) : new Date();
       let nome = `${String(i + 1).padStart(2, '0')}_${pad(quando.getDate())}-${pad(quando.getMonth() + 1)}_${slugArq(f.legenda, 50) || 'foto'}.jpg`;
       while (nomes.has(nome)) nome = nome.replace(/\.jpg$/, '_.jpg'); nomes.add(nome);
@@ -1417,41 +1421,195 @@ async function baixarZipFotos(){
 }
 // ---------- PDF da atividade (dados + fotos + histórico) ----------
 let gerandoAtv = false;
+// dados da ficha (usada no PDF da atividade e no PDF do local)
+async function fichaCtx(a, fs, hs, max = 1600, onFoto = () => {}){
+  const fotos = [];
+  for (const f of fs){ const p = await fotoPdf(f, max); fotos.push({...p, legenda:f.legenda || '', sub:`${f.t ? fmtTs(f.t) : ''} · ${nameOf(f.u)}`}); onFoto(); }
+  const hist = hs.map(ev => {
+    let tx = evText({...ev, noiteAtv: ev.noiteAtv || a.noite}).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    if (ev.mudancas?.length) tx += '\n' + ev.mudancas.map(x => `${FIELDS[x.campo] || (x.campo === 'status' ? 'Status' : x.campo)}: ${fmtVal(x.campo, x.de) || '—'} → ${fmtVal(x.campo, x.para) || '—'}`).join('\n');
+    if (ev.motivo || ev.obs) tx += '\n' + [ev.motivo, ev.obs].filter(Boolean).join(' — ');
+    return {quando: fmtTs(ev.t), quem: nameOf(ev.u), texto: tx};
+  });
+  const d1 = durOf(a), hoje = defaultNight();
+  const situ = a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < hoje ? `Vencida há ${nightsBetween(fimOf(a), hoje)} ${nightsBetween(fimOf(a), hoje) === 1 ? 'dia' : 'dias'}` : a.noite > hoje ? 'A iniciar' : 'Em curso';
+  const info = [
+    ['Período', `${fmtDay(a.noite)}${d1 ? ' a ' + fmtDay(fimOf(a)) : ''}/${fimOf(a).slice(0, 4)} · ${d1 + 1} ${d1 ? 'dias' : 'dia'} · turno ${TURNOS[turnoOf(a)].toLowerCase()}`],
+    ['Situação', situ], ['Local', localLine(a) || '—'], ['Fornecedor', a.fornecedor || 'Não informado'],
+    ['Responsável no turno', a.responsavel || 'Não informado'], ['Efetivo previsto', a.efetivo || 'Não informado'],
+    ['Prioridade', PRIOR[a.prioridade] || 'Normal'], tagsOf(a).length ? ['Etiquetas', tagsOf(a).join(', ')] : null,
+    ['Inserida por', `${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}`],
+    a.atualizadoPor ? ['Última alteração', `${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}`] : null,
+  ].filter(Boolean);
+  return {titulo: a.titulo || '', status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), info,
+    detalhes: a.detalhes || '', motivo: a.motivo ? `${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}` : '', obs: a.ultimaObs || '', fotos, hist};
+}
 async function exportAtividadePdf(){
   const a = all().get(S.openId); if (!a || gerandoAtv) return;
   gerandoAtv = true; const bt = $('dw-pdf'); bt.disabled = true; toast('Gerando o PDF da atividade…');
   try {
     const fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
-    const fotos = [];
-    for (const f of fs){ const p = await fotoPdf(f); fotos.push({...p, legenda:f.legenda || '', sub:`${f.t ? fmtTs(f.t) : ''} · ${nameOf(f.u)}`}); }
-    const hist = [...S.dwHist].map(ev => {
-      let tx = evText({...ev, noiteAtv: ev.noiteAtv || a.noite}).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-      if (ev.mudancas?.length) tx += '\n' + ev.mudancas.map(x => `${FIELDS[x.campo] || (x.campo === 'status' ? 'Status' : x.campo)}: ${fmtVal(x.campo, x.de) || '—'} → ${fmtVal(x.campo, x.para) || '—'}`).join('\n');
-      if (ev.motivo || ev.obs) tx += '\n' + [ev.motivo, ev.obs].filter(Boolean).join(' — ');
-      return {quando: fmtTs(ev.t), quem: nameOf(ev.u), texto: tx};
-    });
-    const d1 = durOf(a), hoje = defaultNight();
-    const situ = a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < hoje ? `Vencida há ${nightsBetween(fimOf(a), hoje)} ${nightsBetween(fimOf(a), hoje) === 1 ? 'dia' : 'dias'}` : a.noite > hoje ? 'A iniciar' : 'Em curso';
-    const info = [
-      ['Período', `${fmtDay(a.noite)}${d1 ? ' a ' + fmtDay(fimOf(a)) : ''}/${fimOf(a).slice(0, 4)} · ${d1 + 1} ${d1 ? 'dias' : 'dia'} · turno ${TURNOS[turnoOf(a)].toLowerCase()}`],
-      ['Situação', situ], ['Local', localLine(a) || '—'], ['Fornecedor', a.fornecedor || 'Não informado'],
-      ['Responsável no turno', a.responsavel || 'Não informado'], ['Efetivo previsto', a.efetivo || 'Não informado'],
-      ['Prioridade', PRIOR[a.prioridade] || 'Normal'], tagsOf(a).length ? ['Etiquetas', tagsOf(a).join(', ')] : null,
-      ['Inserida por', `${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}`],
-      a.atualizadoPor ? ['Última alteração', `${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}`] : null,
-    ].filter(Boolean);
-    const now = new Date(), arquivo = `Atividade_${(a.titulo || 'atividade').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w -]+/g, '').trim().slice(0, 50).replace(/\s+/g, '_')}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=35');
-    await gerarAtividadePDF({
-      titulo: a.titulo || '', status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), info,
-      detalhes: a.detalhes || '', motivo: a.motivo ? `${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}` : '', obs: a.ultimaObs || '',
-      fotos, hist, logoUrl: 'logo-saeng.png', arquivo,
-      emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário',
-    });
+    const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
+    const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=36');
+    await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
+      emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
-    logExport('atividade', {arquivo, qtd: fotos.length, periodo: (a.titulo || '').slice(0, 150)});
+    logExport('atividade', {arquivo, qtd: ficha.fotos.length, periodo: (a.titulo || '').slice(0, 150)});
   } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoAtv = false; bt.disabled = false; }
+}
+
+/* ================= página do local (setor, pilar ou loja) ================= */
+// Toque em "Abrir" no cabeçalho de um grupo: abre uma página com todas as atividades daquele local,
+// de onde sai o PDF do local (todas as atividades, com informações, fotos e histórico) e o .zip das fotos.
+S.loc = null; S.todas = null; S.todasEm = 0;
+const ICON_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+async function carregarTodas(force){
+  if (!force && S.todas && Date.now() - S.todasEm < 300000) return;
+  try { const s = await getDocs(query(collection(db, 'atividades'), limit(5000))); S.todas = snapToMap(s); S.todasEm = Date.now(); } catch (e) { console.warn(e); }
+}
+const atividadesDoLocal = k => [...new Map([...(S.todas || new Map()), ...all()]).values()].filter(a => groupKey(a).k === k);
+function metaLocal(k, acts){
+  const g = acts[0] ? groupKey(acts[0]) : {label: k.slice(2), sub: ''};
+  const tp = k[0] === 'p' ? 'pilares' : k[0] === 'z' ? 'locais' : 'setores';
+  return {tp, tipo: {s:'Setor', p:'Pilar', z:'Local do shopping'}[k[0]] || 'Local', nome: k[0] === 'z' ? (g.sub || k.slice(2) || 'Shopping') : g.label, sub: k[0] === 'z' ? 'Shopping' : g.sub};
+}
+function openLocal(k){
+  if (S.openId) closeDrawer();
+  S.loc = {k}; S.locEnc = false;
+  for (const v of ['v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
+  $('v-local').hidden = false; window.scrollTo({top:0});
+  renderLocal();
+  carregarTodas().then(() => { if (S.loc && S.loc.k === k) renderLocal(); });
+}
+function closeLocal(){ S.loc = null; setTab(S.tab); }
+function renderLocal(){
+  const k = S.loc.k, acts = atividadesDoLocal(k), hoje = defaultNight(), m = metaLocal(k, acts);
+  const ab = acts.filter(a => a.aberta && STATUS[a.status]?.aberta).sort((x, y) => (fimOf(x) < hoje ? 0 : 1) - (fimOf(y) < hoje ? 0 : 1) || x.noite.localeCompare(y.noite) || prRank(x.prioridade) - prRank(y.prioridade));
+  const enc = acts.filter(a => !(a.aberta && STATUS[a.status]?.aberta)).sort((x, y) => fimOf(y).localeCompare(fimOf(x)));
+  const cnt = {}; ORDER.forEach(s2 => cnt[s2] = 0); acts.forEach(a => cnt[a.status] = (cnt[a.status] || 0) + 1);
+  const venc = ab.filter(a => fimOf(a) < hoje).length, fotos = acts.reduce((s2, a) => s2 + (Number(a.nFotos) || 0), 0);
+  const bar = acts.length ? ORDER.filter(s2 => cnt[s2]).map(s2 => `<i style="width:${(cnt[s2] / acts.length * 100).toFixed(2)}%;background:${cvar(s2)}" title="${esc(STATUS[s2].label)}: ${cnt[s2]}"></i>`).join('') : '';
+  const leg = ORDER.filter(s2 => cnt[s2]).map(s2 => `<span><i class="dot" style="--c:${cvar(s2)}"></i>${cnt[s2]} ${esc(stN(s2, cnt[s2]))}</span>`).join('');
+  const encOpen = S.locEnc || !ab.length, carregando = !S.todas;
+  $('v-local').innerHTML = `<div class="cad-page loc-page">
+    <button type="button" class="back" data-loc-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Voltar</button>
+    <div class="loc-head grp-${m.tp}"><span class="grp-ic lg">${ico(m.tp)}</span><div class="loc-ht"><div class="eyebrow">${esc(m.tipo)}</div><h1>${esc(m.nome)}</h1>${m.sub ? `<p>${esc(m.sub)}</p>` : ''}</div></div>
+    <div class="etq-kpis loc-kpis">
+      <div class="kp"><span>Atividades</span><b>${acts.length}</b></div>
+      <div class="kp"><span>Em aberto</span><b>${ab.length}</b></div>
+      <div class="kp${venc ? ' warn' : ''}"><span>Vencidas</span><b>${venc}</b></div>
+      <div class="kp"><span>Concluídas</span><b>${cnt.concluida || 0}</b></div>
+      <div class="kp"><span>Fotos</span><b>${fotos}</b></div>
+    </div>
+    ${acts.length ? `<div class="etq-st"><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div><div class="sum-leg">${leg}</div></div>` : ''}
+    <div class="etq-acts">
+      <button type="button" class="btn pri" data-loc-pdf${acts.length ? '' : ' disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Relatório do local (PDF)</button>
+      <button type="button" class="btn" data-loc-zip${fotos ? '' : ' disabled'}>${ICON_DL}Baixar fotos (.zip)</button>
+      ${canWrite() ? `<button type="button" class="btn" data-loc-new><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova atividade aqui</button>` : ''}
+    </div>
+    ${carregando ? '<p class="ro loc-load">Buscando as atividades antigas deste local…</p>' : ''}
+    ${ab.length ? `<div class="sec"><div class="sec-h"><h2>Em aberto</h2><span>${ab.length}</span></div><div class="cards">${ab.map(a => card(a, fimOf(a) < hoje, hoje, true)).join('')}</div></div>` : ''}
+    ${enc.length ? `<div class="sec"><div class="sec-h"><h2>Concluídas e canceladas</h2><span>${enc.length}</span>${ab.length ? `<button type="button" class="link-btn" data-loc-enc>${encOpen ? 'Ocultar' : 'Mostrar'}</button>` : ''}</div>${encOpen ? `<div class="cards">${enc.map(a => card(a, false, hoje, true)).join('')}</div>` : ''}</div>` : ''}
+    ${!acts.length && !carregando ? '<div class="empty">Nenhuma atividade neste local.</div>' : ''}
+  </div>`;
+}
+// dados de várias atividades de uma vez (consultas "in" de 30 em 30)
+async function buscarPorAtividade(col, ids){
+  const out = {};
+  for (let i = 0; i < ids.length; i += 30){
+    const s = await getDocs(query(collection(db, col), where('atividadeId', 'in', ids.slice(i, i + 30))));
+    s.forEach(d => { const v = {id:d.id, ...d.data(SNAP)}; (out[v.atividadeId] ||= []).push(v); });
+  }
+  return out;
+}
+function openLocalPdf(){
+  const k = S.loc?.k; if (!k) return;
+  const acts = atividadesDoLocal(k), m = metaLocal(k, acts), nEnc = acts.filter(a => !(a.aberta && STATUS[a.status]?.aberta)).length;
+  $('sheet').innerHTML = `<h2>Relatório do local</h2>
+    <p class="ro" style="margin:-6px 0 14px">${esc(m.tipo)} <b>${esc(m.nome)}</b>: capa com resumo e lista, depois uma ficha por atividade com informações${' '}e, se marcado, fotos e histórico.</p>
+    <form id="lpf" novalidate>
+      <div class="f"><label class="chk"><input type="checkbox" id="lp-enc"${nEnc ? ' checked' : ' disabled'}> Incluir concluídas e canceladas <span class="ro">(${nEnc})</span></label></div>
+      <div class="f"><label class="chk"><input type="checkbox" id="lp-fotos" checked> Incluir as fotos</label></div>
+      <div class="f"><label class="chk"><input type="checkbox" id="lp-hist" checked> Incluir o histórico de cada atividade</label></div>
+      <div class="cf-prev" id="lp-prev"></div>
+      <div class="acts"><button type="button" class="btn ghost" id="lp-cancel">Cancelar</button><button class="btn pri" type="submit">Gerar PDF</button></div>
+    </form>`;
+  const upd = () => { const n = acts.filter(a => $('lp-enc').checked || (a.aberta && STATUS[a.status]?.aberta)).length; $('lp-prev').textContent = `${n} ${n === 1 ? 'atividade entra' : 'atividades entram'} no relatório.`; };
+  $('lp-enc').onchange = upd; upd();
+  $('lp-cancel').onclick = closeModal;
+  $('lpf').onsubmit = async e => {
+    e.preventDefault();
+    const bt = $('lpf').querySelector('button[type=submit]'); bt.disabled = true; bt.textContent = 'Gerando…';
+    try { await gerarPdfLocal(k, {enc: $('lp-enc').checked, fotos: $('lp-fotos').checked, hist: $('lp-hist').checked}, msg => { $('lp-prev').textContent = msg; }); closeModal(); }
+    catch (err) { console.warn(err); bt.disabled = false; bt.textContent = 'Gerar PDF'; $('lp-prev').textContent = navigator.onLine ? 'Não foi possível gerar. Tente de novo.' : 'Sem internet: é preciso estar online para buscar fotos e histórico.'; }
+  };
+  showModal();
+}
+async function gerarPdfLocal(k, op, prog){
+  await carregarTodas();
+  const hoje = defaultNight(), todas = atividadesDoLocal(k), m = metaLocal(k, todas);
+  const lista = todas.filter(a => op.enc || (a.aberta && STATUS[a.status]?.aberta))
+    .sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || String(x.titulo).localeCompare(String(y.titulo), 'pt'));
+  if (!lista.length) throw new Error('vazio');
+  const ids = lista.map(a => a.id);
+  prog('Buscando fotos e histórico…');
+  const fotosPor = op.fotos ? await buscarPorAtividade('fotos', ids) : {}, histPor = op.hist ? await buscarPorAtividade('historico', ids) : {};
+  const total = Object.values(fotosPor).reduce((s2, l) => s2 + l.length, 0); let feitas = 0;
+  const fichas = [];
+  for (const a of lista){
+    const fs = (fotosPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t)), hs = (histPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t));
+    fichas.push(await fichaCtx(a, fs, hs, 1280, () => { feitas++; prog(`Preparando fotos ${feitas} de ${total}…`); }));
+  }
+  const venc = lista.filter(a => a.aberta && STATUS[a.status]?.aberta && fimOf(a) < hoje).length;
+  const now = new Date(), arquivo = `Relatorio_${slugArq(m.nome, 50) || 'local'}_${hoje}.pdf`;
+  prog('Montando o PDF…');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=36');
+  await gerarLocalPDF({
+    tipo: m.tipo, nome: m.nome, sub: m.sub,
+    escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
+    kpis: [['Atividades', lista.length], ['Em aberto', lista.filter(a => a.aberta && STATUS[a.status]?.aberta).length], ['Vencidas', venc, venc ? [196,86,44] : null], ['Concluídas', lista.filter(a => a.status === 'concluida').length], ['Fotos', total]],
+    itens: lista.map(a => ({titulo: a.titulo || '', periodo: fmtPeriodo(a), status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), fornecedor: a.fornecedor || '—', fotos: (fotosPor[a.id] || []).length || Number(a.nFotos) || 0})),
+    fichas, comFotos: op.fotos, comHist: op.hist, logoUrl: 'logo-saeng.png', arquivo,
+    emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário',
+  });
+  toast('Relatório do local gerado.');
+  logExport('local', {arquivo, qtd: lista.length, periodo: `${m.tipo} ${m.nome}`.slice(0, 150)});
+}
+async function baixarZipLocal(){
+  const k = S.loc?.k; if (!k || zipando) return;
+  zipando = true;
+  try {
+    toast('Buscando as fotos do local…');
+    await carregarTodas();
+    const acts = atividadesDoLocal(k).sort((x, y) => x.noite.localeCompare(y.noite)), m = metaLocal(k, acts), hoje = defaultNight();
+    const fotosPor = await buscarPorAtividade('fotos', acts.map(a => a.id));
+    const total = Object.values(fotosPor).reduce((s2, l) => s2 + l.length, 0);
+    if (!total) { toast('Nenhuma foto neste local.'); return; }
+    const JSZip = await carregarJSZip(), zip = new JSZip(); let n = 0, mini = 0, ia = 0;
+    const leia = [`${m.tipo}: ${m.nome}${m.sub ? ' — ' + m.sub : ''}`, `Fotos: ${total} · baixadas em ${fmtTs(new Date())} por ${S.perfil?.nome || ''}`, ''];
+    for (const a of acts){
+      const fs = (fotosPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t)); if (!fs.length) continue;
+      ia++; const pasta = `${String(ia).padStart(2, '0')}_${slugArq(a.titulo, 50) || 'atividade'}`;
+      leia.push(`[${pasta}] ${a.titulo} — ${fmtPeriodo(a)} — ${STATUS[a.status]?.label || a.status}`);
+      for (let i = 0; i < fs.length; i++){
+        const f = fs[i]; n++; toast(`Baixando foto ${n} de ${total}…`);
+        const r = await blobFoto(f); if (r.mini) mini++;
+        const quando = f.t ? toDate(f.t) : new Date();
+        const nome = `${String(i + 1).padStart(2, '0')}_${pad(quando.getDate())}-${pad(quando.getMonth() + 1)}_${slugArq(f.legenda, 50) || 'foto'}.jpg`;
+        zip.file(`${pasta}/${nome}`, r.blob);
+        leia.push(`   ${nome} — ${f.legenda || '(sem legenda)'} — ${f.t ? fmtTs(f.t) : ''} — ${nameOf(f.u)}`);
+      }
+    }
+    zip.file('LEIA-ME.txt', leia.join('\r\n') + '\r\n');
+    const out = await zip.generateAsync({type:'blob'}), arquivo = `Fotos_${slugArq(m.nome, 50) || 'local'}_${hoje}.zip`;
+    const url = URL.createObjectURL(out), el = document.createElement('a'); el.href = url; el.download = arquivo; document.body.appendChild(el); el.click(); el.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(mini ? `Pasta gerada. ${mini} ${mini === 1 ? 'foto saiu' : 'fotos saíram'} em tamanho reduzido (o Storage ainda não libera o download direto).` : `Pasta com ${total} fotos de ${ia} ${ia === 1 ? 'atividade' : 'atividades'} gerada.`);
+    logExport('fotos', {arquivo, qtd: total, periodo: `${m.tipo} ${m.nome}`.slice(0, 150)});
+  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar a pasta. Tente de novo.' : 'Sem internet: é preciso estar online para baixar as fotos.'); }
+  finally { zipando = false; }
 }
 
 /* ================= escrita ================= */
@@ -1459,7 +1617,7 @@ async function exportAtividadePdf(){
 // As regras do Firestore recusam qualquer alteração de atividade que não venha com o seu registro.
 // Exportações (relatório PDF, calendário PDF, cronograma Excel, CSV) também ficam no histórico.
 // Se a gravação falhar (sem internet, regra antiga), o arquivo sai do mesmo jeito.
-const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV', claude:'o arquivo de atividades para o Claude (IA)', atividade:'o PDF de uma atividade (dados, fotos e histórico)', fotos:'as fotos de uma atividade (.zip)'};
+const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV', claude:'o arquivo de atividades para o Claude (IA)', atividade:'o PDF de uma atividade (dados, fotos e histórico)', fotos:'as fotos de uma atividade ou local (.zip)', local:'o relatório de um local (setor, pilar ou loja)'};
 function logExport(formato, info = {}){
   if (!S.uid) return;
   const d = {atividadeId:'', tipo:'exportou', formato, t:serverTimestamp(), u:S.uid,
@@ -1774,7 +1932,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=35');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=36');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1922,7 +2080,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=35');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=36');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1953,6 +2111,12 @@ document.addEventListener('click', e => {
   if (!t.closest('.tab-more, .bn-more')) closeMore();
   if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
   if (!t.closest('.ms')) msClose();
+  { const lo = t.closest('[data-loc]'); if (lo) return openLocal(lo.dataset.loc); }
+  if (t.closest('[data-loc-back]')) return closeLocal();
+  if (t.closest('[data-loc-pdf]')) return openLocalPdf();
+  if (t.closest('[data-loc-zip]')) return baixarZipLocal();
+  if (t.closest('[data-loc-enc]')){ S.locEnc = !S.locEnc; return renderLocal(); }
+  if (t.closest('[data-loc-new]')){ const k = S.loc.k, pre = k[0] === 's' ? {tipoLocal:'setor', setor:k.slice(2)} : k[0] === 'p' ? {tipoLocal:'pilar', pilar:k.slice(2)} : {tipoLocal:'shopping', local:k.slice(2)}; return openForm(null, {...pre, noite:defaultNight()}); }
   const gh = t.closest('[data-grp]'); if (gh) return toggleGrp(gh.dataset.grp);
   const etqEl = t.closest('[data-etq]'); if (etqEl) return openTag(etqEl.dataset.etq);
   if (t.closest('[data-etq-back]')){ S.etq = null; window.scrollTo({top:0}); return renderAll(); }
@@ -2054,7 +2218,7 @@ $('m-perfil').onclick = () => { $('who-pop').hidden = true; openPerfil(); };
 $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
 $('dw-close').onclick = closeDrawer;
 $('scrim').onclick = () => { if (!$('modal').hidden) closeModal(); else closeDrawer(); };
-document.addEventListener('keydown', e => { const gh = e.target.closest && e.target.closest('[data-grp]'); if (gh && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleGrp(gh.dataset.grp); } });
+document.addEventListener('keydown', e => { if (e.target.closest && e.target.closest('[data-loc]')) return; const gh = e.target.closest && e.target.closest('[data-grp]'); if (gh && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleGrp(gh.dataset.grp); } });
 document.addEventListener('keydown', e => { const x = e.target.closest && e.target.closest('[data-pd-open]'); if (x && (e.key === 'Enter' || e.key === ' ') && e.target === x){ e.preventDefault(); openPendForm(x.dataset.pdOpen); } });
 $('pd-new').onclick = () => openPendForm(null);
 $('pd-q').oninput = () => renderPend();
