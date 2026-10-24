@@ -1251,3 +1251,15 @@ button.pd-c{cursor:pointer}
 .m-ck{width:18px;height:18px;border-radius:5px;border:2px solid var(--line-2);flex:none;display:grid;place-items:center}
 .m-chk[aria-pressed="true"] .m-ck{background:var(--brand);border-color:var(--brand)}
 .m-chk[aria-pressed="true"] .m-ck::after{content:"";width:5px;height:9px;border:solid var(--brand-ink);border-width:0 2.4px 2.4px 0;transform:rotate(45deg) translate(-1px,-1px)}
+
+/* v41: quem recebe o e-mail diário (Cadastros → Usuários) */
+.u-mail{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--line-2);background:none;color:var(--faint);font-size:12px;font-weight:600;cursor:pointer;flex:none;white-space:nowrap}
+.u-mail svg{width:15px;height:15px}
+.u-mail[aria-pressed="true"]{background:color-mix(in srgb,var(--st-ok) 14%,transparent);border-color:color-mix(in srgb,var(--st-ok) 45%,transparent);color:var(--st-ok)}
+@media (max-width:760px){ .u-mail span{display:none} .u-mail{width:32px;padding:0;justify-content:center} }
+.cad-item.user{grid-template-columns:auto minmax(0,1fr) auto auto auto;grid-template-areas:"av tx ml bd mn"}
+.cad-item.user .u-mail{grid-area:ml}
+@media (max-width:760px){
+  .cad-item.user{grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"av tx ml mn" "av bd ml mn"}
+  .cad-item.user .u-mail{align-self:center}
+}
