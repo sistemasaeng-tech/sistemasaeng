@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 38; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 39; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -690,7 +690,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=38');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=39');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF(ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`));
     toast('PDF do calendário gerado.');
@@ -776,8 +776,9 @@ function ganttHTML(D, g, wrap, opt = {}){
 /* ================= etiquetas ================= */
 function renderEtq(){
   const cat = tagCatalog();
-  $('etq-home').hidden = !!S.etq; $('etq-page').hidden = !S.etq;
-  if (S.etq){
+  // a etiqueta abre na página de local (openTag); aqui fica só a lista de etiquetas
+  $('etq-home').hidden = false; $('etq-page').hidden = true;
+  if (false){
     const x = cat.get(tagKey(S.etq));
     if (x) return renderEtqPage(x);
     // durante uma renomeação, ou se a etiqueta saiu de todas as atividades
@@ -830,8 +831,8 @@ function renderEtqPage(x){
 }
 function openTag(nome){
   if (S.openId) closeDrawer();
-  S.etq = nome; S.etqEnc = false;
-  if (S.tab !== 'etq') setTab('etq'); else { window.scrollTo({top:0}); renderAll(); }
+  S.etq = nome; // usado em renomear / remover e no cronograma da etiqueta
+  openLocal('e:' + tagKey(nome), nome);
 }
 // Renomear ou remover uma etiqueta em todas as atividades (administrador). Cada atividade vai num lote próprio com o seu registro de histórico.
 async function retag(antigo, novo){
@@ -859,13 +860,13 @@ function openRetag(mode){
       e.preventDefault(); const n = normTag($('rf-n').value);
       if (!n) return toast('Informe o nome.'); if (n === x.nome){ closeModal(); return; }
       const ex = tagCatalog().get(tagKey(n)), alvo = ex && ex.k !== x.k ? ex.nome : n;
-      closeModal(); S.etq = alvo; retag(x.nome, alvo).then(renderAll);
+      closeModal(); S.etq = alvo; if (S.loc && S.loc.k[0] === 'e') S.loc = {...S.loc, k:'e:' + tagKey(alvo), nome:alvo}; retag(x.nome, alvo).then(renderAll);
     };
     setTimeout(() => $('rf-n').select(), 30);
   } else {
     $('sheet').innerHTML = `<h2>Remover a etiqueta?</h2><p class="ro" style="margin:-6px 0 14px">“${esc(x.nome)}” sai das ${x.n} atividades. As atividades continuam como estão, só sem essa etiqueta. Cada mudança fica no histórico.</p>
       <div class="acts"><button type="button" class="btn ghost" id="rf-c">Manter</button><button type="button" class="btn danger" id="rf-del">Remover etiqueta</button></div>`;
-    $('rf-del').onclick = () => { closeModal(); S.etq = null; retag(x.nome, '').then(renderAll); };
+    $('rf-del').onclick = () => { closeModal(); S.etq = null; if (S.loc && S.loc.k[0] === 'e') closeLocal(); retag(x.nome, '').then(renderAll); };
   }
   $('rf-c').onclick = closeModal;
   showModal();
@@ -1457,7 +1458,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=38');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=39');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1475,15 +1476,20 @@ async function carregarTodas(force){
   if (!force && S.todas && Date.now() - S.todasEm < 300000) return;
   try { const s = await getDocs(query(collection(db, 'atividades'), limit(5000))); S.todas = snapToMap(s); S.todasEm = Date.now(); } catch (e) { console.warn(e); }
 }
-const atividadesDoLocal = k => [...new Map([...(S.todas || new Map()), ...all()]).values()].filter(a => groupKey(a).k === k);
+const atividadesDoLocal = k => [...new Map([...(S.todas || new Map()), ...all()]).values()].filter(k[0] === 'e' ? (a => tagsOf(a).some(t => tagKey(t) === k.slice(2))) : (a => groupKey(a).k === k));
 function metaLocal(k, acts){
+  if (k[0] === 'e'){
+    const nome = (S.loc && S.loc.k === k && S.loc.nome) || (acts[0] && tagsOf(acts[0]).find(t => tagKey(t) === k.slice(2))) || k.slice(2);
+    const locs = new Set(acts.map(a => groupKey(a).k)), ini = acts.reduce((v, a) => a.noite < v ? a.noite : v, '9999'), fim = acts.reduce((v, a) => fimOf(a) > v ? fimOf(a) : v, '0000');
+    return {tp:'etq', tipo:'Etiqueta', nome, sub: acts.length ? `${ini === fim ? fmtDay(ini) : `${fmtShort(ini)} a ${fmtShort(fim)}`} · ${locs.size} ${locs.size === 1 ? 'local' : 'locais'}` : ''};
+  }
   const g = acts[0] ? groupKey(acts[0]) : {label: k.slice(2), sub: ''};
   const tp = k[0] === 'p' ? 'pilares' : k[0] === 'z' ? 'locais' : 'setores';
   return {tp, tipo: {s:'Setor', p:'Pilar', z:'Local do shopping'}[k[0]] || 'Local', nome: k[0] === 'z' ? (g.sub || k.slice(2) || 'Shopping') : g.label, sub: k[0] === 'z' ? 'Shopping' : g.sub};
 }
-function openLocal(k){
+function openLocal(k, nome = ''){
   if (S.openId) closeDrawer();
-  S.loc = {k}; S.locEnc = false; S.locView = 'lista';
+  S.loc = {k, nome}; S.locEnc = false; S.locView = 'lista';
   S.lgt = {zoom: S.gt.zoom === 'sem' ? 'qui' : S.gt.zoom, ref: defaultNight(), conc: true, grp: 'local', turno: '', jump: true, auto: true};
   for (const v of ['v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
   $('v-local').hidden = false; window.scrollTo({top:0});
@@ -1502,7 +1508,9 @@ function renderLocal(){
   const encOpen = S.locEnc || !ab.length, carregando = !S.todas;
   $('v-local').innerHTML = `<div class="cad-page loc-page">
     <button type="button" class="back" data-loc-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Voltar</button>
-    <div class="loc-head grp-${m.tp}"><span class="grp-ic lg">${ico(m.tp)}</span><div class="loc-ht"><div class="eyebrow">${esc(m.tipo)}</div><h1>${esc(m.nome)}</h1>${m.sub ? `<p>${esc(m.sub)}</p>` : ''}</div></div>
+    <div class="loc-head grp-${m.tp}"${m.tp === 'etq' ? ` style="--tc:${tagCor(m.nome)}"` : ''}>${m.tp === 'etq' ? `<span class="etq-ico lg">${ICON_TAG}</span>` : `<span class="grp-ic lg">${ico(m.tp)}</span>`}<div class="loc-ht"><div class="eyebrow">${esc(m.tipo)}</div><h1>${esc(m.nome)}</h1>${m.sub ? `<p>${esc(m.sub)}</p>` : ''}</div>
+      ${m.tp === 'etq' && isAdmin() ? `<div class="menu loc-menu"><button type="button" class="ibtn" id="etq-more-b" aria-haspopup="true" aria-label="Opções da etiqueta"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        <div class="menu-pop" id="etq-more-pop" hidden><button type="button" data-etq-act="ren">Renomear etiqueta</button><button type="button" class="m-danger" data-etq-act="del">Remover de todas as atividades</button></div></div>` : ''}</div>
     <div class="etq-kpis loc-kpis">
       <div class="kp"><span>Atividades</span><b>${acts.length}</b></div>
       <div class="kp"><span>Em aberto</span><b>${ab.length}</b></div>
@@ -1512,9 +1520,10 @@ function renderLocal(){
     </div>
     ${acts.length ? `<div class="etq-st"><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div><div class="sum-leg">${leg}</div></div>` : ''}
     <div class="etq-acts">
-      <button type="button" class="btn pri" data-loc-pdf${acts.length ? '' : ' disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Relatório do local (PDF)</button>
+      <button type="button" class="btn pri" data-loc-pdf${acts.length ? '' : ' disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>${m.tp === 'etq' ? 'Relatório da etiqueta' : 'Relatório do local'} (PDF)</button>
       <button type="button" class="btn" data-loc-zip${fotos ? '' : ' disabled'}>${ICON_DL}Baixar fotos (.zip)</button>
-      ${canWrite() ? `<button type="button" class="btn" data-loc-new><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova atividade aqui</button>` : ''}
+      ${m.tp === 'etq' ? `<button type="button" class="btn" id="etq-crono"><span class="exp-ic xls">XLS</span>Cronograma</button>` : ''}
+      ${canWrite() ? `<button type="button" class="btn" data-loc-new><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${m.tp === 'etq' ? 'Nova atividade com esta etiqueta' : 'Nova atividade aqui'}</button>` : ''}
     </div>
     <div class="seg loc-seg" role="group" aria-label="Visualização"><button type="button" data-loc-view="lista" aria-pressed="${S.locView !== 'cal'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Lista</button><button type="button" data-loc-view="cal" aria-pressed="${S.locView === 'cal'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3M7 14h5M9 17.5h7"/></svg>Calendário</button></div>
     ${carregando ? '<p class="ro loc-load">Buscando as atividades antigas deste local…</p>' : ''}
@@ -1558,7 +1567,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=38');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=39');
     await gerarGanttPDF(ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo));
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1577,7 +1586,7 @@ async function buscarPorAtividade(col, ids){
 function openLocalPdf(){
   const k = S.loc?.k; if (!k) return;
   const acts = atividadesDoLocal(k), m = metaLocal(k, acts), nEnc = acts.filter(a => !(a.aberta && STATUS[a.status]?.aberta)).length;
-  $('sheet').innerHTML = `<h2>Relatório do local</h2>
+  $('sheet').innerHTML = `<h2>${k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local'}</h2>
     <p class="ro" style="margin:-6px 0 14px">${esc(m.tipo)} <b>${esc(m.nome)}</b>: capa com resumo e lista, depois uma ficha por atividade com informações${' '}e, se marcado, fotos e histórico.</p>
     <form id="lpf" novalidate>
       <div class="f"><label class="chk"><input type="checkbox" id="lp-enc"${nEnc ? ' checked' : ' disabled'}> Incluir concluídas e canceladas <span class="ro">(${nEnc})</span></label></div>
@@ -1632,12 +1641,12 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=38');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=39');
   await gerarLocalPDF({
-    tipo: m.tipo, nome: m.nome, sub: m.sub,
+    tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
     kpis: [['Atividades', lista.length], ['Em aberto', lista.filter(a => a.aberta && STATUS[a.status]?.aberta).length], ['Vencidas', venc, venc ? [196,86,44] : null], ['Concluídas', lista.filter(a => a.status === 'concluida').length], ['Fotos', total]],
-    itens: lista.map(a => ({titulo: a.titulo || '', periodo: fmtPeriodo(a), status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), fornecedor: a.fornecedor || '—', fotos: (fotosPor[a.id] || []).length || Number(a.nFotos) || 0})),
+    itens: lista.map(a => ({titulo: k[0] === 'e' ? `${a.titulo || ''}\n${localLine(a)}` : (a.titulo || ''), periodo: fmtPeriodo(a), status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), fornecedor: a.fornecedor || '—', fotos: (fotosPor[a.id] || []).length || Number(a.nFotos) || 0})),
     fichas, gantts, comFotos: op.fotos, comHist: op.hist, logoUrl: 'logo-saeng.png', arquivo,
     emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário',
   });
@@ -1999,7 +2008,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=38');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=39');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2147,7 +2156,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=38');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=39');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2190,7 +2199,7 @@ document.addEventListener('click', e => {
   if (t.closest('[data-loc-pdf]')) return openLocalPdf();
   if (t.closest('[data-loc-zip]')) return baixarZipLocal();
   if (t.closest('[data-loc-enc]')){ S.locEnc = !S.locEnc; return renderLocal(); }
-  if (t.closest('[data-loc-new]')){ const k = S.loc.k, pre = k[0] === 's' ? {tipoLocal:'setor', setor:k.slice(2)} : k[0] === 'p' ? {tipoLocal:'pilar', pilar:k.slice(2)} : {tipoLocal:'shopping', local:k.slice(2)}; return openForm(null, {...pre, noite:defaultNight()}); }
+  if (t.closest('[data-loc-new]')){ const k = S.loc.k, pre = k[0] === 'e' ? {etiquetas:[metaLocal(k, atividadesDoLocal(k)).nome]} : k[0] === 's' ? {tipoLocal:'setor', setor:k.slice(2)} : k[0] === 'p' ? {tipoLocal:'pilar', pilar:k.slice(2)} : {tipoLocal:'shopping', local:k.slice(2)}; return openForm(null, {...pre, noite:defaultNight()}); }
   const gh = t.closest('[data-grp]'); if (gh) return toggleGrp(gh.dataset.grp);
   const etqEl = t.closest('[data-etq]'); if (etqEl) return openTag(etqEl.dataset.etq);
   if (t.closest('[data-etq-back]')){ S.etq = null; window.scrollTo({top:0}); return renderAll(); }

@@ -1240,3 +1240,8 @@ button.pd-c{cursor:pointer}
 .lgt-wrap{margin-top:10px}
 .lp-calp button{font-size:12.5px;min-height:34px}
 @media (max-width:760px){ .loc-seg{max-width:none} }
+
+/* v39: etiqueta na página de local */
+.loc-head .etq-ico.lg{width:52px;height:52px;border-radius:14px}
+.loc-head .loc-ht{flex:1;min-width:0}
+.loc-menu{margin-left:auto}

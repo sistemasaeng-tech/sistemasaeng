@@ -617,7 +617,7 @@ export async function gerarLocalPDF(ctx){
   const logo = await toDataURL(ctx.logoUrl).catch(() => null);
   const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait'});
   const {fill, color, font, text, wrap} = kit(doc), {W, M, TOP} = PG, CW = W - 2*M;
-  capa(doc, logo, 'Relatório do local', ctx.emitidoEm, ctx.emitidoPor);
+  capa(doc, logo, ctx.tituloCapa || 'Relatório do local', ctx.emitidoEm, ctx.emitidoPor);
   let y = 42;
   color(C.laranjaTx); font('bold', 8); text(ctx.tipo.toUpperCase(), M, y); y += 7;
   color(C.ink); font('bold', 20); for (const l of wrap(ctx.nome, CW)){ doc.text(l, M, y); y += 8; }
@@ -653,7 +653,7 @@ export async function gerarLocalPDF(ctx){
     else { doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(.4); doc.line(M, yf + 2, W - M, yf + 2); yf += 12; }
     yf = fichaAtividade(doc, f, {y: yf}, {rotulo:`Atividade ${i + 1} de ${ctx.fichas.length} · ${ctx.nome}`, fotos: ctx.comFotos, hist: ctx.comHist});
   });
-  cabecalhoRodape(doc, logo, ctx.nome, 'Relatório do local', ctx.emitidoEm, paisagem);
+  cabecalhoRodape(doc, logo, ctx.nome, ctx.tituloCapa || 'Relatório do local', ctx.emitidoEm, paisagem);
   if (paisagem.size) rodapeGantt(doc, {emitidoEm: ctx.emitidoEm, emitidoPor: ctx.emitidoPor}, paisagem);
   doc.save(ctx.arquivo);
 }
