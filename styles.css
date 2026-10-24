@@ -1245,3 +1245,9 @@ button.pd-c{cursor:pointer}
 .loc-head .etq-ico.lg{width:52px;height:52px;border-radius:14px}
 .loc-head .loc-ht{flex:1;min-width:0}
 .loc-menu{margin-left:auto}
+
+/* v40: opção do resumo por e-mail no menu do usuário */
+.menu-pop .m-chk{display:flex;align-items:center;gap:10px}
+.m-ck{width:18px;height:18px;border-radius:5px;border:2px solid var(--line-2);flex:none;display:grid;place-items:center}
+.m-chk[aria-pressed="true"] .m-ck{background:var(--brand);border-color:var(--brand)}
+.m-chk[aria-pressed="true"] .m-ck::after{content:"";width:5px;height:9px;border:solid var(--brand-ink);border-width:0 2.4px 2.4px 0;transform:rotate(45deg) translate(-1px,-1px)}

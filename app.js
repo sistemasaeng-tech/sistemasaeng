@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 39; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 40; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -506,13 +506,13 @@ function evText(ev){
     case 'excluiu': return 'excluiu a atividade';
     case 'foto': return `adicionou uma foto${ev.legenda ? `: “${esc(ev.legenda)}”` : ''}`;
     case 'foto_del': return `excluiu uma foto${ev.legenda ? ` (“${esc(ev.legenda)}”)` : ''}`;
-    case 'exportou': return `exportou ${EXP_LABEL[ev.formato] || 'um arquivo'}`;
+    case 'exportou': return ev.formato === 'resumo' ? 'enviou o resumo diário por e-mail' : `exportou ${EXP_LABEL[ev.formato] || 'um arquivo'}`;
     default: return esc(ev.tipo);
   }
 }
 const fmtVal = (campo, v) => campo === 'status' ? (STATUS[v]?.label || v || '') : (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
 function evExtra(ev){
-  if (ev.tipo === 'exportou') return `<div class="ch">${[ev.qtd ? `${ev.qtd} ${ev.qtd === 1 ? 'atividade' : 'atividades'}` : '', ev.periodo || '', ev.filtros ? 'filtros: ' + esc(ev.filtros) : 'sem filtros'].filter(Boolean).map(x => x.startsWith('filtros') || x === 'sem filtros' ? x : esc(x)).join(' · ')}${ev.arquivo ? `<br><span class="ro">${esc(ev.arquivo)}</span>` : ''}</div>`;
+  if (ev.tipo === 'exportou') return `<div class="ch">${[ev.qtd ? (ev.formato === 'resumo' ? `${ev.qtd} ${ev.qtd === 1 ? 'destinatário' : 'destinatários'}` : `${ev.qtd} ${ev.qtd === 1 ? 'atividade' : 'atividades'}`) : '', ev.periodo || '', ev.formato === 'resumo' ? '' : ev.filtros ? 'filtros: ' + esc(ev.filtros) : 'sem filtros'].filter(Boolean).map(x => x.startsWith('filtros') || x === 'sem filtros' ? x : esc(x)).join(' · ')}${ev.arquivo ? `<br><span class="ro">${esc(ev.arquivo)}</span>` : ''}</div>`;
   let h = '';
   if (ev.mudancas?.length) h += `<div class="ch">${ev.mudancas.map(m => `${esc(FIELDS[m.campo] || (m.campo === 'status' ? 'Status' : m.campo))}: ${esc(fmtVal(m.campo,m.de)||'—')} → ${esc(fmtVal(m.campo,m.para)||'—')}`).join('<br>')}</div>`;
   if (ev.motivo || ev.obs) h += `<div class="q">${ev.motivo ? `<b>${esc(ev.motivo)}</b>${ev.obs ? ' — ' : ''}` : ''}${esc(ev.obs||'')}</div>`;
@@ -690,7 +690,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=39');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=40');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF(ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`));
     toast('PDF do calendário gerado.');
@@ -1027,6 +1027,7 @@ function renderWho(){
   $('who-av').textContent = initials(n);
   $('who-name').innerHTML = `${esc(n)}${r ? ` <small>· ${esc(r)}</small>` : ''}`;
   $('who-email').textContent = `${S.email} · ${(PAPEIS[S.perfil?.papel] || '').toLowerCase()} · versão ${APP_VER}`;
+  { const on = S.perfil?.resumoEmail !== false, b = $('m-resumo'); b.setAttribute('aria-pressed', String(on)); b.hidden = !['usuario','admin','visualizador'].includes(S.perfil?.papel); }
   const ro = S.perfil?.papel === 'visualizador';
   $('banner').hidden = !ro;
   if (ro) $('banner').innerHTML = '<b>Acesso de visualização.</b> Você consulta as atividades, o histórico e pode exportar, mas não insere nem altera nada.';
@@ -1458,7 +1459,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=39');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=40');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1567,7 +1568,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=39');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=40');
     await gerarGanttPDF(ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo));
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1641,7 +1642,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=39');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=40');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2008,7 +2009,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=39');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=40');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2156,7 +2157,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=39');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=40');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2298,6 +2299,13 @@ $('exp-crono').onclick = () => { $('tools-pop').hidden = true; openCronograma();
 $('exp-pdf').onclick = () => { $('tools-pop').hidden = true; exportPdf(); };
 $('who').onclick = () => { const p = $('who-pop'); p.hidden = !p.hidden; $('who').setAttribute('aria-expanded', String(!p.hidden)); };
 $('m-perfil').onclick = () => { $('who-pop').hidden = true; openPerfil(); };
+// resumo diário por e-mail (enviado pelo script do Google às 18h): cada um liga ou desliga
+$('m-resumo').onclick = async () => {
+  const novo = S.perfil?.resumoEmail === false; $('who-pop').hidden = true;
+  try { await updateDoc(doc(db, 'usuarios', S.uid), {resumoEmail: novo}); S.perfil = {...S.perfil, resumoEmail: novo}; renderWho();
+    toast(novo ? 'Você vai receber o resumo diário por e-mail.' : 'Você não vai mais receber o resumo diário por e-mail.'); }
+  catch (e) { console.warn(e); toast(e?.code === 'permission-denied' ? 'O banco ainda não aceita essa opção: o administrador precisa publicar as regras novas.' : 'Não foi possível salvar. Tente de novo.'); }
+};
 $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
 $('dw-close').onclick = closeDrawer;
 $('scrim').onclick = () => { if (!$('modal').hidden) closeModal(); else closeDrawer(); };
