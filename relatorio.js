@@ -292,6 +292,25 @@ export async function gerarGanttPDF(ctx){
   const jsPDF = await loadLibs();
   const logo = await toDataURL(ctx.logoUrl).catch(() => null);
   const doc = new jsPDF({unit:'mm', format:'a4', orientation:'landscape'});
+  desenharGantt(doc, ctx, logo, true);
+  rodapeGantt(doc, ctx);
+  doc.save(ctx.arquivo);
+}
+// rodapé das páginas em paisagem (calendário)
+function rodapeGantt(doc, ctx, so = null){
+  const W = 297, H = 210, M = 10, N = doc.getNumberOfPages();
+  for (let i = 1; i <= N; i++){
+    if (so && !so.has(i)) continue;
+    doc.setPage(i);
+    doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(.2); doc.line(M, H - 8.5, W - M, H - 8.5);
+    doc.setTextColor(C.faint[0], C.faint[1], C.faint[2]); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8);
+    doc.text(t(`SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP · emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`), M, H - 4.8);
+    doc.text(t(`Página ${i} de ${N}`), W - M, H - 4.8, {align:'right'});
+  }
+}
+// desenha o calendário (uma ou mais páginas em paisagem); devolve os números das páginas usadas
+function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
+  const usadas = [];
   const W = 297, H = 210, M = 10;
   const fill = c => doc.setFillColor(c[0], c[1], c[2]);
   const stroke = c => doc.setDrawColor(c[0], c[1], c[2]);
@@ -329,7 +348,8 @@ export async function gerarGanttPDF(ctx){
   });
 
   pages.forEach((pg, pi) => {
-    if (pi) doc.addPage();
+    if (pi || !primeiraNaPaginaAtual) doc.addPage('a4', 'landscape');
+    usadas.push(doc.getNumberOfPages());
     // cabeçalho
     if (pi === 0){
       fill(C.graf); doc.rect(0, 0, W, 24, 'F'); fill(LAR); doc.rect(0, 24, W, 1.2, 'F');
@@ -437,16 +457,7 @@ export async function gerarGanttPDF(ctx){
     fill(LAR); doc.rect(lx + 2, ly - 2.6, .6, 3.4, 'F'); text('Hoje', lx + 4, ly); lx += 14;
     color(C.faint); text('Parte escura da barra = avanço executado.', lx, ly);
   });
-  // rodapé
-  const N = doc.getNumberOfPages();
-  for (let i = 1; i <= N; i++){
-    doc.setPage(i);
-    stroke(C.line); doc.setLineWidth(.2); doc.line(M, H - 8.5, W - M, H - 8.5);
-    color(C.faint); font('normal', 6.8);
-    text(`SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP · emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`, M, H - 4.8);
-    text(`Página ${i} de ${N}`, W - M, H - 4.8, {align:'right'});
-  }
-  doc.save(ctx.arquivo);
+  return usadas;
 }
 
 // ======================================================================
@@ -468,7 +479,7 @@ function kit(doc){
 function fichaAtividade(doc, ctx, st, opt = {}){
   const {fill, stroke, color, font, text, wrap} = kit(doc), {W, M, TOP, BOT} = PG, CW = W - 2*M;
   let y = st.y;
-  const novaPagina = () => { doc.addPage(); y = TOP + 6; };
+  const novaPagina = () => { doc.addPage('a4', 'portrait'); y = TOP + 6; };
   const garante = h => { if (y + h > BOT) novaPagina(); };
   const secao = (titulo, extra) => {
     garante(14); y += 3;
@@ -564,10 +575,11 @@ function fichaAtividade(doc, ctx, st, opt = {}){
   }
   return y;
 }
-function cabecalhoRodape(doc, logo, tituloPg1, linhaPgN, emitidoEm){
+function cabecalhoRodape(doc, logo, tituloPg1, linhaPgN, emitidoEm, pular = new Set()){
   const {fill, stroke, color, font, text, wrap} = kit(doc), {W, H, M} = PG;
   const N = doc.getNumberOfPages();
   for (let i = 1; i <= N; i++){
+    if (pular.has(i)) continue;
     doc.setPage(i);
     if (i > 1){
       fill(C.graf); doc.rect(0, 0, W, 14, 'F'); fill(C.laranja); doc.rect(0, 14, W, .9, 'F');
@@ -631,13 +643,17 @@ export async function gerarLocalPDF(ctx){
     didParseCell: d => { if (d.section === 'body' && d.column.index === 3){ const c = STC[ctx.itens[d.row.index].status]; if (c) d.cell.styles.textColor = c; } },
   });
   // fichas
+  // calendário (paisagem), um bloco por período
+  const paisagem = new Set();
+  for (const g of (ctx.gantts || [])) for (const pg of desenharGantt(doc, {...g, emitidoEm: ctx.emitidoEm, emitidoPor: ctx.emitidoPor}, logo, false)) paisagem.add(pg);
   // fichas: a primeira começa numa página nova; as seguintes continuam na mesma página se couber o começo da ficha
   let yf = null;
   ctx.fichas.forEach((f, i) => {
-    if (yf === null || yf > PG.BOT - 95){ doc.addPage(); yf = TOP + 8; }
+    if (yf === null || yf > PG.BOT - 95){ doc.addPage('a4', 'portrait'); yf = TOP + 8; }
     else { doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(.4); doc.line(M, yf + 2, W - M, yf + 2); yf += 12; }
     yf = fichaAtividade(doc, f, {y: yf}, {rotulo:`Atividade ${i + 1} de ${ctx.fichas.length} · ${ctx.nome}`, fotos: ctx.comFotos, hist: ctx.comHist});
   });
-  cabecalhoRodape(doc, logo, ctx.nome, 'Relatório do local', ctx.emitidoEm);
+  cabecalhoRodape(doc, logo, ctx.nome, 'Relatório do local', ctx.emitidoEm, paisagem);
+  if (paisagem.size) rodapeGantt(doc, {emitidoEm: ctx.emitidoEm, emitidoPor: ctx.emitidoPor}, paisagem);
   doc.save(ctx.arquivo);
 }

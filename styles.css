@@ -1227,3 +1227,16 @@ button.pd-c{cursor:pointer}
 .loc-load{margin:10px 0 0}
 .etq-acts .btn svg{width:16px;height:16px}
 @media (max-width:760px){ .grp-open span{display:none} .grp-open{width:30px;padding:0;justify-content:center} .loc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} .loc-ht h1{font-size:22px} }
+
+/* v37: calendário da página do local */
+.loc-seg{margin:18px 0 6px;max-width:340px}
+.loc-seg button{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.loc-seg svg{width:16px;height:16px}
+.lgt-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 10px}
+.lgt-per{display:flex;flex-direction:column;flex:1;min-width:0}
+.lgt-per b{font-size:17px}
+.lgt-per span{font-size:13px;color:var(--muted)}
+.lgt-top .nav{display:flex;align-items:center;gap:6px}
+.lgt-wrap{margin-top:10px}
+.lp-calp button{font-size:12.5px;min-height:34px}
+@media (max-width:760px){ .loc-seg{max-width:none} }

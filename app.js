@@ -642,23 +642,22 @@ function pdConvert(id, d){
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const DOW3 = ['dom','seg','ter','qua','qui','sex','sáb'];
 const mondayOf = s => { const d = parseYmd(s); return addDays(s, -((d.getDay() + 6) % 7)); };
-function gtRange(){
-  const g = S.gt;
+function gtRange(g = S.gt){
   if (g.zoom === 'mes'){ const d = parseYmd(g.ref); const ini = ymd(new Date(d.getFullYear(), d.getMonth(), 1)); return {ini, n: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()}; }
   return {ini: mondayOf(g.ref), n: g.zoom === 'sem' ? 7 : 14};
 }
-function gtShift(dir){
-  const g = S.gt;
+function gtShift(dir, g = S.gt){
   if (g.zoom === 'mes'){ const d = parseYmd(g.ref); g.ref = ymd(new Date(d.getFullYear(), d.getMonth() + dir, 1)); }
   else g.ref = addDays(g.ref, dir * (g.zoom === 'sem' ? 7 : 14));
   g.jump = true; renderAll();
 }
 function gtSave(){ try { localStorage.setItem('pn-gt', JSON.stringify({zoom:S.gt.zoom, grp:S.gt.grp, conc:S.gt.conc})); } catch {} }
 // dados do calendário exatamente como estão na tela (período, turno, agrupamento, concluídas e filtros)
-function gtData(){
-  const g = S.gt, {ini, n} = gtRange(), fim = addDays(ini, n - 1), hoje = defaultNight(), ft = S.f.turno;
+// fonte: lista própria (calendário da página do local, sem os filtros da tela Atividades)
+function gtData(g = S.gt, fonte = null){
+  const {ini, n} = gtRange(g), fim = addDays(ini, n - 1), hoje = defaultNight(), ft = fonte ? (g.turno || '') : S.f.turno;
   // atividades no período (e as em aberto atrasadas, cuja barra de atraso passa pelo período)
-  const acts = [...all().values()].filter(a => a.status !== 'cancelada' && (g.conc || a.status !== 'concluida') && (!ft || turnoOf(a) === ft) && matches(a)
+  const acts = (fonte || [...all().values()]).filter(a => a.status !== 'cancelada' && (g.conc || a.status !== 'concluida') && (!ft || turnoOf(a) === ft) && (fonte || matches(a))
     && a.noite <= fim && (fimOf(a) >= ini || (a.aberta && hoje >= ini)));
   const m1 = parseYmd(ini), m2 = parseYmd(fim);
   const mesLbl = m1.getMonth() === m2.getMonth() ? `${MESES[m1.getMonth()]} ${m1.getFullYear()}` : `${MESES[m1.getMonth()]}–${MESES[m2.getMonth()]} ${m2.getFullYear()}`;
@@ -674,6 +673,15 @@ function gtData(){
   for (const gr of G) gr.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
   return {ini, n, fim, hoje, ft, acts, G, mesLbl};
 }
+const ZLBL = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
+function ganttCtx(D, g, titulo, filtros, arquivo){
+  const now = new Date();
+  return {...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
+    turnoDe: a => turnoOf(a), nomeDe: id => id ? shortName(nameOf(id)) : '', tagCor, lojaDe: a => a.tipoLocal === 'pilar' && g.grp !== 'etq' ? pilarLojaOf(a) : '',
+    titulo, sub: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${ZLBL[g.zoom]} · por ${g.grp === 'etq' ? 'etiqueta' : 'local'} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}${g.conc ? '' : ' · sem concluídas'}`,
+    filtros, emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    emitidoPor: S.perfil?.nome || 'Usuário', logoUrl: 'logo-saeng.png', arquivo};
+}
 let gerandoGt = false;
 async function exportGanttPdf(){
   if (gerandoGt) return;
@@ -681,18 +689,9 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=36');
-    const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
-    await gerarGanttPDF({
-      ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
-      turnoDe: a => turnoOf(a), nomeDe: id => id ? shortName(nameOf(id)) : '', tagCor, lojaDe: a => a.tipoLocal === 'pilar' && S.gt.grp !== 'etq' ? pilarLojaOf(a) : '',
-      titulo: 'Calendário de atividades',
-      sub: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom]} · por ${S.gt.grp === 'etq' ? 'etiqueta' : 'setor'} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}${S.gt.conc ? '' : ' · sem concluídas'}`,
-      filtros: filtrosTxt(),
-      emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`,
-      emitidoPor: S.perfil?.nome || 'Usuário', logoUrl: 'logo-saeng.png',
-      arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`,
-    });
+    const { gerarGanttPDF } = await import('./relatorio.js?v=37');
+    const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
+    await gerarGanttPDF(ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`));
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, qtd: D.acts.length, periodo: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom].toLowerCase()} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
   } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
@@ -713,7 +712,18 @@ function renderGantt(){
   $('gt-sub').textContent = `${fmtShort(ini)} a ${fmtShort(fim)}/${fim.slice(0, 4)} · ${acts.length} ${acts.length === 1 ? 'atividade' : 'atividades'}`;
   const wrap = $('gt-wrap');
   if (!acts.length){ wrap.innerHTML = `<div class="empty gt-empty"><b>Nenhuma atividade de ${fmtShort(ini)} a ${fmtShort(fim)}</b>Use as setas para ver outro período${nf ? ' ou limpe os filtros' : ''}.</div>`; $('gt-leg').innerHTML = ''; return; }
-  const G = D.G;
+  const r = ganttHTML(D, g, wrap, {dias:true});
+  const sl = wrap.scrollLeft, st = wrap.scrollTop;
+  wrap.innerHTML = r.html;
+  if (g.jump){ g.jump = false; wrap.scrollTop = 0; wrap.scrollLeft = r.ti >= 0 && r.ti < n ? Math.max(0, r.ti * r.cw - r.avail / 3) : 0; }
+  else { wrap.scrollLeft = sl; wrap.scrollTop = st; }
+  $('gt-leg').innerHTML = ganttLegenda('Toque numa atividade para abrir, ou num dia para ver só as atividades dele.');
+}
+const ganttLegenda = dica => ['programada','andamento','parcial','nao_iniciada','impedida','concluida'].map(k => `<span><i class="sw" style="--c:${cvar(k)}"></i>${esc(STATUS[k].label)}</span>`).join('')
+  + `<span><i class="sw tail"></i>Atraso</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">A parte mais forte da barra é o avanço. ${dica}</span>`;
+// monta o gráfico (usado no calendário principal e no da página do local)
+function ganttHTML(D, g, wrap, opt = {}){
+  const {ini, n, hoje} = D, G = D.G, mesLbl = D.mesLbl;
   // medidas
   const mob = innerWidth <= 760, lw = mob ? 138 : 300;
   const avail = Math.max(200, (wrap.clientWidth || innerWidth - 32) - lw - 2);
@@ -721,7 +731,7 @@ function renderGantt(){
   const days = Array.from({length:n}, (_, i) => addDays(ini, i)), di = s => nightsBetween(ini, s), ti = di(hoje);
   const we = d => { const x = parseYmd(d).getDay(); return x === 0 || x === 6; };
   let h = `<div class="gt" style="--lw:${lw}px;--cw:${cw}px;width:${lw + n * cw}px">`;
-  h += `<div class="gt-h"><div class="gt-corner">${mesLbl}</div>${days.map(d => { const dt = parseYmd(d); return `<div class="gt-d${we(d) ? ' we' : ''}${d === hoje ? ' today' : ''}${dt.getDate() === 1 && d !== ini ? ' m1' : ''}" data-dia="${d}" role="button" tabindex="0" title="Ver as atividades de ${fmtShort(d)}">${dt.getDate() === 1 && d !== ini ? `<em>${MESES[dt.getMonth()]}</em>` : ''}<span>${DOW3[dt.getDay()]}</span><b>${dt.getDate()}</b></div>`; }).join('')}</div>`;
+  h += `<div class="gt-h"><div class="gt-corner">${mesLbl}</div>${days.map(d => { const dt = parseYmd(d); return `<div class="gt-d${we(d) ? ' we' : ''}${d === hoje ? ' today' : ''}${dt.getDate() === 1 && d !== ini ? ' m1' : ''}" data-dia="${d}" role="button" tabindex="0" ${opt.dias ? '' : 'data-sem-dia '}title="Ver as atividades de ${fmtShort(d)}">${dt.getDate() === 1 && d !== ini ? `<em>${MESES[dt.getMonth()]}</em>` : ''}<span>${DOW3[dt.getDay()]}</span><b>${dt.getDate()}</b></div>`; }).join('')}</div>`;
   h += `<div class="gt-b"><div class="gt-cols">${days.map((d, i) => we(d) ? `<i style="left:${i * cw}px;width:${cw}px"></i>` : '').join('')}</div>`;
   if (ti >= 0 && ti < n) h += `<div class="gt-now" style="left:calc(var(--lw) + ${(ti + .5) * cw}px)"></div>`;
   const span = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => Math.max(di(fimOf(a)), a.aberta && fimOf(a) < hoje ? ti : -1))))];
@@ -759,12 +769,7 @@ function renderGantt(){
     }
   }
   h += '</div></div>';
-  const sl = wrap.scrollLeft, st = wrap.scrollTop;
-  wrap.innerHTML = h;
-  if (g.jump){ g.jump = false; wrap.scrollTop = 0; wrap.scrollLeft = ti >= 0 && ti < n ? Math.max(0, ti * cw - avail / 3) : 0; }
-  else { wrap.scrollLeft = sl; wrap.scrollTop = st; }
-  $('gt-leg').innerHTML = ['programada','andamento','parcial','nao_iniciada','impedida','concluida'].map(k => `<span><i class="sw" style="--c:${cvar(k)}"></i>${esc(STATUS[k].label)}</span>`).join('')
-    + '<span><i class="sw tail"></i>Atraso</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">A parte mais forte da barra é o avanço. Toque numa atividade para abrir, ou num dia para ver só as atividades dele.</span>';
+  return {html: h, ti, cw, avail};
 }
 
 /* ================= etiquetas ================= */
@@ -1451,7 +1456,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=36');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=37');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1477,7 +1482,8 @@ function metaLocal(k, acts){
 }
 function openLocal(k){
   if (S.openId) closeDrawer();
-  S.loc = {k}; S.locEnc = false;
+  S.loc = {k}; S.locEnc = false; S.locView = 'lista';
+  S.lgt = {zoom: S.gt.zoom === 'sem' ? 'qui' : S.gt.zoom, ref: defaultNight(), conc: true, grp: 'local', turno: '', jump: true, auto: true};
   for (const v of ['v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
   $('v-local').hidden = false; window.scrollTo({top:0});
   renderLocal();
@@ -1509,11 +1515,54 @@ function renderLocal(){
       <button type="button" class="btn" data-loc-zip${fotos ? '' : ' disabled'}>${ICON_DL}Baixar fotos (.zip)</button>
       ${canWrite() ? `<button type="button" class="btn" data-loc-new><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova atividade aqui</button>` : ''}
     </div>
+    <div class="seg loc-seg" role="group" aria-label="Visualização"><button type="button" data-loc-view="lista" aria-pressed="${S.locView !== 'cal'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Lista</button><button type="button" data-loc-view="cal" aria-pressed="${S.locView === 'cal'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3M7 14h5M9 17.5h7"/></svg>Calendário</button></div>
     ${carregando ? '<p class="ro loc-load">Buscando as atividades antigas deste local…</p>' : ''}
+    ${S.locView === 'cal' ? '<div id="lgt"></div>' : `
     ${ab.length ? `<div class="sec"><div class="sec-h"><h2>Em aberto</h2><span>${ab.length}</span></div><div class="cards">${ab.map(a => card(a, fimOf(a) < hoje, hoje, true)).join('')}</div></div>` : ''}
     ${enc.length ? `<div class="sec"><div class="sec-h"><h2>Concluídas e canceladas</h2><span>${enc.length}</span>${ab.length ? `<button type="button" class="link-btn" data-loc-enc>${encOpen ? 'Ocultar' : 'Mostrar'}</button>` : ''}</div>${encOpen ? `<div class="cards">${enc.map(a => card(a, false, hoje, true)).join('')}</div>` : ''}</div>` : ''}
-    ${!acts.length && !carregando ? '<div class="empty">Nenhuma atividade neste local.</div>' : ''}
+    ${!acts.length && !carregando ? '<div class="empty">Nenhuma atividade neste local.</div>' : ''}`}
   </div>`;
+  if (S.locView === 'cal') renderLocalCal(acts, m);
+}
+// calendário da página do local: mesmas funções do calendário principal, só com as atividades deste local
+function renderLocalCal(acts, m){
+  const g = S.lgt, el = $('lgt'); if (!el) return;
+  // ao abrir, se o período atual não tem nada, vai para o período das atividades em aberto (ou das mais recentes)
+  if (g.auto){ g.auto = false; const D0 = gtData(g, acts); if (!D0.acts.length && acts.length){ const ab = acts.filter(a => a.aberta); g.ref = (ab.length ? ab : acts).reduce((v, a) => ab.length ? (a.noite < v ? a.noite : v) : (a.noite > v ? a.noite : v), ab.length ? '9999' : '0000'); } }
+  const D = gtData(g, acts), {ini, n, fim, hoje} = D;
+  el.innerHTML = `<div class="lgt-top">
+      <div class="lgt-per"><b>${fmtShort(ini)} a ${fmtShort(fim)}/${fim.slice(0, 4)}</b><span>${D.acts.length} ${D.acts.length === 1 ? 'atividade' : 'atividades'}</span></div>
+      <div class="nav"><button class="ibtn" type="button" data-lgt-nav="-1" aria-label="Período anterior">‹</button><button class="gt-hoje" type="button" data-lgt-hoje${hoje >= ini && hoje <= fim ? ' disabled' : ''}>Hoje</button><button class="ibtn" type="button" data-lgt-nav="1" aria-label="Próximo período">›</button>
+      <button class="gt-pdf" type="button" data-lgt-pdf title="Exportar este calendário em PDF" aria-label="Exportar este calendário em PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>PDF</span></button></div>
+    </div>
+    <div class="gt-ctl">
+      <div class="seg gt-seg" role="group" aria-label="Período">${[['sem','Semana'],['qui','Quinzena'],['mes','Mês']].map(([k, l]) => `<button type="button" data-lgt-z="${k}" aria-pressed="${g.zoom === k}">${l}</button>`).join('')}</div>
+      <div class="seg gt-seg" role="group" aria-label="Agrupar por">${[['local','Local'],['etq','Etiqueta']].map(([k, l]) => `<button type="button" data-lgt-g="${k}" aria-pressed="${g.grp === k}">${l}</button>`).join('')}</div>
+      <div class="seg gt-seg gt-tseg" role="group" aria-label="Turno">${[['','Todos'],['diurno',ICON_SOL],['noturno',ICON_LUA]].map(([k, l]) => `<button type="button" data-lgt-t="${k}" aria-pressed="${(g.turno || '') === k}"${k ? ` aria-label="${TURNOS[k]}" title="${TURNOS[k]}"` : ''}>${l}</button>`).join('')}</div>
+      <label class="gt-chk"><input type="checkbox" data-lgt-conc${g.conc ? ' checked' : ''}><span>Concluídas</span></label>
+    </div>
+    <div class="gt-wrap lgt-wrap" id="lgt-wrap"></div>
+    <div class="gt-leg" id="lgt-leg"></div>`;
+  const wrap = $('lgt-wrap');
+  if (!D.acts.length){ wrap.innerHTML = `<div class="empty gt-empty"><b>Nenhuma atividade de ${fmtShort(ini)} a ${fmtShort(fim)}</b>Use as setas para ver outro período.</div>`; return; }
+  const r = ganttHTML(D, g, wrap, {dias:false});
+  wrap.innerHTML = r.html;
+  if (g.jump){ g.jump = false; wrap.scrollLeft = r.ti >= 0 && r.ti < n ? Math.max(0, r.ti * r.cw - r.avail / 3) : 0; }
+  $('lgt-leg').innerHTML = ganttLegenda('Toque numa atividade para abrir.');
+}
+async function exportLocalCalPdf(){
+  if (gerandoGt || !S.loc) return;
+  const acts = atividadesDoLocal(S.loc.k), m = metaLocal(S.loc.k, acts), D = gtData(S.lgt, acts);
+  if (!D.acts.length) return toast('Nenhuma atividade no calendário deste período.');
+  gerandoGt = true; toast('Gerando o PDF do calendário…');
+  try {
+    const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
+    const { gerarGanttPDF } = await import('./relatorio.js?v=37');
+    await gerarGanttPDF(ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo));
+    toast('PDF do calendário gerado.');
+    logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
+  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  finally { gerandoGt = false; }
 }
 // dados de várias atividades de uma vez (consultas "in" de 30 em 30)
 async function buscarPorAtividade(col, ids){
@@ -1533,16 +1582,21 @@ function openLocalPdf(){
       <div class="f"><label class="chk"><input type="checkbox" id="lp-enc"${nEnc ? ' checked' : ' disabled'}> Incluir concluídas e canceladas <span class="ro">(${nEnc})</span></label></div>
       <div class="f"><label class="chk"><input type="checkbox" id="lp-fotos" checked> Incluir as fotos</label></div>
       <div class="f"><label class="chk"><input type="checkbox" id="lp-hist" checked> Incluir o histórico de cada atividade</label></div>
+      <div class="f"><label class="chk"><input type="checkbox" id="lp-cal" checked> Incluir o calendário</label>
+        <div class="seg lp-calp" id="lp-calp" style="margin-top:8px">${[['tudo','Todo o período (mês a mês)'],['tela',`Período do calendário (${ZLBL[S.lgt.zoom].toLowerCase()} ${fmtShort(gtRange(S.lgt).ini)})`]].map(([k, l], i) => `<button type="button" data-p="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div></div>
       <div class="cf-prev" id="lp-prev"></div>
       <div class="acts"><button type="button" class="btn ghost" id="lp-cancel">Cancelar</button><button class="btn pri" type="submit">Gerar PDF</button></div>
     </form>`;
   const upd = () => { const n = acts.filter(a => $('lp-enc').checked || (a.aberta && STATUS[a.status]?.aberta)).length; $('lp-prev').textContent = `${n} ${n === 1 ? 'atividade entra' : 'atividades entram'} no relatório.`; };
+  let calp = 'tudo';
+  $('lp-calp').onclick = e => { const b = e.target.closest('button[data-p]'); if (!b) return; calp = b.dataset.p; for (const x of $('lp-calp').children) x.setAttribute('aria-pressed', String(x === b)); };
+  $('lp-cal').onchange = () => { $('lp-calp').hidden = !$('lp-cal').checked; };
   $('lp-enc').onchange = upd; upd();
   $('lp-cancel').onclick = closeModal;
   $('lpf').onsubmit = async e => {
     e.preventDefault();
     const bt = $('lpf').querySelector('button[type=submit]'); bt.disabled = true; bt.textContent = 'Gerando…';
-    try { await gerarPdfLocal(k, {enc: $('lp-enc').checked, fotos: $('lp-fotos').checked, hist: $('lp-hist').checked}, msg => { $('lp-prev').textContent = msg; }); closeModal(); }
+    try { await gerarPdfLocal(k, {enc: $('lp-enc').checked, fotos: $('lp-fotos').checked, hist: $('lp-hist').checked, cal: $('lp-cal').checked ? calp : ''}, msg => { $('lp-prev').textContent = msg; }); closeModal(); }
     catch (err) { console.warn(err); bt.disabled = false; bt.textContent = 'Gerar PDF'; $('lp-prev').textContent = navigator.onLine ? 'Não foi possível gerar. Tente de novo.' : 'Sem internet: é preciso estar online para buscar fotos e histórico.'; }
   };
   showModal();
@@ -1564,14 +1618,26 @@ async function gerarPdfLocal(k, op, prog){
   }
   const venc = lista.filter(a => a.aberta && STATUS[a.status]?.aberta && fimOf(a) < hoje).length;
   const now = new Date(), arquivo = `Relatorio_${slugArq(m.nome, 50) || 'local'}_${hoje}.pdf`;
+  // calendário: o período em tela, ou todo o período das atividades, mês a mês (até 12 meses, os mais recentes)
+  const gantts = [];
+  if (op.cal){
+    const titulo = `Calendário · ${m.nome}`;
+    if (op.cal === 'tela'){ const g = {...S.lgt, conc: op.enc ? S.lgt.conc : false}, D = gtData(g, lista); if (D.acts.length) gantts.push(ganttCtx(D, g, titulo, '', '')); }
+    else {
+      const ini = lista.reduce((v, a) => a.noite < v ? a.noite : v, '9999'), fimT = lista.reduce((v, a) => { const f = a.aberta && fimOf(a) < hoje ? hoje : fimOf(a); return f > v ? f : v; }, '0000');
+      const meses = []; let d = parseYmd(ini); d = new Date(d.getFullYear(), d.getMonth(), 1); const fimD = parseYmd(fimT);
+      while (d <= fimD){ meses.push(ymd(d)); d = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
+      for (const ref of meses.slice(-12)){ const g = {zoom:'mes', ref, conc: op.enc, grp:'local', turno:''}, D = gtData(g, lista); if (D.acts.length) gantts.push(ganttCtx(D, g, titulo, '', '')); }
+    }
+  }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=36');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=37');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub,
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
     kpis: [['Atividades', lista.length], ['Em aberto', lista.filter(a => a.aberta && STATUS[a.status]?.aberta).length], ['Vencidas', venc, venc ? [196,86,44] : null], ['Concluídas', lista.filter(a => a.status === 'concluida').length], ['Fotos', total]],
     itens: lista.map(a => ({titulo: a.titulo || '', periodo: fmtPeriodo(a), status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), fornecedor: a.fornecedor || '—', fotos: (fotosPor[a.id] || []).length || Number(a.nFotos) || 0})),
-    fichas, comFotos: op.fotos, comHist: op.hist, logoUrl: 'logo-saeng.png', arquivo,
+    fichas, gantts, comFotos: op.fotos, comHist: op.hist, logoUrl: 'logo-saeng.png', arquivo,
     emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário',
   });
   toast('Relatório do local gerado.');
@@ -1932,7 +1998,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=36');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=37');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2080,7 +2146,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=36');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=37');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2113,6 +2179,13 @@ document.addEventListener('click', e => {
   if (!t.closest('.ms')) msClose();
   { const lo = t.closest('[data-loc]'); if (lo) return openLocal(lo.dataset.loc); }
   if (t.closest('[data-loc-back]')) return closeLocal();
+  { const x = t.closest('[data-loc-view]'); if (x){ S.locView = x.dataset.locView; if (S.locView === 'cal') S.lgt.jump = true; return renderLocal(); } }
+  { const x = t.closest('[data-lgt-nav]'); if (x){ gtShift(Number(x.dataset.lgtNav), S.lgt); return; } }
+  if (t.closest('[data-lgt-hoje]')){ S.lgt.ref = defaultNight(); S.lgt.jump = true; return renderLocal(); }
+  { const x = t.closest('[data-lgt-z]'); if (x){ S.lgt.zoom = x.dataset.lgtZ; S.lgt.jump = true; return renderLocal(); } }
+  { const x = t.closest('[data-lgt-g]'); if (x){ S.lgt.grp = x.dataset.lgtG; return renderLocal(); } }
+  { const x = t.closest('[data-lgt-t]'); if (x){ S.lgt.turno = x.dataset.lgtT; return renderLocal(); } }
+  if (t.closest('[data-lgt-pdf]')) return exportLocalCalPdf();
   if (t.closest('[data-loc-pdf]')) return openLocalPdf();
   if (t.closest('[data-loc-zip]')) return baixarZipLocal();
   if (t.closest('[data-loc-enc]')){ S.locEnc = !S.locEnc; return renderLocal(); }
@@ -2131,7 +2204,7 @@ document.addEventListener('click', e => {
   if (t.closest('[data-fx-send]')) return fxEnviar();
   if (t.closest('[data-fx-zip]')) return baixarZipFotos();
   if (t.closest('#dw-pdf')) return exportAtividadePdf();
-  { const dd = t.closest('.gt-d[data-dia]'); if (dd){ setNight(dd.dataset.dia); return setTab('noite'); } }
+  { const dd = t.closest('.gt-d[data-dia]:not([data-sem-dia])'); if (dd){ setNight(dd.dataset.dia); return setTab('noite'); } }
   { const mb = t.closest('[data-more]'); if (mb){ const pop = $(mb.dataset.more), abrir = pop.hidden; closeMore(); pop.hidden = !abrir; mb.setAttribute('aria-expanded', String(abrir)); return; } }
   { const go = t.closest('[data-go]'); if (go){ closeMore(); return setTab(go.dataset.go); } }
   const tab = t.closest('.tab[data-tab]'); if (tab) return setTab(tab.dataset.tab);
@@ -2188,7 +2261,7 @@ $('gt-turno').onclick = e => { const b = e.target.closest('button'); if (!b) ret
 $('gt-conc').onchange = e => { S.gt.conc = e.target.checked; gtSave(); renderAll(); };
 $('gt-filt').onclick = e => { if (e.target.closest('#gt-fclear')) $('f-clear').click(); };
 $('gt-wrap').addEventListener('keydown', e => { const r = e.target.closest('.gt-r[data-id]'); if (r && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openDrawer(r.dataset.id); } });
-{ let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (S.tab === 'gantt') renderGantt(); }, 150); }); }
+{ let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (S.loc && S.locView === 'cal') renderLocal(); else if (S.tab === 'gantt') renderGantt(); }, 150); }); }
 $('etq-q').oninput = () => renderAll();
 document.addEventListener('change', e => {
   const cs = e.target.closest('[data-cad-setor]');
@@ -2222,7 +2295,7 @@ document.addEventListener('keydown', e => { if (e.target.closest && e.target.clo
 document.addEventListener('keydown', e => { const x = e.target.closest && e.target.closest('[data-pd-open]'); if (x && (e.key === 'Enter' || e.key === ' ') && e.target === x){ e.preventDefault(); openPendForm(x.dataset.pdOpen); } });
 $('pd-new').onclick = () => openPendForm(null);
 $('pd-q').oninput = () => renderPend();
-document.addEventListener('change', e => { if (e.target.matches('[data-fx-in]')){ fxEscolher(e.target.files); e.target.value = ''; } });
+document.addEventListener('change', e => { if (e.target.matches('[data-lgt-conc]')){ S.lgt.conc = e.target.checked; return renderLocal(); } if (e.target.matches('[data-fx-in]')){ fxEscolher(e.target.files); e.target.value = ''; } });
 document.addEventListener('input', e => { if (e.target.id === 'fx-leg' && S.fxUp) S.fxUp.legenda = e.target.value; });
 $('lb-x').onclick = lbFechar; $('lb-prev').onclick = () => lbAbrir(lbI - 1); $('lb-next').onclick = () => lbAbrir(lbI + 1); $('lb-del').onclick = fotoExcluir;
 $('lb').addEventListener('click', e => { if (e.target.id === 'lb' || e.target.classList.contains('lb-fig')) lbFechar(); });
