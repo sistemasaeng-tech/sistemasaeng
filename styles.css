@@ -1210,3 +1210,6 @@ button.pd-c{cursor:pointer}
   .lb-fig figcaption{padding:0 16px}
   .lb-nav{display:none}
 }
+.fx-zip{gap:6px}
+.fx-zip svg{width:16px;height:16px}
+@media (max-width:760px){ .fx-zip span{display:none} .fx-zip{width:36px;padding:0;justify-content:center} }

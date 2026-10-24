@@ -681,7 +681,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=34');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=35');
     const now = new Date(), Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF({
       ...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -1239,6 +1239,7 @@ function renderTimeline(){
 // carregada só ao abrir em tela cheia ou no PDF). O envio entra no histórico da atividade.
 S.dwFotos = null; S.fxUp = null; S.imgCache = new Map();
 const ICON_CAM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
+const ICON_DL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>';
 const podeApagarFoto = f => isAdmin() || (canWrite() && f.u === S.uid);
 async function lerImagem(file){
   try { return await createImageBitmap(file, {imageOrientation:'from-image'}); }
@@ -1257,17 +1258,40 @@ function paraJpeg(src, max, q, maxLen){
   }
   return {url, w, h};
 }
-async function prepararFoto(file){
+// Foto grande vai para o Firebase Storage, reduzida para 1920 px (~400–700 KB) para caber mais na cota. Sem sinal ou com o Storage indisponível,
+// cai no método anterior (imagem de 1600 px no Firestore), que fica na fila do aparelho e sobe depois.
+let _st = null;
+async function stor(){ if (!_st){ const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js'); _st = {m, s: m.getStorage(app)}; } return _st; }
+function paraBlob(src, max, q){
+  const k = Math.min(1, max / Math.max(src.width, src.height)), w = Math.max(1, Math.round(src.width * k)), h = Math.max(1, Math.round(src.height * k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); cx.drawImage(src, 0, 0, w, h);
+  return new Promise((ok, fail) => cv.toBlob(b => b ? ok({blob:b, w, h}) : fail(new Error('falha ao converter')), 'image/jpeg', q));
+}
+const comPrazo = (p, ms) => Promise.race([p, new Promise((_, f) => setTimeout(() => f(new Error('tempo esgotado')), ms))]);
+async function prepararFoto(file, atividadeId, fotoId){
   const src = await lerImagem(file);
-  const full = paraJpeg(src, 1600, .8, 880000), thumb = paraJpeg(src, 480, .72, 70000);
-  if (src.close) src.close();
-  return {img: full.url, thumb: thumb.url, w: full.w, h: full.h};
+  try {
+    const thumb = paraJpeg(src, 480, .72, 70000);
+    if (navigator.onLine && !S.stOff){
+      try {
+        const big = await paraBlob(src, 1920, .8);
+        const {m, s} = await stor(), path = `fotos/${atividadeId}/${fotoId}.jpg`, r = m.ref(s, path);
+        await comPrazo(m.uploadBytes(r, big.blob, {contentType:'image/jpeg', customMetadata:{u:S.uid, atividadeId}}), 90000);
+        const url = await m.getDownloadURL(r);
+        return {thumb: thumb.url, w: big.w, h: big.h, path, url};
+      } catch (e) { console.warn('Storage indisponível, usando o banco', e); if (/unauthorized|forbidden|402|403|not-found|unknown|bucket/i.test(String(e?.code || e?.message))) S.stOff = true; S.stAviso = true; }
+    }
+    const full = paraJpeg(src, 1600, .8, 880000);
+    return {img: full.url, thumb: thumb.url, w: full.w, h: full.h};
+  } finally { if (src.close) src.close(); }
 }
 function renderFotos(){
   const el = $('dw-fotos'); if (!el) return;
   const a = all().get(S.openId), w = canWrite(), fs = S.dwFotos;
   const addBtn = (cls = '') => w ? `<label class="btn sm fx-add${cls}">${ICON_CAM}<span>Adicionar fotos</span><input type="file" accept="image/*" multiple hidden data-fx-in></label>` : '';
-  let h = `<div class="fx-h"><div class="lbl">Fotos${fs && fs.length ? ` <em>${fs.length}</em>` : ''}</div>${fs && fs.length ? addBtn() : ''}</div>`;
+  const zipBtn = fs && fs.length ? `<button type="button" class="btn sm ghost fx-zip" data-fx-zip title="Baixar todas as fotos desta atividade numa pasta .zip">${ICON_DL}<span>Baixar todas</span></button>` : '';
+  let h = `<div class="fx-h"><div class="lbl">Fotos${fs && fs.length ? ` <em>${fs.length}</em>` : ''}</div>${zipBtn}${fs && fs.length ? addBtn() : ''}</div>`;
   const up = S.fxUp;
   if (up){
     h += `<div class="fx-up">
@@ -1297,25 +1321,35 @@ async function fxEnviar(){
   for (let i = 0; i < up.items.length; i++){
     const x = up.items[i]; up.msg = `Preparando e enviando ${i + 1} de ${up.items.length}…`; renderFotos();
     try {
-      const f = await prepararFoto(x.file);
-      const fRef = doc(collection(db, 'fotos')), iRef = doc(db, 'fotosImg', fRef.id), hRef = doc(collection(db, 'historico')), b = writeBatch(db);
-      b.set(fRef, {atividadeId:id, thumb:f.thumb, w:f.w, h:f.h, legenda:up.legenda, u:S.uid, t:serverTimestamp()});
-      b.set(iRef, {atividadeId:id, img:f.img, u:S.uid, t:serverTimestamp()});
+      const fRef = doc(collection(db, 'fotos')), hRef = doc(collection(db, 'historico')), b = writeBatch(db);
+      const f = await prepararFoto(x.file, id, fRef.id);
+      b.set(fRef, {atividadeId:id, thumb:f.thumb, w:f.w, h:f.h, legenda:up.legenda, u:S.uid, t:serverTimestamp(), ...(f.url ? {path:f.path, url:f.url} : {})});
+      if (!f.url){ b.set(doc(db, 'fotosImg', fRef.id), {atividadeId:id, img:f.img, u:S.uid, t:serverTimestamp()}); S.imgCache.set(fRef.id, f.img); }
       b.update(doc(db, 'atividades', id), {nFotos:++n, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
       b.set(hRef, evDoc(id, cur, {tipo:'foto', fotoId:fRef.id, legenda:up.legenda}));
-      S.imgCache.set(fRef.id, f.img);
       b.commit().catch(handleWriteError); // offline: fica na fila do aparelho e sobe quando a conexão voltar
       x.ok = true; ok++;
     } catch (e) { console.warn(e); x.err = true; }
   }
   const falhas = up.items.length - ok;
   fxLimpar();
+  if (S.stAviso && ok){ S.stAviso = false; toast(navigator.onLine ? 'Fotos salvas no banco: o armazenamento de fotos (Storage) não respondeu.' : 'Sem conexão: as fotos ficam no aparelho e sobem quando o sinal voltar.'); return; }
   toast(falhas ? `${ok} ${ok === 1 ? 'foto enviada' : 'fotos enviadas'}, ${falhas} não ${falhas === 1 ? 'pôde' : 'puderam'} ser lida${falhas === 1 ? '' : 's'}.` : `${ok} ${ok === 1 ? 'foto adicionada' : 'fotos adicionadas'}.${navigator.onLine ? '' : ' Sobe quando a conexão voltar.'}`);
 }
 async function fotoGrande(f){
+  if (f.url) return f.url;
   if (S.imgCache.has(f.id)) return S.imgCache.get(f.id);
   try { const s = await getDoc(doc(db, 'fotosImg', f.id)); const v = s.exists() ? s.data().img : null; if (v){ S.imgCache.set(f.id, v); return v; } } catch (e) { console.warn(e); }
   return f.thumb;
+}
+// para o PDF a imagem precisa vir como dados (Storage exige CORS liberado; se não, usa a miniatura)
+async function fotoPdf(f){
+  if (!f.url) return {img: await fotoGrande(f), w: f.w, h: f.h};
+  try {
+    const bl = await (await comPrazo(fetch(f.url), 30000)).blob(), src = await lerImagem(bl);
+    const j = paraJpeg(src, 1600, .8, 3000000); if (src.close) src.close();
+    return {img: j.url, w: j.w, h: j.h};
+  } catch (e) { console.warn('foto do Storage no PDF: usando miniatura', e); return {img: f.thumb, w: f.w, h: f.h, mini: true}; }
 }
 // ---------- visualizador em tela cheia ----------
 let lbI = 0;
@@ -1329,7 +1363,7 @@ async function lbAbrir(i){
   $('lb-prev').hidden = $('lb-next').hidden = fs.length < 2;
   const img = $('lb-img'); img.src = f.thumb; img.classList.add('lo');
   const a = all().get(S.openId), nome = `${(a?.titulo || 'foto').replace(/[^\wÀ-ú -]+/g, '').trim().slice(0, 40).replace(/\s+/g, '_')}_${lbI + 1}.jpg`;
-  $('lb-dl').href = f.thumb; $('lb-dl').download = nome;
+  $('lb-dl').href = f.url || f.thumb; $('lb-dl').download = nome; $('lb-dl').target = f.url ? '_blank' : '';
   const big = await fotoGrande(f);
   if (S.dwFotos && S.dwFotos[lbI] === f){ img.src = big; img.classList.remove('lo'); $('lb-dl').href = big; }
 }
@@ -1338,10 +1372,48 @@ function fotoExcluir(){
   const f = (S.dwFotos || [])[lbI], id = S.openId, cur = all().get(id); if (!f || !cur || !podeApagarFoto(f)) return;
   const bt = $('lb-del'); if (bt.dataset.ok !== '1'){ bt.dataset.ok = '1'; bt.textContent = 'Toque de novo para excluir'; return; }
   const hRef = doc(collection(db, 'historico')), b = writeBatch(db);
-  b.delete(doc(db, 'fotos', f.id)); b.delete(doc(db, 'fotosImg', f.id));
+  b.delete(doc(db, 'fotos', f.id)); if (!f.url) b.delete(doc(db, 'fotosImg', f.id));
   b.update(doc(db, 'atividades', id), {nFotos:Math.max(0, (cur.nFotos || S.dwFotos.length) - 1), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
   b.set(hRef, evDoc(id, cur, {tipo:'foto_del', legenda:f.legenda || ''}));
   commit(b, 'Foto excluída.'); S.imgCache.delete(f.id); lbFechar();
+  if (f.path) stor().then(({m, s}) => m.deleteObject(m.ref(s, f.path))).catch(e => console.warn('arquivo do Storage', e));
+}
+// ---------- baixar todas as fotos da atividade (.zip) ----------
+let zipando = false;
+async function carregarJSZip(){
+  if (window.JSZip) return window.JSZip;
+  await new Promise((ok, fail) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'; sc.onload = ok; sc.onerror = () => fail(new Error('JSZip')); document.head.appendChild(sc); });
+  return window.JSZip;
+}
+const slugArq = (v, n = 40) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w -]+/g, '').trim().slice(0, n).replace(/\s+/g, '_');
+async function baixarZipFotos(){
+  const a = all().get(S.openId), fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
+  if (!a || !fs.length || zipando) return;
+  zipando = true; const bt = document.querySelector('[data-fx-zip]'); if (bt) bt.disabled = true;
+  try {
+    toast('Preparando as fotos…');
+    const JSZip = await carregarJSZip(), zip = new JSZip(), hoje = defaultNight();
+    const nomes = new Set(); let mini = 0;
+    const linhas = [`Atividade: ${a.titulo}`, `Local: ${localLine(a)}`, `Período: ${fmtPeriodo(a)}/${fimOf(a).slice(0, 4)} · turno ${TURNOS[turnoOf(a)].toLowerCase()}`, `Status: ${STATUS[a.status]?.label || a.status} · avanço ${avOf(a)}%`, `Fotos: ${fs.length} · baixadas em ${fmtTs(new Date())} por ${S.perfil?.nome || ''}`, ''];
+    for (let i = 0; i < fs.length; i++){
+      const f = fs[i]; toast(`Baixando foto ${i + 1} de ${fs.length}…`);
+      let blob = null;
+      try { const src = f.url || await fotoGrande(f); blob = await (await comPrazo(fetch(src), 30000)).blob(); }
+      catch (e) { console.warn('zip: usando miniatura', e); blob = await (await fetch(f.thumb)).blob(); mini++; }
+      const quando = f.t ? toDate(f.t) : new Date();
+      let nome = `${String(i + 1).padStart(2, '0')}_${pad(quando.getDate())}-${pad(quando.getMonth() + 1)}_${slugArq(f.legenda, 50) || 'foto'}.jpg`;
+      while (nomes.has(nome)) nome = nome.replace(/\.jpg$/, '_.jpg'); nomes.add(nome);
+      zip.file(nome, blob);
+      linhas.push(`${nome} — ${f.legenda || '(sem legenda)'} — ${f.t ? fmtTs(f.t) : ''} — ${nameOf(f.u)}`);
+    }
+    zip.file('LEIA-ME.txt', linhas.join('\r\n') + '\r\n');
+    const out = await zip.generateAsync({type:'blob'}), arquivo = `Fotos_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.zip`;
+    const url = URL.createObjectURL(out), el = document.createElement('a'); el.href = url; el.download = arquivo; document.body.appendChild(el); el.click(); el.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(mini ? `Pasta gerada. ${mini} ${mini === 1 ? 'foto saiu' : 'fotos saíram'} em tamanho reduzido (o Storage ainda não libera o download direto).` : `Pasta com ${fs.length} ${fs.length === 1 ? 'foto' : 'fotos'} gerada.`);
+    logExport('fotos', {arquivo, qtd: fs.length, periodo: (a.titulo || '').slice(0, 150)});
+  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar a pasta. Tente de novo.' : 'Sem internet: é preciso estar online para baixar as fotos.'); }
+  finally { zipando = false; const b2 = document.querySelector('[data-fx-zip]'); if (b2) b2.disabled = false; }
 }
 // ---------- PDF da atividade (dados + fotos + histórico) ----------
 let gerandoAtv = false;
@@ -1351,7 +1423,7 @@ async function exportAtividadePdf(){
   try {
     const fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
     const fotos = [];
-    for (const f of fs) fotos.push({img: await fotoGrande(f), w:f.w, h:f.h, legenda:f.legenda || '', sub:`${f.t ? fmtTs(f.t) : ''} · ${nameOf(f.u)}`});
+    for (const f of fs){ const p = await fotoPdf(f); fotos.push({...p, legenda:f.legenda || '', sub:`${f.t ? fmtTs(f.t) : ''} · ${nameOf(f.u)}`}); }
     const hist = [...S.dwHist].map(ev => {
       let tx = evText({...ev, noiteAtv: ev.noiteAtv || a.noite}).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
       if (ev.mudancas?.length) tx += '\n' + ev.mudancas.map(x => `${FIELDS[x.campo] || (x.campo === 'status' ? 'Status' : x.campo)}: ${fmtVal(x.campo, x.de) || '—'} → ${fmtVal(x.campo, x.para) || '—'}`).join('\n');
@@ -1369,7 +1441,7 @@ async function exportAtividadePdf(){
       a.atualizadoPor ? ['Última alteração', `${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}`] : null,
     ].filter(Boolean);
     const now = new Date(), arquivo = `Atividade_${(a.titulo || 'atividade').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w -]+/g, '').trim().slice(0, 50).replace(/\s+/g, '_')}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=34');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=35');
     await gerarAtividadePDF({
       titulo: a.titulo || '', status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), info,
       detalhes: a.detalhes || '', motivo: a.motivo ? `${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}` : '', obs: a.ultimaObs || '',
@@ -1387,7 +1459,7 @@ async function exportAtividadePdf(){
 // As regras do Firestore recusam qualquer alteração de atividade que não venha com o seu registro.
 // Exportações (relatório PDF, calendário PDF, cronograma Excel, CSV) também ficam no histórico.
 // Se a gravação falhar (sem internet, regra antiga), o arquivo sai do mesmo jeito.
-const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV', claude:'o arquivo de atividades para o Claude (IA)', atividade:'o PDF de uma atividade (dados, fotos e histórico)'};
+const EXP_LABEL = {relatorio:'o relatório PDF de atividades em aberto', calendario:'o calendário em PDF', cronograma:'o cronograma quinzenal em Excel', csv:'a lista de atividades em CSV', claude:'o arquivo de atividades para o Claude (IA)', atividade:'o PDF de uma atividade (dados, fotos e histórico)', fotos:'as fotos de uma atividade (.zip)'};
 function logExport(formato, info = {}){
   if (!S.uid) return;
   const d = {atividadeId:'', tipo:'exportou', formato, t:serverTimestamp(), u:S.uid,
@@ -1702,7 +1774,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=34');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=35');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -1850,7 +1922,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=34');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=35');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -1893,6 +1965,7 @@ document.addEventListener('click', e => {
   { const x = t.closest('[data-fx-rm]'); if (x && S.fxUp){ const it = S.fxUp.items.splice(Number(x.dataset.fxRm), 1)[0]; if (it) URL.revokeObjectURL(it.prev); if (!S.fxUp.items.length) fxLimpar(); else renderFotos(); return; } }
   if (t.closest('[data-fx-cancel]')) return fxLimpar();
   if (t.closest('[data-fx-send]')) return fxEnviar();
+  if (t.closest('[data-fx-zip]')) return baixarZipFotos();
   if (t.closest('#dw-pdf')) return exportAtividadePdf();
   { const dd = t.closest('.gt-d[data-dia]'); if (dd){ setNight(dd.dataset.dia); return setTab('noite'); } }
   { const mb = t.closest('[data-more]'); if (mb){ const pop = $(mb.dataset.more), abrir = pop.hidden; closeMore(); pop.hidden = !abrir; mb.setAttribute('aria-expanded', String(abrir)); return; } }
