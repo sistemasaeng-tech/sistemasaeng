@@ -542,7 +542,7 @@ function fichaAtividade(doc, ctx, st, opt = {}){
       for (let i = 0; i < ctx.fotos.length; i += 2){
         const par = ctx.fotos.slice(i, i + 2);
         font('bold', 8.4);
-        const capH = Math.max(...par.map(f => (f.legenda ? wrap(f.legenda, fw).length * 3.8 : 0) + 4.4));
+        const capH = Math.max(...par.map(f => { font('bold', 8.4); const a = f.legenda ? wrap(f.legenda, fw).length * 3.8 : 0; font('normal', 7.8); const b = f.obs ? wrap(f.obs, fw).length * 3.5 + 1 : 0; return a + b + 4.4; }));
         garante(fh + capH + 4);
         par.forEach((f, j) => {
           const x = M + j * (fw + gap);
@@ -553,6 +553,7 @@ function fichaAtividade(doc, ctx, st, opt = {}){
           } catch (e) { color(C.faint); font('normal', 8); text('imagem indisponível', x + fw / 2, y + fh / 2, {align:'center'}); }
           let yy = y + fh + 4.2;
           if (f.legenda){ color(C.ink); font('bold', 8.4); for (const l of wrap(f.legenda, fw)){ doc.text(l, x, yy); yy += 3.8; } }
+          if (f.obs){ color(C.muted); font('normal', 7.8); for (const l of wrap(f.obs, fw)){ doc.text(l, x, yy); yy += 3.5; } yy += 1; }
           color(C.faint); font('normal', 7.4); text(f.sub, x, yy);
         });
         y += fh + capH + 6;

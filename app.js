@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 44; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 45; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -504,7 +504,7 @@ function evText(ev){
     case 'editou': return ev.mudancas?.length && ev.mudancas.every(m => m.campo === 'etiquetas') ? 'alterou as etiquetas' : 'alterou os dados';
     case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
     case 'excluiu': return 'excluiu a atividade';
-    case 'foto': return `adicionou uma foto${ev.legenda ? `: “${esc(ev.legenda)}”` : ''}`;
+    case 'foto': return `adicionou ${ev.qtd > 1 ? ev.qtd + ' fotos' : 'uma foto'}${ev.legenda ? `: “${esc(ev.legenda)}”` : ''}${typeof ev.efetivo === 'number' ? ` · efetivo no momento: <b>${ev.efetivo}</b> ${ev.efetivo === 1 ? 'pessoa' : 'pessoas'}` : ''}`;
     case 'foto_del': return `excluiu uma foto${ev.legenda ? ` (“${esc(ev.legenda)}”)` : ''}`;
     case 'exportou': return ev.formato === 'resumo' ? 'enviou o resumo diário por e-mail' : `exportou ${EXP_LABEL[ev.formato] || 'um arquivo'}`;
     default: return esc(ev.tipo);
@@ -712,7 +712,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=44');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=45');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1341,15 +1341,23 @@ function renderFotos(){
     h += `<div class="fx-up">
       ${up.items.length > 1 && !up.sending ? '<div class="fx-dica">Arraste para definir a ordem das fotos.</div>' : ''}
       <div class="fx-up-grid" data-fx-sort="up">${up.items.map((x, i) => `<div class="fx-up-it${x.ok ? ' ok' : ''}${x.err ? ' err' : ''}" data-fx-i="${i}"><img src="${x.prev}" alt="" draggable="false"><span class="fx-n">${i + 1}</span>${up.sending ? '' : `<button type="button" class="fx-up-x" data-fx-rm="${i}" aria-label="Remover">×</button>`}${x.ok ? '<span class="fx-up-st">✓</span>' : ''}</div>`).join('')}</div>
-      <input type="text" class="fx-up-leg" id="fx-leg" maxlength="200" placeholder="Legenda (opcional): ex.: armação concluída no eixo 8" value="${esc(up.legenda || '')}"${up.sending ? ' disabled' : ''}>
+      <div class="fx-up-f">
+        <label class="fx-up-l" for="fx-leg">Descrição</label>
+        <input type="text" class="fx-up-leg" id="fx-leg" maxlength="200" placeholder="ex.: armação concluída no eixo 8" value="${esc(up.legenda || '')}"${up.sending ? ' disabled' : ''}>
+      </div>
+      <div class="fx-up-row">
+        <div class="fx-up-f fx-up-obs"><label class="fx-up-l" for="fx-obs">Observação</label><textarea id="fx-obs" rows="2" maxlength="1000" placeholder="Como está o serviço, pendências, liberações…"${up.sending ? ' disabled' : ''}>${esc(up.obs || '')}</textarea></div>
+        <div class="fx-up-f fx-up-ef"><label class="fx-up-l" for="fx-efet">Efetivo no momento</label><div class="fx-ef-w"><input type="number" id="fx-efet" min="0" max="999" step="1" inputmode="numeric" placeholder="0" value="${up.efetivo ?? ''}"${up.sending ? ' disabled' : ''}><span>pessoas</span></div></div>
+      </div>
       <div class="fx-up-a"><span class="ro" id="fx-msg">${esc(up.msg || `${up.items.length} ${up.items.length === 1 ? 'foto selecionada' : 'fotos selecionadas'}`)}</span><span class="sp"></span>${up.sending ? '' : `<button type="button" class="btn ghost sm" data-fx-cancel>Cancelar</button><button type="button" class="btn pri sm" data-fx-send>Enviar</button>`}</div>
     </div>`;
   }
   if (fs === null) h += '<div class="fx-grid">' + '<span class="fx-sk"></span>'.repeat(3) + '</div>';
   else if (!fs.length && !up) h += `<div class="fx-empty">${ICON_CAM}<b>Nenhuma foto ainda</b><span>${w ? 'Registre o andamento com fotos do local. Elas aparecem aqui e no PDF da atividade.' : 'Quando a equipe registrar fotos, elas aparecem aqui.'}</span>${addBtn(' pri')}</div>`;
-  else if (fs.length) h += `<div class="fx-grid${S.fxOrg ? ' org' : ''}"${S.fxOrg ? ' data-fx-sort="gal"' : ''}>${fs.map((f, i) => `<button type="button" class="fx-it" ${S.fxOrg ? `data-fx-i="${i}"` : `data-fx="${i}"`} title="${esc(f.legenda || 'Ver foto')}"><img src="${f.thumb}" alt="${esc(f.legenda || 'Foto da atividade')}" loading="lazy" draggable="false">${S.fxOrg ? `<span class="fx-n">${i + 1}</span>` : ''}<span class="fx-cap${f.legenda ? ' has-l' : ''}">${f.legenda ? `<b>${esc(f.legenda)}</b>` : ''}<i>${f.t ? fmtTs(f.t) : 'enviando…'} · ${esc(shortName(nameOf(f.u)))}</i></span></button>`).join('')}</div>`;
+  else if (fs.length) h += `<div class="fx-grid${S.fxOrg ? ' org' : ''}"${S.fxOrg ? ' data-fx-sort="gal"' : ''}>${fs.map((f, i) => `<button type="button" class="fx-it" ${S.fxOrg ? `data-fx-i="${i}"` : `data-fx="${i}"`} title="${esc(f.legenda || 'Ver foto')}"><img src="${f.thumb}" alt="${esc(f.legenda || 'Foto da atividade')}" loading="lazy" draggable="false">${typeof f.efetivo === 'number' ? `<em class="fx-ef" title="Efetivo no momento">${ICON_PESSOAS}${f.efetivo}</em>` : ''}${S.fxOrg ? `<span class="fx-n">${i + 1}</span>` : ''}<span class="fx-cap${f.legenda ? ' has-l' : ''}">${f.legenda ? `<b>${esc(f.legenda)}</b>` : ''}<i>${f.t ? fmtTs(f.t) : 'enviando…'} · ${esc(shortName(nameOf(f.u)))}</i></span></button>`).join('')}</div>`;
   el.innerHTML = h;
 }
+const ICON_PESSOAS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2c2.4-.3 4.4 1.2 5 4.8"/></svg>';
 const ICON_ORG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M14 7h6m-3-3v6M4 17h6"/></svg>';
 // Arrastar para reordenar (mouse e dedo). Começa depois de mover alguns pixels, para não atrapalhar toques.
 function fxIniciarArraste(e){
@@ -1406,18 +1414,28 @@ function fxLimpar(){ if (S.fxUp) for (const x of S.fxUp.items) URL.revokeObjectU
 async function fxEnviar(){
   const up = S.fxUp, id = S.openId; if (!up || up.sending || !id) return;
   const cur = all().get(id); if (!cur) return;
-  up.legenda = ($('fx-leg')?.value || '').trim().slice(0, 200); up.sending = true;
-  let n = cur.nFotos || (S.dwFotos ? S.dwFotos.length : 0), ok = 0;
+  up.legenda = ($('fx-leg')?.value || '').trim().slice(0, 200);
+  up.obs = ($('fx-obs')?.value || '').trim().slice(0, 1000);
+  const ef = String($('fx-efet')?.value ?? '').trim(), efetivo = ef === '' ? null : Math.max(0, Math.min(999, Math.round(Number(ef))));
+  if (ef !== '' && !Number.isFinite(Number(ef))) return toast('Informe o efetivo em número de pessoas.');
+  up.efetivo = efetivo ?? ''; up.sending = true;
+  let n = cur.nFotos || (S.dwFotos ? S.dwFotos.length : 0), ok = 0, registrado = false;
+  const extra = {...(up.obs ? {obs: up.obs} : {}), ...(efetivo !== null ? {efetivo} : {})};
   const base = Math.max(Date.now(), ...(S.dwFotos || []).map(seqFoto)) + 1;
   for (let i = 0; i < up.items.length; i++){
     const x = up.items[i]; up.msg = `Preparando e enviando ${i + 1} de ${up.items.length}…`; renderFotos();
     try {
-      const fRef = doc(collection(db, 'fotos')), hRef = doc(collection(db, 'historico')), b = writeBatch(db);
+      const fRef = doc(collection(db, 'fotos')), b = writeBatch(db);
       const f = await prepararFoto(x.file, id, fRef.id);
-      b.set(fRef, {atividadeId:id, thumb:f.thumb, w:f.w, h:f.h, legenda:up.legenda, u:S.uid, t:serverTimestamp(), ordem: base + i, ...(f.url ? {path:f.path, url:f.url} : {})});
+      b.set(fRef, {atividadeId:id, thumb:f.thumb, w:f.w, h:f.h, legenda:up.legenda, ...extra, u:S.uid, t:serverTimestamp(), ordem: base + i, ...(f.url ? {path:f.path, url:f.url} : {})});
       if (!f.url){ b.set(doc(db, 'fotosImg', fRef.id), {atividadeId:id, img:f.img, u:S.uid, t:serverTimestamp()}); S.imgCache.set(fRef.id, f.img); }
-      b.update(doc(db, 'atividades', id), {nFotos:++n, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
-      b.set(hRef, evDoc(id, cur, {tipo:'foto', fotoId:fRef.id, legenda:up.legenda}));
+      // o registro no histórico vai junto com a primeira foto e vale para todo o envio
+      if (!registrado){
+        const qtd = up.items.length - i, hRef = doc(collection(db, 'historico'));
+        b.update(doc(db, 'atividades', id), {nFotos: n + qtd, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
+        b.set(hRef, evDoc(id, cur, {tipo:'foto', fotoId:fRef.id, qtd, legenda:up.legenda, ...extra}));
+        registrado = true;
+      }
       b.commit().catch(handleWriteError); // offline: fica na fila do aparelho e sobe quando a conexão voltar
       x.ok = true; ok++;
     } catch (e) { console.warn(e); x.err = true; }
@@ -1450,7 +1468,7 @@ async function lbAbrir(i){
   lbI = (i + fs.length) % fs.length; const f = fs[lbI];
   $('lb').hidden = false;
   $('lb-n').textContent = `${lbI + 1} de ${fs.length}`;
-  $('lb-cap').innerHTML = `${f.legenda ? `<b>${esc(f.legenda)}</b>` : ''}<span>${f.t ? fmtTs(f.t) : ''} · ${esc(nameOf(f.u))}</span>`;
+  $('lb-cap').innerHTML = `${f.legenda ? `<b>${esc(f.legenda)}</b>` : ''}${f.obs ? `<p class="lb-obs">${esc(f.obs)}</p>` : ''}<span>${typeof f.efetivo === 'number' ? `Efetivo no momento: ${f.efetivo} ${f.efetivo === 1 ? 'pessoa' : 'pessoas'} · ` : ''}${f.t ? fmtTs(f.t) : ''} · ${esc(nameOf(f.u))}</span>`;
   $('lb-del').hidden = !podeApagarFoto(f); $('lb-del').textContent = 'Excluir'; delete $('lb-del').dataset.ok;
   $('lb-prev').hidden = $('lb-next').hidden = fs.length < 2;
   const img = $('lb-img'); img.src = f.thumb; img.classList.add('lo');
@@ -1498,7 +1516,7 @@ async function baixarZipFotos(){
       let nome = `${String(i + 1).padStart(2, '0')}_${pad(quando.getDate())}-${pad(quando.getMonth() + 1)}_${slugArq(f.legenda, 50) || 'foto'}.jpg`;
       while (nomes.has(nome)) nome = nome.replace(/\.jpg$/, '_.jpg'); nomes.add(nome);
       zip.file(nome, blob);
-      linhas.push(`${nome} — ${f.legenda || '(sem legenda)'} — ${f.t ? fmtTs(f.t) : ''} — ${nameOf(f.u)}`);
+      linhas.push(`${nome} — ${f.legenda || '(sem descrição)'} — ${f.t ? fmtTs(f.t) : ''} — ${nameOf(f.u)}${typeof f.efetivo === 'number' ? ` — efetivo: ${f.efetivo}` : ''}${f.obs ? ` — obs.: ${f.obs.replace(/\s*\n\s*/g, ' / ')}` : ''}`);
     }
     zip.file('LEIA-ME.txt', linhas.join('\r\n') + '\r\n');
     const out = await zip.generateAsync({type:'blob'}), arquivo = `Fotos_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.zip`;
@@ -1514,7 +1532,7 @@ let gerandoAtv = false;
 // dados da ficha (usada no PDF da atividade e no PDF do local)
 async function fichaCtx(a, fs, hs, max = 1600, onFoto = () => {}){
   const fotos = [];
-  for (const f of fs){ const p = await fotoPdf(f, max); fotos.push({...p, legenda:f.legenda || '', sub:`${f.t ? fmtTs(f.t) : ''} · ${nameOf(f.u)}`}); onFoto(); }
+  for (const f of fs){ const p = await fotoPdf(f, max); fotos.push({...p, legenda:f.legenda || '', obs:f.obs || '', sub:`${typeof f.efetivo === 'number' ? `Efetivo: ${f.efetivo} ${f.efetivo === 1 ? 'pessoa' : 'pessoas'} · ` : ''}${f.t ? fmtTs(f.t) : ''} · ${nameOf(f.u)}`}); onFoto(); }
   const hist = hs.map(ev => {
     let tx = evText({...ev, noiteAtv: ev.noiteAtv || a.noite}).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     if (ev.mudancas?.length) tx += '\n' + ev.mudancas.map(x => `${FIELDS[x.campo] || (x.campo === 'status' ? 'Status' : x.campo)}: ${fmtVal(x.campo, x.de) || '—'} → ${fmtVal(x.campo, x.para) || '—'}`).join('\n');
@@ -1541,7 +1559,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=44');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=45');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1652,7 +1670,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=44');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=45');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1726,7 +1744,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=44');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=45');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -1760,7 +1778,7 @@ async function baixarZipLocal(){
         const quando = f.t ? toDate(f.t) : new Date();
         const nome = `${String(i + 1).padStart(2, '0')}_${pad(quando.getDate())}-${pad(quando.getMonth() + 1)}_${slugArq(f.legenda, 50) || 'foto'}.jpg`;
         zip.file(`${pasta}/${nome}`, r.blob);
-        leia.push(`   ${nome} — ${f.legenda || '(sem legenda)'} — ${f.t ? fmtTs(f.t) : ''} — ${nameOf(f.u)}`);
+        leia.push(`   ${nome} — ${f.legenda || '(sem descrição)'} — ${f.t ? fmtTs(f.t) : ''} — ${nameOf(f.u)}${typeof f.efetivo === 'number' ? ` — efetivo: ${f.efetivo}` : ''}${f.obs ? ` — obs.: ${f.obs.replace(/\s*\n\s*/g, ' / ')}` : ''}`);
       }
     }
     zip.file('LEIA-ME.txt', leia.join('\r\n') + '\r\n');
@@ -2093,7 +2111,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=44');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=45');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2241,7 +2259,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=44');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=45');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2403,7 +2421,7 @@ $('pd-new').onclick = () => openPendForm(null);
 $('pd-q').oninput = () => renderPend();
 document.addEventListener('pointerdown', fxIniciarArraste);
 document.addEventListener('change', e => { if (e.target.matches('[data-lgt-ini], [data-lgt-fim]') && S.lgt){ const r = $('lgt'); if (gtDatas(S.lgt, r.querySelector('[data-lgt-ini]').value, r.querySelector('[data-lgt-fim]').value)) renderLocal(); return; } if (e.target.matches('[data-lgt-conc]')){ S.lgt.conc = e.target.checked; return renderLocal(); } if (e.target.matches('[data-fx-in]')){ fxEscolher(e.target.files); e.target.value = ''; } });
-document.addEventListener('input', e => { if (e.target.id === 'fx-leg' && S.fxUp) S.fxUp.legenda = e.target.value; });
+document.addEventListener('input', e => { if (!S.fxUp) return; if (e.target.id === 'fx-leg') S.fxUp.legenda = e.target.value; else if (e.target.id === 'fx-obs') S.fxUp.obs = e.target.value; else if (e.target.id === 'fx-efet') S.fxUp.efetivo = e.target.value; });
 $('lb-x').onclick = lbFechar; $('lb-prev').onclick = () => lbAbrir(lbI - 1); $('lb-next').onclick = () => lbAbrir(lbI + 1); $('lb-del').onclick = fotoExcluir;
 $('lb').addEventListener('click', e => { if (e.target.id === 'lb' || e.target.classList.contains('lb-fig')) lbFechar(); });
 { let x0 = null; $('lb').addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, {passive:true});
