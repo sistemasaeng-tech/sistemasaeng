@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 42; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 43; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -690,7 +690,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=42');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=43');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     await gerarGanttPDF(ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`));
     toast('PDF do calendário gerado.');
@@ -1086,10 +1086,10 @@ function openDrawer(id){
     S.dwHist = s.docs.map(d => ({id:d.id, ...d.data(SNAP)})).sort((a,b) => toDate(a.t)-toDate(b.t)); renderTimeline();
   }, () => {});
   if (S.unsubDwFotos) S.unsubDwFotos();
-  if (S.fxUp) fxLimpar(); S.dwFotos = null;
+  if (S.fxUp) fxLimpar(); S.dwFotos = null; S.fxOrg = false;
   S.unsubDwFotos = onSnapshot(query(collection(db, 'fotos'), where('atividadeId', '==', id)), s => {
     if (S.openId !== id) return;
-    S.dwFotos = s.docs.map(d => ({id:d.id, ...d.data(SNAP)})).sort((a, b) => toDate(b.t) - toDate(a.t)); renderFotos();
+    S.dwFotos = s.docs.map(d => ({id:d.id, ...d.data(SNAP)})).sort(ordFotos); if (!S.fxArrastando) renderFotos();
   }, err => { console.warn('fotos', err); S.dwFotos = []; renderFotos(); });
   renderDrawerHead(); renderDrawerActions(); renderTimeline(); renderFotos();
 }
@@ -1249,7 +1249,10 @@ function renderTimeline(){
 /* ================= fotos do andamento ================= */
 // Cada foto vira dois documentos: "fotos" (miniatura + legenda, para a galeria) e "fotosImg" (imagem maior,
 // carregada só ao abrir em tela cheia ou no PDF). O envio entra no histórico da atividade.
-S.dwFotos = null; S.fxUp = null; S.imgCache = new Map();
+S.dwFotos = null; S.fxUp = null; S.imgCache = new Map(); S.fxOrg = false;
+// sequência das fotos: "ordem" (definida ao arrastar) ou, se não houver, o horário de envio
+const seqFoto = f => typeof f.ordem === 'number' ? f.ordem : (f.t ? toDate(f.t).getTime() : Date.now());
+const ordFotos = (a, b) => seqFoto(a) - seqFoto(b);
 const ICON_CAM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
 const ICON_DL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>';
 const podeApagarFoto = f => isAdmin() || (canWrite() && f.u === S.uid);
@@ -1303,19 +1306,69 @@ function renderFotos(){
   const a = all().get(S.openId), w = canWrite(), fs = S.dwFotos;
   const addBtn = (cls = '') => w ? `<label class="btn sm fx-add${cls}">${ICON_CAM}<span>Adicionar fotos</span><input type="file" accept="image/*" multiple hidden data-fx-in></label>` : '';
   const zipBtn = fs && fs.length ? `<button type="button" class="btn sm ghost fx-zip" data-fx-zip title="Baixar todas as fotos desta atividade numa pasta .zip">${ICON_DL}<span>Baixar todas</span></button>` : '';
-  let h = `<div class="fx-h"><div class="lbl">Fotos${fs && fs.length ? ` <em>${fs.length}</em>` : ''}</div>${zipBtn}${fs && fs.length ? addBtn() : ''}</div>`;
+  const podeOrg = w && fs && fs.length > 1 && !S.fxUp;
+  if (!podeOrg) S.fxOrg = false;
+  const orgBtn = podeOrg ? `<button type="button" class="btn sm ${S.fxOrg ? 'pri' : 'ghost'} fx-org" data-fx-org title="Arrastar as fotos para mudar a sequência">${ICON_ORG}<span>${S.fxOrg ? 'Concluir' : 'Organizar'}</span></button>` : '';
+  let h = `<div class="fx-h"><div class="lbl">Fotos${fs && fs.length ? ` <em>${fs.length}</em>` : ''}</div>${S.fxOrg ? orgBtn : zipBtn + orgBtn + (fs && fs.length ? addBtn() : '')}</div>`;
+  if (S.fxOrg) h += '<div class="fx-dica">Arraste as fotos para definir a sequência. Ela vale na galeria, no PDF e no .zip.</div>';
   const up = S.fxUp;
   if (up){
     h += `<div class="fx-up">
-      <div class="fx-up-grid">${up.items.map((x, i) => `<div class="fx-up-it${x.ok ? ' ok' : ''}${x.err ? ' err' : ''}"><img src="${x.prev}" alt="">${up.sending ? '' : `<button type="button" class="fx-up-x" data-fx-rm="${i}" aria-label="Remover">×</button>`}${x.ok ? '<span class="fx-up-st">✓</span>' : ''}</div>`).join('')}</div>
+      ${up.items.length > 1 && !up.sending ? '<div class="fx-dica">Arraste para definir a ordem das fotos.</div>' : ''}
+      <div class="fx-up-grid" data-fx-sort="up">${up.items.map((x, i) => `<div class="fx-up-it${x.ok ? ' ok' : ''}${x.err ? ' err' : ''}" data-fx-i="${i}"><img src="${x.prev}" alt="" draggable="false"><span class="fx-n">${i + 1}</span>${up.sending ? '' : `<button type="button" class="fx-up-x" data-fx-rm="${i}" aria-label="Remover">×</button>`}${x.ok ? '<span class="fx-up-st">✓</span>' : ''}</div>`).join('')}</div>
       <input type="text" class="fx-up-leg" id="fx-leg" maxlength="200" placeholder="Legenda (opcional): ex.: armação concluída no eixo 8" value="${esc(up.legenda || '')}"${up.sending ? ' disabled' : ''}>
       <div class="fx-up-a"><span class="ro" id="fx-msg">${esc(up.msg || `${up.items.length} ${up.items.length === 1 ? 'foto selecionada' : 'fotos selecionadas'}`)}</span><span class="sp"></span>${up.sending ? '' : `<button type="button" class="btn ghost sm" data-fx-cancel>Cancelar</button><button type="button" class="btn pri sm" data-fx-send>Enviar</button>`}</div>
     </div>`;
   }
   if (fs === null) h += '<div class="fx-grid">' + '<span class="fx-sk"></span>'.repeat(3) + '</div>';
   else if (!fs.length && !up) h += `<div class="fx-empty">${ICON_CAM}<b>Nenhuma foto ainda</b><span>${w ? 'Registre o andamento com fotos do local. Elas aparecem aqui e no PDF da atividade.' : 'Quando a equipe registrar fotos, elas aparecem aqui.'}</span>${addBtn(' pri')}</div>`;
-  else if (fs.length) h += `<div class="fx-grid">${fs.map((f, i) => `<button type="button" class="fx-it" data-fx="${i}" title="${esc(f.legenda || 'Ver foto')}"><img src="${f.thumb}" alt="${esc(f.legenda || 'Foto da atividade')}" loading="lazy"><span class="fx-cap${f.legenda ? ' has-l' : ''}">${f.legenda ? `<b>${esc(f.legenda)}</b>` : ''}<i>${f.t ? fmtTs(f.t) : 'enviando…'} · ${esc(shortName(nameOf(f.u)))}</i></span></button>`).join('')}</div>`;
+  else if (fs.length) h += `<div class="fx-grid${S.fxOrg ? ' org' : ''}"${S.fxOrg ? ' data-fx-sort="gal"' : ''}>${fs.map((f, i) => `<button type="button" class="fx-it" ${S.fxOrg ? `data-fx-i="${i}"` : `data-fx="${i}"`} title="${esc(f.legenda || 'Ver foto')}"><img src="${f.thumb}" alt="${esc(f.legenda || 'Foto da atividade')}" loading="lazy" draggable="false">${S.fxOrg ? `<span class="fx-n">${i + 1}</span>` : ''}<span class="fx-cap${f.legenda ? ' has-l' : ''}">${f.legenda ? `<b>${esc(f.legenda)}</b>` : ''}<i>${f.t ? fmtTs(f.t) : 'enviando…'} · ${esc(shortName(nameOf(f.u)))}</i></span></button>`).join('')}</div>`;
   el.innerHTML = h;
+}
+const ICON_ORG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M14 7h6m-3-3v6M4 17h6"/></svg>';
+// Arrastar para reordenar (mouse e dedo). Começa depois de mover alguns pixels, para não atrapalhar toques.
+function fxIniciarArraste(e){
+  const grid = e.target.closest('[data-fx-sort]'); if (!grid || (e.button && e.button !== 0)) return;
+  const it = e.target.closest('[data-fx-i]'); if (!it || e.target.closest('[data-fx-rm]')) return;
+  const x0 = e.clientX, y0 = e.clientY; let ghost = null, ox = 0, oy = 0, raf = 0;
+  const scroller = grid.closest('.dw-scroll');
+  const mover = ev => {
+    if (!ghost){
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+      const r = it.getBoundingClientRect(); ox = x0 - r.left; oy = y0 - r.top;
+      ghost = it.cloneNode(true); ghost.classList.add('fx-ghost'); Object.assign(ghost.style, {width: r.width + 'px', height: r.height + 'px'});
+      document.body.appendChild(ghost); it.classList.add('fx-src'); S.fxArrastando = true;
+    }
+    ev.preventDefault();
+    ghost.style.transform = `translate(${ev.clientX - ox}px, ${ev.clientY - oy}px) scale(1.04)`;
+    const alvo = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-fx-i]');
+    if (alvo && alvo !== it && grid.contains(alvo)){
+      const lista = [...grid.querySelectorAll('[data-fx-i]')], ia = lista.indexOf(alvo), ii = lista.indexOf(it);
+      grid.insertBefore(it, ia < ii ? alvo : alvo.nextSibling);
+      [...grid.querySelectorAll('[data-fx-i]')].forEach((el, k) => { const nEl = el.querySelector('.fx-n'); if (nEl) nEl.textContent = k + 1; });
+    }
+    // rola o painel quando o dedo chega perto da borda
+    cancelAnimationFrame(raf);
+    if (scroller){ const sr = scroller.getBoundingClientRect(), passo = ev.clientY < sr.top + 60 ? -12 : ev.clientY > sr.bottom - 60 ? 12 : 0; if (passo) raf = requestAnimationFrame(function rolar(){ scroller.scrollTop += passo; raf = requestAnimationFrame(rolar); }); }
+  };
+  const soltar = () => {
+    window.removeEventListener('pointermove', mover); window.removeEventListener('pointerup', soltar); window.removeEventListener('pointercancel', soltar);
+    cancelAnimationFrame(raf);
+    if (!ghost) return;
+    ghost.remove(); it.classList.remove('fx-src'); S.fxArrastando = false;
+    const ordem = [...grid.querySelectorAll('[data-fx-i]')].map(el => Number(el.dataset.fxI));
+    if (ordem.every((v, k) => v === k)) return renderFotos();
+    if (grid.dataset.fxSort === 'up' && S.fxUp){ S.fxUp.items = ordem.map(k => S.fxUp.items[k]); renderFotos(); }
+    else if (grid.dataset.fxSort === 'gal') salvarOrdemFotos(ordem.map(k => S.dwFotos[k]));
+  };
+  window.addEventListener('pointermove', mover, {passive: false}); window.addEventListener('pointerup', soltar); window.addEventListener('pointercancel', soltar);
+}
+function salvarOrdemFotos(lista){
+  if (!canWrite()) return;
+  const base = Date.now(), b = writeBatch(db); let mud = 0;
+  lista.forEach((f, k) => { const v = base + k; if (f.ordem !== v){ b.update(doc(db, 'fotos', f.id), {ordem: v}); f.ordem = v; mud++; } });
+  S.dwFotos = lista; renderFotos();
+  if (mud) b.commit().then(() => toast('Ordem das fotos salva.'), e => { console.warn(e); toast(e?.code === 'permission-denied' ? 'O banco ainda não aceita reordenar fotos: o administrador precisa publicar as regras novas.' : 'Não foi possível salvar a ordem. Tente de novo.'); });
 }
 async function fxEscolher(files){
   const list = [...files].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name)).slice(0, 12);
@@ -1330,12 +1383,13 @@ async function fxEnviar(){
   const cur = all().get(id); if (!cur) return;
   up.legenda = ($('fx-leg')?.value || '').trim().slice(0, 200); up.sending = true;
   let n = cur.nFotos || (S.dwFotos ? S.dwFotos.length : 0), ok = 0;
+  const base = Math.max(Date.now(), ...(S.dwFotos || []).map(seqFoto)) + 1;
   for (let i = 0; i < up.items.length; i++){
     const x = up.items[i]; up.msg = `Preparando e enviando ${i + 1} de ${up.items.length}…`; renderFotos();
     try {
       const fRef = doc(collection(db, 'fotos')), hRef = doc(collection(db, 'historico')), b = writeBatch(db);
       const f = await prepararFoto(x.file, id, fRef.id);
-      b.set(fRef, {atividadeId:id, thumb:f.thumb, w:f.w, h:f.h, legenda:up.legenda, u:S.uid, t:serverTimestamp(), ...(f.url ? {path:f.path, url:f.url} : {})});
+      b.set(fRef, {atividadeId:id, thumb:f.thumb, w:f.w, h:f.h, legenda:up.legenda, u:S.uid, t:serverTimestamp(), ordem: base + i, ...(f.url ? {path:f.path, url:f.url} : {})});
       if (!f.url){ b.set(doc(db, 'fotosImg', fRef.id), {atividadeId:id, img:f.img, u:S.uid, t:serverTimestamp()}); S.imgCache.set(fRef.id, f.img); }
       b.update(doc(db, 'atividades', id), {nFotos:++n, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
       b.set(hRef, evDoc(id, cur, {tipo:'foto', fotoId:fRef.id, legenda:up.legenda}));
@@ -1404,7 +1458,7 @@ async function carregarJSZip(){
 }
 const slugArq = (v, n = 40) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w -]+/g, '').trim().slice(0, n).replace(/\s+/g, '_');
 async function baixarZipFotos(){
-  const a = all().get(S.openId), fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
+  const a = all().get(S.openId), fs = [...(S.dwFotos || [])].sort(ordFotos);
   if (!a || !fs.length || zipando) return;
   zipando = true; const bt = document.querySelector('[data-fx-zip]'); if (bt) bt.disabled = true;
   try {
@@ -1459,10 +1513,10 @@ async function exportAtividadePdf(){
   const a = all().get(S.openId); if (!a || gerandoAtv) return;
   gerandoAtv = true; const bt = $('dw-pdf'); bt.disabled = true; toast('Gerando o PDF da atividade…');
   try {
-    const fs = [...(S.dwFotos || [])].sort((x, y) => toDate(x.t) - toDate(y.t));
+    const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=42');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=43');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1571,7 +1625,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=42');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=43');
     await gerarGanttPDF(ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo));
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1627,7 +1681,7 @@ async function gerarPdfLocal(k, op, prog){
   const total = Object.values(fotosPor).reduce((s2, l) => s2 + l.length, 0); let feitas = 0;
   const fichas = [];
   for (const a of lista){
-    const fs = (fotosPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t)), hs = (histPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t));
+    const fs = (fotosPor[a.id] || []).sort(ordFotos), hs = (histPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t));
     fichas.push(await fichaCtx(a, fs, hs, 1280, () => { feitas++; prog(`Preparando fotos ${feitas} de ${total}…`); }));
   }
   const venc = lista.filter(a => a.aberta && STATUS[a.status]?.aberta && fimOf(a) < hoje).length;
@@ -1645,7 +1699,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=42');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=43');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -1670,7 +1724,7 @@ async function baixarZipLocal(){
     const JSZip = await carregarJSZip(), zip = new JSZip(); let n = 0, mini = 0, ia = 0;
     const leia = [`${m.tipo}: ${m.nome}${m.sub ? ' — ' + m.sub : ''}`, `Fotos: ${total} · baixadas em ${fmtTs(new Date())} por ${S.perfil?.nome || ''}`, ''];
     for (const a of acts){
-      const fs = (fotosPor[a.id] || []).sort((x, y) => toDate(x.t) - toDate(y.t)); if (!fs.length) continue;
+      const fs = (fotosPor[a.id] || []).sort(ordFotos); if (!fs.length) continue;
       ia++; const pasta = `${String(ia).padStart(2, '0')}_${slugArq(a.titulo, 50) || 'atividade'}`;
       leia.push(`[${pasta}] ${a.titulo} — ${fmtPeriodo(a)} — ${STATUS[a.status]?.label || a.status}`);
       for (let i = 0; i < fs.length; i++){
@@ -2012,7 +2066,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=42');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=43');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2160,7 +2214,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=42');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=43');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2217,6 +2271,7 @@ document.addEventListener('click', e => {
   if (t.closest('[data-fx-cancel]')) return fxLimpar();
   if (t.closest('[data-fx-send]')) return fxEnviar();
   if (t.closest('[data-fx-zip]')) return baixarZipFotos();
+  if (t.closest('[data-fx-org]')){ S.fxOrg = !S.fxOrg; return renderFotos(); }
   if (t.closest('#dw-pdf')) return exportAtividadePdf();
   { const dd = t.closest('.gt-d[data-dia]:not([data-sem-dia])'); if (dd){ setNight(dd.dataset.dia); return setTab('noite'); } }
   { const um = t.closest('[data-umail]'); if (um){ const id = um.dataset.umail, u = S.usuarios[id]; if (!u || !isAdmin()) return; const novo = u.resumoEmail === false;
@@ -2318,6 +2373,7 @@ document.addEventListener('keydown', e => { if (e.target.closest && e.target.clo
 document.addEventListener('keydown', e => { const x = e.target.closest && e.target.closest('[data-pd-open]'); if (x && (e.key === 'Enter' || e.key === ' ') && e.target === x){ e.preventDefault(); openPendForm(x.dataset.pdOpen); } });
 $('pd-new').onclick = () => openPendForm(null);
 $('pd-q').oninput = () => renderPend();
+document.addEventListener('pointerdown', fxIniciarArraste);
 document.addEventListener('change', e => { if (e.target.matches('[data-lgt-conc]')){ S.lgt.conc = e.target.checked; return renderLocal(); } if (e.target.matches('[data-fx-in]')){ fxEscolher(e.target.files); e.target.value = ''; } });
 document.addEventListener('input', e => { if (e.target.id === 'fx-leg' && S.fxUp) S.fxUp.legenda = e.target.value; });
 $('lb-x').onclick = lbFechar; $('lb-prev').onclick = () => lbAbrir(lbI - 1); $('lb-next').onclick = () => lbAbrir(lbI + 1); $('lb-del').onclick = fotoExcluir;
