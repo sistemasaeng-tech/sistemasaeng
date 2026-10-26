@@ -292,7 +292,9 @@ export async function gerarGanttPDF(ctx){
   const jsPDF = await loadLibs();
   const logo = await toDataURL(ctx.logoUrl).catch(() => null);
   const doc = new jsPDF({unit:'mm', format:'a4', orientation:'landscape'});
-  desenharGantt(doc, ctx, logo, true);
+  // período longo: um bloco de até 31 dias por página
+  const partes = ctx.partes && ctx.partes.length ? ctx.partes : [ctx];
+  partes.forEach((p, i) => desenharGantt(doc, {...p, emitidoEm: ctx.emitidoEm, emitidoPor: ctx.emitidoPor}, logo, i === 0));
   rodapeGantt(doc, ctx);
   doc.save(ctx.arquivo);
 }

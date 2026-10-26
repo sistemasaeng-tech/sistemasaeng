@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 43; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 44; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -643,16 +643,38 @@ function pdConvert(id, d){
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const DOW3 = ['dom','seg','ter','qua','qui','sex','sáb'];
 const mondayOf = s => { const d = parseYmd(s); return addDays(s, -((d.getDay() + 6) % 7)); };
+const GT_MAX_DIAS = 366;
 function gtRange(g = S.gt){
+  if (g.zoom === 'per' && g.ini && g.fim) return {ini: g.ini, n: Math.min(GT_MAX_DIAS, Math.max(1, nightsBetween(g.ini, g.fim) + 1))};
   if (g.zoom === 'mes'){ const d = parseYmd(g.ref); const ini = ymd(new Date(d.getFullYear(), d.getMonth(), 1)); return {ini, n: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()}; }
   return {ini: mondayOf(g.ref), n: g.zoom === 'sem' ? 7 : 14};
 }
 function gtShift(dir, g = S.gt){
+  if (g.zoom === 'per' && g.ini && g.fim){ const n = nightsBetween(g.ini, g.fim) + 1; g.ini = addDays(g.ini, dir * n); g.fim = addDays(g.fim, dir * n); g.jump = true; return renderAll(); }
   if (g.zoom === 'mes'){ const d = parseYmd(g.ref); g.ref = ymd(new Date(d.getFullYear(), d.getMonth() + dir, 1)); }
   else g.ref = addDays(g.ref, dir * (g.zoom === 'sem' ? 7 : 14));
   g.jump = true; renderAll();
 }
-function gtSave(){ try { localStorage.setItem('pn-gt', JSON.stringify({zoom:S.gt.zoom, grp:S.gt.grp, conc:S.gt.conc})); } catch {} }
+function gtSave(){ try { localStorage.setItem('pn-gt', JSON.stringify({zoom:S.gt.zoom, grp:S.gt.grp, conc:S.gt.conc, ini:S.gt.ini || '', fim:S.gt.fim || ''})); } catch {} }
+function gtZoom(g, z){
+  if (z === 'per' && g.zoom !== 'per'){ const r = gtRange(g); g.ini = r.ini; g.fim = addDays(r.ini, r.n - 1); }
+  g.zoom = z; g.jump = true;
+}
+// datas do "Período": término nunca antes do início, no máximo 366 dias
+function gtDatas(g, ini, fim){
+  if (!ini || !fim) return false;
+  if (fim < ini) fim = ini;
+  if (nightsBetween(ini, fim) + 1 > GT_MAX_DIAS){ fim = addDays(ini, GT_MAX_DIAS - 1); toast('O período vai até 366 dias.'); }
+  g.ini = ini; g.fim = fim; g.ref = ini; g.jump = true; return true;
+}
+// calendário longo no PDF: divide em blocos de até 31 dias (um por página)
+function ganttPartes(g, fonte, titulo, filtros){
+  const {ini, n} = gtRange(g);
+  if (g.zoom !== 'per' || n <= 35) { const D = gtData(g, fonte); return D.acts.length ? [ganttCtx(D, g, titulo, filtros, '')] : []; }
+  const out = [];
+  for (let k = 0; k < n; k += 31){ const gi = {...g, zoom:'per', ini: addDays(ini, k), fim: addDays(ini, Math.min(n, k + 31) - 1)}, D = gtData(gi, fonte); if (D.acts.length) out.push(ganttCtx(D, gi, titulo, filtros, '')); }
+  return out;
+}
 // dados do calendário exatamente como estão na tela (período, turno, agrupamento, concluídas e filtros)
 // fonte: lista própria (calendário da página do local, sem os filtros da tela Atividades)
 function gtData(g = S.gt, fonte = null){
@@ -674,7 +696,7 @@ function gtData(g = S.gt, fonte = null){
   for (const gr of G) gr.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
   return {ini, n, fim, hoje, ft, acts, G, mesLbl};
 }
-const ZLBL = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
+const ZLBL = {sem:'Semana', qui:'Quinzena', mes:'Mês', per:'Período'};
 function ganttCtx(D, g, titulo, filtros, arquivo){
   const now = new Date();
   return {...D, fimOf, avOf, localLine, nightsBetween, addDays, parseYmd, fmtShort, statusLabel: k => STATUS[k]?.label || k,
@@ -690,9 +712,10 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=43');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=44');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
-    await gerarGanttPDF(ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`));
+    const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
+    await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, qtd: D.acts.length, periodo: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom].toLowerCase()} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
   } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
@@ -702,6 +725,8 @@ function renderGantt(){
   const g = S.gt, {ini, n} = gtRange(), fim = addDays(ini, n - 1), hoje = defaultNight(), ft = S.f.turno;
   if (ini < S.winFrom){ S.winFrom = addDays(ini, -7); subscribeWindow(); }
   for (const b of document.querySelectorAll('#gt-zoom button')) b.setAttribute('aria-pressed', String(b.dataset.z === g.zoom));
+  $('gt-per').hidden = g.zoom !== 'per';
+  if (g.zoom === 'per'){ $('gt-ini').value = ini; $('gt-fim').value = fim; }
   for (const b of document.querySelectorAll('#gt-grp button')) b.setAttribute('aria-pressed', String(b.dataset.g === g.grp));
   for (const b of document.querySelectorAll('#gt-turno button')) b.setAttribute('aria-pressed', String((b.dataset.t || '') === ft));
   $('gt-conc').checked = g.conc;
@@ -1516,7 +1541,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=43');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=44');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1604,11 +1629,13 @@ function renderLocalCal(acts, m){
       <button class="gt-pdf" type="button" data-lgt-pdf title="Exportar este calendário em PDF" aria-label="Exportar este calendário em PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>PDF</span></button></div>
     </div>
     <div class="gt-ctl">
-      <div class="seg gt-seg" role="group" aria-label="Período">${[['sem','Semana'],['qui','Quinzena'],['mes','Mês']].map(([k, l]) => `<button type="button" data-lgt-z="${k}" aria-pressed="${g.zoom === k}">${l}</button>`).join('')}</div>
+      <div class="seg gt-seg" role="group" aria-label="Período">${[['sem','Semana'],['qui','Quinzena'],['mes','Mês'],['per','Período']].map(([k, l]) => `<button type="button" data-lgt-z="${k}" aria-pressed="${g.zoom === k}">${l}</button>`).join('')}</div>
+
       <div class="seg gt-seg" role="group" aria-label="Agrupar por">${[['local','Local'],['etq','Etiqueta']].map(([k, l]) => `<button type="button" data-lgt-g="${k}" aria-pressed="${g.grp === k}">${l}</button>`).join('')}</div>
       <div class="seg gt-seg gt-tseg" role="group" aria-label="Turno">${[['','Todos'],['diurno',ICON_SOL],['noturno',ICON_LUA]].map(([k, l]) => `<button type="button" data-lgt-t="${k}" aria-pressed="${(g.turno || '') === k}"${k ? ` aria-label="${TURNOS[k]}" title="${TURNOS[k]}"` : ''}>${l}</button>`).join('')}</div>
       <label class="gt-chk"><input type="checkbox" data-lgt-conc${g.conc ? ' checked' : ''}><span>Concluídas</span></label>
     </div>
+    ${g.zoom === 'per' ? `<div class="gt-per"><label><span>De</span><input type="date" data-lgt-ini value="${ini}"></label><label><span>até</span><input type="date" data-lgt-fim value="${fim}"></label></div>` : ''}
     <div class="gt-wrap lgt-wrap" id="lgt-wrap"></div>
     <div class="gt-leg" id="lgt-leg"></div>`;
   const wrap = $('lgt-wrap');
@@ -1625,8 +1652,8 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=43');
-    await gerarGanttPDF(ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo));
+    const { gerarGanttPDF } = await import('./relatorio.js?v=44');
+    await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
   } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
@@ -1651,7 +1678,7 @@ function openLocalPdf(){
       <div class="f"><label class="chk"><input type="checkbox" id="lp-fotos" checked> Incluir as fotos</label></div>
       <div class="f"><label class="chk"><input type="checkbox" id="lp-hist" checked> Incluir o histórico de cada atividade</label></div>
       <div class="f"><label class="chk"><input type="checkbox" id="lp-cal" checked> Incluir o calendário</label>
-        <div class="seg lp-calp" id="lp-calp" style="margin-top:8px">${[['tudo','Todo o período (mês a mês)'],['tela',`Período do calendário (${ZLBL[S.lgt.zoom].toLowerCase()} ${fmtShort(gtRange(S.lgt).ini)})`]].map(([k, l], i) => `<button type="button" data-p="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div></div>
+        <div class="seg lp-calp" id="lp-calp" style="margin-top:8px">${[['tudo','Todo o período (mês a mês)'],['tela',`Período do calendário (${S.lgt.zoom === 'per' ? `${fmtShort(S.lgt.ini)} a ${fmtShort(S.lgt.fim)}` : `${ZLBL[S.lgt.zoom].toLowerCase()} ${fmtShort(gtRange(S.lgt).ini)}`})`]].map(([k, l], i) => `<button type="button" data-p="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div></div>
       <div class="cf-prev" id="lp-prev"></div>
       <div class="acts"><button type="button" class="btn ghost" id="lp-cancel">Cancelar</button><button class="btn pri" type="submit">Gerar PDF</button></div>
     </form>`;
@@ -1690,7 +1717,7 @@ async function gerarPdfLocal(k, op, prog){
   const gantts = [];
   if (op.cal){
     const titulo = `Calendário · ${m.nome}`;
-    if (op.cal === 'tela'){ const g = {...S.lgt, conc: op.enc ? S.lgt.conc : false}, D = gtData(g, lista); if (D.acts.length) gantts.push(ganttCtx(D, g, titulo, '', '')); }
+    if (op.cal === 'tela'){ const g = {...S.lgt, conc: op.enc ? S.lgt.conc : false}; gantts.push(...ganttPartes(g, lista, titulo, '')); }
     else {
       const ini = lista.reduce((v, a) => a.noite < v ? a.noite : v, '9999'), fimT = lista.reduce((v, a) => { const f = a.aberta && fimOf(a) < hoje ? hoje : fimOf(a); return f > v ? f : v; }, '0000');
       const meses = []; let d = parseYmd(ini); d = new Date(d.getFullYear(), d.getMonth(), 1); const fimD = parseYmd(fimT);
@@ -1699,7 +1726,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=43');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=44');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2066,7 +2093,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=43');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=44');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2214,7 +2241,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=43');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=44');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2249,8 +2276,8 @@ document.addEventListener('click', e => {
   if (t.closest('[data-loc-back]')) return closeLocal();
   { const x = t.closest('[data-loc-view]'); if (x){ S.locView = x.dataset.locView; if (S.locView === 'cal') S.lgt.jump = true; return renderLocal(); } }
   { const x = t.closest('[data-lgt-nav]'); if (x){ gtShift(Number(x.dataset.lgtNav), S.lgt); return; } }
-  if (t.closest('[data-lgt-hoje]')){ S.lgt.ref = defaultNight(); S.lgt.jump = true; return renderLocal(); }
-  { const x = t.closest('[data-lgt-z]'); if (x){ S.lgt.zoom = x.dataset.lgtZ; S.lgt.jump = true; return renderLocal(); } }
+  if (t.closest('[data-lgt-hoje]')){ if (S.lgt.zoom === 'per'){ const n = gtRange(S.lgt).n; gtDatas(S.lgt, defaultNight(), addDays(defaultNight(), n - 1)); } else { S.lgt.ref = defaultNight(); S.lgt.jump = true; } return renderLocal(); }
+  { const x = t.closest('[data-lgt-z]'); if (x){ gtZoom(S.lgt, x.dataset.lgtZ); return renderLocal(); } }
   { const x = t.closest('[data-lgt-g]'); if (x){ S.lgt.grp = x.dataset.lgtG; return renderLocal(); } }
   { const x = t.closest('[data-lgt-t]'); if (x){ S.lgt.turno = x.dataset.lgtT; return renderLocal(); } }
   if (t.closest('[data-lgt-pdf]')) return exportLocalCalPdf();
@@ -2321,12 +2348,13 @@ $('n-date').addEventListener('click', e => { try { e.target.showPicker(); } catc
 $('f-q').oninput = e => { S.f.q = e.target.value.trim(); renderAll(); };
 try { const t = localStorage.getItem('pn-turno'); if (t === 'diurno' || t === 'noturno') S.f.turno = t; } catch {}
 $('f-turno').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.f.turno = b.dataset.t || ''; try { localStorage.setItem('pn-turno', S.f.turno); } catch {} renderAll(); };
-try { const v = JSON.parse(localStorage.getItem('pn-gt') || '{}'); if (['sem','qui','mes'].includes(v.zoom)) S.gt.zoom = v.zoom; if (['local','etq'].includes(v.grp)) S.gt.grp = v.grp; if (typeof v.conc === 'boolean') S.gt.conc = v.conc; } catch {}
+try { const v = JSON.parse(localStorage.getItem('pn-gt') || '{}'); if (['sem','qui','mes','per'].includes(v.zoom)) S.gt.zoom = v.zoom; if (v.zoom === 'per' && /^\d{4}-\d{2}-\d{2}$/.test(v.ini || '') && /^\d{4}-\d{2}-\d{2}$/.test(v.fim || '')){ S.gt.ini = v.ini; S.gt.fim = v.fim; } else if (v.zoom === 'per') S.gt.zoom = 'qui'; if (['local','etq'].includes(v.grp)) S.gt.grp = v.grp; if (typeof v.conc === 'boolean') S.gt.conc = v.conc; } catch {}
 $('gt-prev').onclick = () => gtShift(-1);
 $('gt-pdf').onclick = exportGanttPdf;
 $('gt-next').onclick = () => gtShift(1);
-$('gt-hoje').onclick = () => { S.gt.ref = defaultNight(); S.gt.jump = true; renderAll(); };
-$('gt-zoom').onclick = e => { const b = e.target.closest('button[data-z]'); if (!b) return; S.gt.zoom = b.dataset.z; S.gt.jump = true; gtSave(); renderAll(); };
+$('gt-hoje').onclick = () => { if (S.gt.zoom === 'per'){ const n = gtRange(S.gt).n; gtDatas(S.gt, defaultNight(), addDays(defaultNight(), n - 1)); gtSave(); } else { S.gt.ref = defaultNight(); S.gt.jump = true; } renderAll(); };
+$('gt-zoom').onclick = e => { const b = e.target.closest('button[data-z]'); if (!b) return; gtZoom(S.gt, b.dataset.z); gtSave(); renderAll(); };
+for (const id of ['gt-ini', 'gt-fim']) $(id).onchange = () => { if (gtDatas(S.gt, $('gt-ini').value, $('gt-fim').value)){ gtSave(); renderAll(); } };
 $('gt-grp').onclick = e => { const b = e.target.closest('button[data-g]'); if (!b) return; S.gt.grp = b.dataset.g; gtSave(); renderAll(); };
 $('gt-turno').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.f.turno = b.dataset.t || ''; try { localStorage.setItem('pn-turno', S.f.turno); } catch {} renderAll(); };
 $('gt-conc').onchange = e => { S.gt.conc = e.target.checked; gtSave(); renderAll(); };
@@ -2374,7 +2402,7 @@ document.addEventListener('keydown', e => { const x = e.target.closest && e.targ
 $('pd-new').onclick = () => openPendForm(null);
 $('pd-q').oninput = () => renderPend();
 document.addEventListener('pointerdown', fxIniciarArraste);
-document.addEventListener('change', e => { if (e.target.matches('[data-lgt-conc]')){ S.lgt.conc = e.target.checked; return renderLocal(); } if (e.target.matches('[data-fx-in]')){ fxEscolher(e.target.files); e.target.value = ''; } });
+document.addEventListener('change', e => { if (e.target.matches('[data-lgt-ini], [data-lgt-fim]') && S.lgt){ const r = $('lgt'); if (gtDatas(S.lgt, r.querySelector('[data-lgt-ini]').value, r.querySelector('[data-lgt-fim]').value)) renderLocal(); return; } if (e.target.matches('[data-lgt-conc]')){ S.lgt.conc = e.target.checked; return renderLocal(); } if (e.target.matches('[data-fx-in]')){ fxEscolher(e.target.files); e.target.value = ''; } });
 document.addEventListener('input', e => { if (e.target.id === 'fx-leg' && S.fxUp) S.fxUp.legenda = e.target.value; });
 $('lb-x').onclick = lbFechar; $('lb-prev').onclick = () => lbAbrir(lbI - 1); $('lb-next').onclick = () => lbAbrir(lbI + 1); $('lb-del').onclick = fotoExcluir;
 $('lb').addEventListener('click', e => { if (e.target.id === 'lb' || e.target.classList.contains('lb-fig')) lbFechar(); });

@@ -1281,3 +1281,10 @@ button.pd-c{cursor:pointer}
 .fx-ghost{position:fixed;left:0;top:0;z-index:90;pointer-events:none;border-radius:12px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.45);opacity:.95;transition:none}
 .fx-ghost img{width:100%;height:100%;object-fit:cover;display:block}
 @media (max-width:760px){ .fx-org span{display:none} .fx-org{width:36px;padding:0;justify-content:center} .fx-grid.org .fx-it{outline-width:1.5px} }
+
+/* v44: período personalizado no calendário */
+.gt-per{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.gt-per[hidden]{display:none}
+.gt-per label{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+.gt-per input{height:34px;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:9px;padding:0 8px;font-size:13px;color-scheme:dark}
+@media (max-width:760px){ .gt-per{width:100%} .gt-per label{flex:1} .gt-per input{flex:1;min-width:0} }
