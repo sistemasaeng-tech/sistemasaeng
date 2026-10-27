@@ -9,7 +9,7 @@ import {
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, collection, query, where, orderBy, limit, onSnapshot, writeBatch, serverTimestamp,
-  Timestamp, setDoc, updateDoc, getDocs, getDoc,
+  Timestamp, setDoc, updateDoc, getDocs, getDoc, runTransaction,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 /* ================= constantes ================= */
@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 45; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 46; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -123,6 +123,7 @@ const S = {
   f:{q:'',tipo:[],loc:[],forn:[],status:[],turno:'',etq:[],autor:[]}, cadSub:null, cadDel:null, openId:null, dwMode:null,
 };
 const isAdmin = () => S.perfil?.papel === 'admin';
+const autorEv = ev => ev.auto ? 'Sistema' : nameOf(ev.u), papelEv = ev => ev.auto ? '' : roleOf(ev.u);
 const canWrite = () => ['usuario','admin'].includes(S.perfil?.papel);
 const canRead = () => ['visualizador','usuario','admin'].includes(S.perfil?.papel);
 function all(){ const m = new Map(S.tagged); for (const [k,v] of S.extra) m.set(k,v); for (const [k,v] of S.win) m.set(k,v); for (const [k,v] of S.open) m.set(k,v); return m; }
@@ -294,7 +295,7 @@ function startApp(){
     S.tagged = snapToMap(s); fillFilterOptions(); renderAll();
   }, fail('etiquetas')));
   S.unsubs.push(onSnapshot(query(collection(db, 'atividades'), where('aberta', '==', true), limit(1000)), s => {
-    S.open = snapToMap(s); fillFilterOptions(); renderAll();
+    S.open = snapToMap(s); fillFilterOptions(); renderAll(); agendarAutoNaoIniciadas();
   }, fail('abertas')));
   const since = Timestamp.fromDate(new Date(Date.now() - 31*86400000));
   S.unsubs.push(onSnapshot(query(collection(db, 'historico'), where('t', '>=', since), orderBy('t', 'desc'), limit(2000)), s => {
@@ -498,7 +499,7 @@ function evText(ev){
   const st = k => `<span class="pill" style="--c:${cvar(k)}">${esc(STATUS[k]?.label || k)}</span>`;
   switch (ev.tipo){
     case 'criou': return `inseriu ${ev.origem ? 'uma cópia' : 'a atividade'} para ${fmtShort(ev.noite || ev.noiteAtv)}${ev.turno || ev.turnoAtv ? ' (' + (TURNOS[ev.turno || ev.turnoAtv] || '').toLowerCase() + ')' : ''}`;
-    case 'status': return `mudou o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
+    case 'status': return `${ev.auto ? 'mudou automaticamente' : 'mudou'} o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
     case 'obs': return 'adicionou uma observação';
     case 'avanco': return `atualizou o avanço de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>${ev.statusPara ? ` e o status mudou de ${st(ev.statusDe)} para ${st(ev.statusPara)}` : ''}`;
     case 'editou': return ev.mudancas?.length && ev.mudancas.every(m => m.campo === 'etiquetas') ? 'alterou as etiquetas' : 'alterou os dados';
@@ -528,7 +529,7 @@ function renderFeed(){
   const days = new Map();
   for (const ev of evs){ const d = ymd(toDate(ev.t)); if (!days.has(d)) days.set(d, []); days.get(d).push(ev); }
   $('feed').innerHTML = [...days.entries()].map(([d, list]) => `<div class="feed-day"><h3>${DOW[parseYmd(d).getDay()]} ${fmtShort(d)}</h3>${list.map(ev => `
-    <div class="ev"><time>${fmtHM(ev.t)}</time><div><p><b>${esc(nameOf(ev.u))}</b>${roleOf(ev.u) ? ` <span class="ro">${esc(roleOf(ev.u))}</span>` : ''} ${evText(ev)}${ev.tipo === 'exportou' ? '' : ' · '}${ev.tipo === 'exportou' ? '' : ev.tipo === 'excluiu' ? `<span>${esc(ev.titulo)}</span>` : `<button type="button" class="act" data-id="${esc(ev.atividadeId)}">${esc(ev.titulo)}</button>`} <span class="ro">${esc(ev.local||'')}</span></p>${evExtra(ev)}</div></div>`).join('')}</div>`).join('');
+    <div class="ev"><time>${fmtHM(ev.t)}</time><div><p><b>${esc(autorEv(ev))}</b>${papelEv(ev) ? ` <span class="ro">${esc(papelEv(ev))}</span>` : ''} ${evText(ev)}${ev.tipo === 'exportou' ? '' : ' · '}${ev.tipo === 'exportou' ? '' : ev.tipo === 'excluiu' ? `<span>${esc(ev.titulo)}</span>` : `<button type="button" class="act" data-id="${esc(ev.atividadeId)}">${esc(ev.titulo)}</button>`} <span class="ro">${esc(ev.local||'')}</span></p>${evExtra(ev)}</div></div>`).join('')}</div>`).join('');
 }
 
 /* ================= pendências (lembretes e providências de gestão) ================= */
@@ -712,7 +713,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=45');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=46');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1086,6 +1087,36 @@ function checkDayChange(){
   const era = S.hoje; S.hoje = h;
   if (S.gt.ref === era) { S.gt.ref = h; S.gt.jump = true; }
   if (S.dia === era) setNight(h); else renderAll();
+  agendarAutoNaoIniciadas();
+}
+
+/* ===== Programada que passou do dia de início sem começar → Não iniciada (automático) =====
+   O dia do app vira às 6h (o turno noturno vai até a manhã seguinte). Quem estiver com o app aberto e puder editar
+   faz a mudança; a transação confere de novo no banco, então dois aparelhos ao mesmo tempo não duplicam o registro. */
+S.autoTent = new Set(); let autoTimer = null, autoRodando = false;
+const precisaNaoIniciada = (a, hoje = defaultNight()) => a.status === 'programada' && a.aberta !== false && a.noite && a.noite < hoje;
+function agendarAutoNaoIniciadas(){ clearTimeout(autoTimer); autoTimer = setTimeout(autoNaoIniciadas, 2500); }
+async function autoNaoIniciadas(){
+  if (autoRodando || !canWrite() || !S.uid || navigator.onLine === false) return;
+  const hoje = defaultNight(), alvo = [...S.open.values()].filter(a => precisaNaoIniciada(a, hoje) && !S.autoTent.has(a.id + '|' + hoje)).slice(0, 60);
+  if (!alvo.length) return;
+  autoRodando = true;
+  try {
+    for (const a of alvo){
+      S.autoTent.add(a.id + '|' + hoje);
+      try {
+        await runTransaction(db, async tx => {
+          const ref = doc(db, 'atividades', a.id), snap = await tx.get(ref);
+          if (!snap.exists()) return;
+          const cur = {id: a.id, ...snap.data()};
+          if (!precisaNaoIniciada(cur, defaultNight())) return;
+          const hRef = doc(collection(db, 'historico'));
+          tx.update(ref, {status:'nao_iniciada', aberta:true, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
+          tx.set(hRef, evDoc(a.id, cur, {tipo:'status', de:'programada', para:'nao_iniciada', auto:true, obs:`O início previsto (${fmtShort(cur.noite)}) passou sem a atividade ser iniciada.`}));
+        });
+      } catch (e){ console.warn('mudança automática para Não iniciada', a.id, e?.code || e); }
+    }
+  } finally { autoRodando = false; }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayChange(); });
 window.addEventListener('focus', checkDayChange);
@@ -1257,7 +1288,7 @@ function setMode(mode){
 }
 function tlItem(ev, a){
   const c = ev.tipo === 'status' ? cvar(ev.para) : ev.tipo === 'criou' ? 'var(--brand)' : ev.tipo === 'avanco' || ev.tipo === 'foto' ? 'var(--brand)' : 'var(--faint)';
-  return `<li style="--c:${c}"><span class="d"></span><div class="h"><b>${esc(nameOf(ev.u))}</b> ${evText({...ev, noiteAtv:ev.noiteAtv || a?.noite})}</div><div class="ts">${esc(fmtTs(ev.t))}${roleOf(ev.u) ? ' · ' + esc(roleOf(ev.u)) : ''}</div>${evExtra(ev)}</li>`;
+  return `<li style="--c:${c}"><span class="d"></span><div class="h"><b>${esc(autorEv(ev))}</b> ${evText({...ev, noiteAtv:ev.noiteAtv || a?.noite})}</div><div class="ts">${esc(fmtTs(ev.t))}${papelEv(ev) ? ' · ' + esc(papelEv(ev)) : ''}</div>${evExtra(ev)}</li>`;
 }
 function renderTimeline(){
   const a = all().get(S.openId), hs = [...S.dwHist].reverse();
@@ -1537,7 +1568,7 @@ async function fichaCtx(a, fs, hs, max = 1600, onFoto = () => {}){
     let tx = evText({...ev, noiteAtv: ev.noiteAtv || a.noite}).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     if (ev.mudancas?.length) tx += '\n' + ev.mudancas.map(x => `${FIELDS[x.campo] || (x.campo === 'status' ? 'Status' : x.campo)}: ${fmtVal(x.campo, x.de) || '—'} → ${fmtVal(x.campo, x.para) || '—'}`).join('\n');
     if (ev.motivo || ev.obs) tx += '\n' + [ev.motivo, ev.obs].filter(Boolean).join(' — ');
-    return {quando: fmtTs(ev.t), quem: nameOf(ev.u), texto: tx};
+    return {quando: fmtTs(ev.t), quem: autorEv(ev), texto: tx};
   });
   const d1 = durOf(a), hoje = defaultNight();
   const situ = a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < hoje ? `Vencida há ${nightsBetween(fimOf(a), hoje)} ${nightsBetween(fimOf(a), hoje) === 1 ? 'dia' : 'dias'}` : a.noite > hoje ? 'A iniciar' : 'Em curso';
@@ -1559,7 +1590,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=45');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=46');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1670,7 +1701,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=45');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=46');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1744,7 +1775,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=45');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=46');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2038,7 +2069,7 @@ async function exportCsv(){
   } catch (e) { console.warn(e); }
   const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Loja / ambiente do pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
-  const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${nameOf(ev.u)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
+  const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${autorEv(ev)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
   const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < S.noite ? 'Vencida' : a.noite > S.noite ? 'A iniciar' : 'Em curso', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
   const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.dia ? S.dia : 'em_aberto_' + hoje}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
@@ -2111,7 +2142,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=45');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=46');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2221,7 +2252,7 @@ async function montarExportIA({per, conc, filt}){
       if (a.motivo) ln(`- Motivo atual: ${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}`);
       if (a.ultimaObs) ln(`- Última observação: ${String(a.ultimaObs).replace(/\s*\n\s*/g, ' / ')}`);
       ln(`- Inserida por ${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}${a.atualizadoPor ? ` · última alteração por ${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}` : ''}`);
-      if (hs.length){ ln('- Histórico:'); for (const ev of hs) ln(`  - ${fmtTs(ev.t)} — ${nameOf(ev.u)}: ${evTxt(ev)}`); }
+      if (hs.length){ ln('- Histórico:'); for (const ev of hs) ln(`  - ${fmtTs(ev.t)} — ${autorEv(ev)}: ${evTxt(ev)}`); }
     }
   }
   const pend = [...S.pend.values()].filter(p => !p.feita || !desde || String(p.prazo || '') >= desde || ymd(toDate(p.feitaEm || p.atualizadoEm)) >= desde);
@@ -2259,7 +2290,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=45');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=46');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
