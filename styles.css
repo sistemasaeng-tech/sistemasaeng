@@ -1381,3 +1381,8 @@ button.pd-c{cursor:pointer}
   .eq-row{grid-template-columns:32px minmax(0,1fr) 46px 50px 38px;gap:8px;padding:10px 12px}
   .eq-c small{font-size:9px}
 }
+
+/* v51: coordenador do setor */
+.ci-coord{max-width:160px}
+.u-set{display:block;font-size:12px;color:var(--brand-text);font-weight:600;margin-top:1px}
+@media (max-width:760px){ .ci-coord{max-width:120px} }
