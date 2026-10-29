@@ -29,7 +29,7 @@ const MOTIVOS = ['Equipe não compareceu','Efetivo insuficiente','Falta de mater
 const PRIOR = {normal:'Normal', alta:'Alta', critica:'Crítica'};
 const FUNCOES = ['Coordenador','Residente','Engenheiro','Encarregado','Mestre de obras','Técnico de segurança','Planejamento','Outro'];
 const PAPEIS = {pendente:'Aguardando aprovação', visualizador:'Visualizador', usuario:'Usuário', admin:'Administrador', bloqueado:'Bloqueado'};
-const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',etiquetas:'Etiquetas',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',pilarLoja:'Loja / ambiente do pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade'};
+const FIELDS = {noite:'Início',fim:'Término',avanco:'Avanço',etiquetas:'Etiquetas',turno:'Turno',tipoLocal:'Tipo de local',setor:'Setor',nivel:'Nível',eixo:'Eixo / complemento',pilar:'Pilar',pilarLoja:'Loja / ambiente do pilar',local:'Local do shopping',titulo:'Atividade',detalhes:'Detalhes',fornecedor:'Fornecedor',responsavel:'Responsável no turno',efetivo:'Efetivo previsto',prioridade:'Prioridade',dono:'Dono'};
 const TIPO_LABEL = {setor:'Setor', pilar:'Pilar', shopping:'Shopping'};
 const TURNOS = {diurno:'Diurno', noturno:'Noturno'};
 const turnoOf = a => a.turno === 'diurno' ? 'diurno' : 'noturno'; // atividades antigas, sem turno, contam como noturnas
@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 47; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 48; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -146,6 +146,9 @@ function tagCatalog(){
 }
 const nameOf = u => !u ? 'Sem identificação' : (S.usuarios[u]?.nome || (u === S.uid && S.perfil?.nome) || 'Usuário');
 const roleOf = u => S.usuarios[u]?.funcao || '';
+// Dono: quem responde pela atividade (o administrador escolhe; nas antigas, é quem inseriu)
+const donoOf = a => a?.dono || a?.criadoPor || '';
+const donosPossiveis = (atual = '') => { const ids = Object.entries(S.usuarios).filter(([, u]) => ['usuario','admin'].includes(u.papel)).map(([id]) => id); if (S.uid && !ids.includes(S.uid)) ids.push(S.uid); if (atual && !ids.includes(atual)) ids.push(atual); return ids.sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')); };
 
 // Pilar: o mesmo pilar pode estar em lojas diferentes conforme o piso, por isso a loja/ambiente é um campo próprio
 const pilarCodeOf = a => pilarCode(a.pilar) || String(a.pilar || '').trim();
@@ -279,7 +282,7 @@ function startApp(){
   renderWho();
   if (S.started){ renderAll(); return; }
   S.started = true;
-  S.tab = 'noite'; // o app abre sempre na aba Atividades
+  S.tab = 'ini'; // o app abre sempre no Início (panorama de quem entrou)
   setTab(S.tab);
   const fail = what => err => { console.warn(what, err); if (err?.code === 'permission-denied') return; toast('Conexão com o banco interrompida. Recarregue a página.'); };
   S.unsubs.push(onSnapshot(collection(db, 'usuarios'), s => {
@@ -389,7 +392,7 @@ function matches(a){
   if (f.forn.length && !f.forn.includes(a.fornecedor || '__none__')) return false;
   if (f.status.length && !f.status.includes(a.status)) return false;
   if (f.etq.length && !f.etq.some(t => hasTag(a, t))) return false;
-  if (f.autor.length && !f.autor.includes(a.criadoPor)) return false;
+  if (f.autor.length && !f.autor.includes(donoOf(a))) return false;
   if (f.q){ const hay = [a.titulo,a.detalhes,a.fornecedor,a.responsavel,localLine(a),a.ultimaObs,a.motivo,...tagsOf(a)].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
   return true;
 }
@@ -490,7 +493,7 @@ function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
     <span class="body">
       <span class="c-top"><span class="t">${esc(a.titulo)}</span><span class="pill" style="--c:${cvar(a.status)}">${esc(st.label)}</span></span>
       <span class="m">${esc(meta)}</span>${alerta}
-      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${a.criadoPor ? `<span class="c-who" title="Inserida por ${esc(nameOf(a.criadoPor))}"><i>${esc(initials(nameOf(a.criadoPor)))}</i><span class="c-who-n">${esc(shortName(nameOf(a.criadoPor)))}</span></span>` : ''}${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
+      <span class="c-bot"><span class="c-tags"><span class="t-ic ${turnoOf(a)}" title="${TURNOS[turnoOf(a)]}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${donoOf(a) ? `<span class="c-who" title="Dono: ${esc(nameOf(donoOf(a)))}"><i>${esc(initials(nameOf(donoOf(a))))}</i><span class="c-who-n">${esc(shortName(nameOf(donoOf(a))))}</span></span>` : ''}${tags.join('')}</span>${av ? `<span class="c-prog">${progBar(av)}</span>` : ''}</span>
     </span></button>`;
 }
 
@@ -511,7 +514,7 @@ function evText(ev){
     default: return esc(ev.tipo);
   }
 }
-const fmtVal = (campo, v) => campo === 'status' ? (STATUS[v]?.label || v || '') : (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
+const fmtVal = (campo, v) => campo === 'dono' ? (v ? nameOf(v) : '') : campo === 'status' ? (STATUS[v]?.label || v || '') : (campo === 'noite' || campo === 'fim') && v ? fmtShort(v) : campo === 'avanco' ? `${v || 0}%` : campo === 'turno' ? (TURNOS[v] || (v ? v : 'Noturno')) : campo === 'tipoLocal' ? (TIPO_LABEL[v] || v) : campo === 'prioridade' ? (PRIOR[v] || v) : (v ?? '');
 function evExtra(ev){
   if (ev.tipo === 'exportou') return `<div class="ch">${[ev.qtd ? (ev.formato === 'resumo' ? `${ev.qtd} ${ev.qtd === 1 ? 'destinatário' : 'destinatários'}` : `${ev.qtd} ${ev.qtd === 1 ? 'atividade' : 'atividades'}`) : '', ev.periodo || '', ev.formato === 'resumo' ? '' : ev.filtros ? 'filtros: ' + esc(ev.filtros) : 'sem filtros'].filter(Boolean).map(x => x.startsWith('filtros') || x === 'sem filtros' ? x : esc(x)).join(' · ')}${ev.arquivo ? `<br><span class="ro">${esc(ev.arquivo)}</span>` : ''}</div>`;
   let h = '';
@@ -713,7 +716,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=47');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=48');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -789,7 +792,7 @@ function ganttHTML(D, g, wrap, opt = {}){
         const t0 = Math.max(0, i1 + 1), t1 = Math.min(n - 1, ti);
         if (t1 >= t0){ const w = (t1 - t0 + 1) * cw - 3, d = nightsBetween(fimOf(a), hoje); tail = `<span class="gt-tail" style="left:${t0 * cw - (i1 + 1 >= 0 ? 3 : -3)}px;width:${w}px" title="${d} ${d === 1 ? 'dia' : 'dias'} de atraso">${w >= 46 ? `+${d}d` : ''}</span>`; }
       }
-      const meta = [g.grp === 'etq' ? localLine(a) : a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.fornecedor, a.criadoPor ? shortName(nameOf(a.criadoPor)) : ''].filter(Boolean).join(' · ');
+      const meta = [g.grp === 'etq' ? localLine(a) : a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.fornecedor, donoOf(a) ? shortName(nameOf(donoOf(a))) : ''].filter(Boolean).join(' · ');
       h += `<div class="gt-r${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(a.titulo)} · ${fmtPeriodo(a)} · ${esc(st.label)} ${av}%">
         <div class="gt-n"><b>${a.prioridade === 'critica' || a.prioridade === 'alta' ? `<i class="gt-p ${a.prioridade}"></i>` : ''}<span class="gt-tt">${esc(a.titulo)}</span></b><small><span class="t-ic ${turnoOf(a)}">${turnoOf(a) === 'diurno' ? ICON_SOL : ICON_LUA}</span>${esc(meta)}</small></div>
         <div class="gt-t">${tail}${bar}</div></div>`;
@@ -1011,7 +1014,7 @@ const MS = {
   'ms-etq':   {ph:'Todas as etiquetas', key:'etq', opts: () => [...tagCatalog().values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt')).map(x => ({v:x.nome, l:x.nome, sub:`${x.n} ${x.n === 1 ? 'atividade' : 'atividades'}`}))},
   'ms-autor': {ph:'Todas as pessoas', key:'autor', opts: () => {
     const ids = new Set();
-    for (const a of all().values()) if (a.criadoPor) ids.add(a.criadoPor);
+    for (const a of all().values()) if (donoOf(a)) ids.add(donoOf(a));
     for (const [id, u] of Object.entries(S.usuarios)) if (['usuario','admin'].includes(u.papel)) ids.add(id);
     return [...ids].sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')).map(id => ({v:id, l:nameOf(id), sub:roleOf(id)}));
   }},
@@ -1044,7 +1047,7 @@ function fillFilterOptions(){
 /* ================= render geral ================= */
 function renderAll(){
   if (!S.started) return;
-  if (S.loc) renderLocal(); else if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else if (S.tab === 'pend') renderPend(); else renderCad();
+  if (S.loc) renderLocal(); else if (S.tab === 'ini') renderInicio(); else if (S.tab === 'noite') renderNight(); else if (S.tab === 'hist') renderFeed(); else if (S.tab === 'etq') renderEtq(); else if (S.tab === 'gantt') renderGantt(); else if (S.tab === 'pend') renderPend(); else renderCad();
   if (S.openId){ renderDrawerHead(); renderTimeline(); if (!S.dwMode) renderDrawerActions(); }
   updPendBadge(); renderWho();
   $('exp-ia').hidden = !isAdmin(); $('imp-ia').hidden = !isAdmin(); // exportação para o Claude e importação: só administradores
@@ -1066,7 +1069,7 @@ function setTab(t){
   if (t === 'cad' && S.tab === 'cad') S.cadSub = null;
   if (t === 'etq' && S.tab === 'etq') S.etq = null;
   S.loc = null; $('v-local').hidden = true;
-  S.tab = ['noite','pend','gantt','etq','hist','cad'].includes(t) ? t : 'noite';
+  S.tab = ['ini','noite','pend','gantt','etq','hist','cad'].includes(t) ? t : 'ini';
   if (S.tab === 'gantt') S.gt.jump = true;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
   // Etiquetas, Histórico e Cadastros ficam no menu "Mais"
@@ -1075,7 +1078,7 @@ function setTab(t){
     const ml = document.querySelector('.tabs .tm-l'); if (ml) ml.textContent = inMore ? LBL[S.tab] : 'Mais';
     for (const x of document.querySelectorAll('[data-go]')) x.classList.toggle('on', x.dataset.go === S.tab);
     closeMore(); }
-  $('v-noite').hidden = S.tab !== 'noite'; $('v-gantt').hidden = S.tab !== 'gantt'; $('v-etq').hidden = S.tab !== 'etq'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad'; $('v-pend').hidden = S.tab !== 'pend';
+  $('v-ini').hidden = S.tab !== 'ini'; $('v-noite').hidden = S.tab !== 'noite'; $('v-gantt').hidden = S.tab !== 'gantt'; $('v-etq').hidden = S.tab !== 'etq'; $('v-hist').hidden = S.tab !== 'hist'; $('v-cad').hidden = S.tab !== 'cad'; $('v-pend').hidden = S.tab !== 'pend';
   try { localStorage.setItem('pn-tab', S.tab); } catch {}
   window.scrollTo({top:0});
   renderAll();
@@ -1128,6 +1131,60 @@ function setNight(n){
   renderAll();
 }
 
+/* ================= Início: panorama de quem entrou (atividades em que é o dono) ================= */
+S.iniU = null; S.iniMais = false;
+const saudacao = () => { const h = new Date().getHours(); return h < 5 ? 'Boa noite' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
+const primeiroNome = n => String(n || '').trim().split(/\s+/)[0] || '';
+const abertaAtv = a => a.aberta && STATUS[a.status]?.aberta;
+function panoramaDe(u, hoje = defaultNight()){
+  const em7 = addDays(hoje, 7), sem7 = addDays(hoje, -7);
+  const mine = [...all().values()].filter(a => donoOf(a) === u), ab = mine.filter(abertaAtv);
+  const venc = ab.filter(a => fimOf(a) < hoje);
+  const atencao = ab.filter(a => fimOf(a) < hoje || a.status === 'impedida' || a.status === 'nao_iniciada')
+    .sort((x, y) => (fimOf(x) < hoje ? 0 : 1) - (fimOf(y) < hoje ? 0 : 1) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
+  const at = new Set(atencao.map(a => a.id));
+  const hojeL = ab.filter(a => !at.has(a.id) && a.noite <= hoje && fimOf(a) >= hoje).sort((x, y) => prRank(x.prioridade) - prRank(y.prioridade) || ORDER.indexOf(x.status) - ORDER.indexOf(y.status));
+  const prox = ab.filter(a => !at.has(a.id) && a.noite > hoje && a.noite <= em7).sort((x, y) => x.noite.localeCompare(y.noite));
+  const depois = ab.filter(a => !at.has(a.id) && a.noite > em7).length;
+  const conc = mine.filter(a => a.status === 'concluida' && concDay(a) >= sem7).sort((x, y) => concDay(y).localeCompare(concDay(x)));
+  const avs = ab.filter(a => a.noite <= hoje).map(avOf), avMed = avs.length ? Math.round(avs.reduce((s, v) => s + v, 0) / avs.length) : 0;
+  const locs = new Map(); for (const a of ab){ const g = groupKey(a); if (!locs.has(g.k)) locs.set(g.k, {k:g.k, label:g.label, sub:g.sub, n:0, v:0}); const L = locs.get(g.k); L.n++; if (fimOf(a) < hoje) L.v++; }
+  return {mine, ab, venc, atencao, hojeL, prox, depois, conc, avMed, locs:[...locs.values()].sort((x, y) => y.v - x.v || y.n - x.n || x.label.localeCompare(y.label, 'pt'))};
+}
+function renderInicio(){
+  const hoje = defaultNight(), u = S.iniU || S.uid, eu = u === S.uid, P = panoramaDe(u, hoje), nome = nameOf(u);
+  const d = parseYmd(hoje), dataLonga = `${DOW[d.getDay()][0].toUpperCase()}${DOW[d.getDay()].slice(1)}, ${d.getDate()} de ${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][d.getMonth()]}`;
+  const sec = (tit, lista, opt = {}) => lista.length ? `<div class="sec ini-sec${opt.cls ? ' ' + opt.cls : ''}"><div class="sec-h"><h2>${tit}</h2><span>${lista.length}</span>${opt.btn || ''}</div><div class="cards">${(opt.max ? lista.slice(0, opt.max) : lista).map(a => card(a, fimOf(a) < hoje && abertaAtv(a), hoje, true)).join('')}</div>${opt.max && lista.length > opt.max ? `<button type="button" class="link-btn ini-mais" data-ini-mais>Ver mais ${lista.length - opt.max}</button>` : ''}</div>` : '';
+  // equipe: quem é dono de atividades em aberto
+  const eq = new Map();
+  for (const id of donosPossiveis()) eq.set(id, {id, ab:0, v:0, h:0});
+  for (const a of S.open.values()){ const id = donoOf(a); if (id && abertaAtv(a) && !eq.has(id)) eq.set(id, {id}); }
+  for (const e of eq.values()){ const p = id => id === u ? P : panoramaDe(id, hoje), q = p(e.id); e.ab = q.ab.length; e.v = q.venc.length; e.h = q.hojeL.length; }
+  const equipe = [...eq.values()].filter(e => e.ab || S.usuarios[e.id]).sort((x, y) => (y.id === S.uid) - (x.id === S.uid) || y.v - x.v || y.ab - x.ab || nameOf(x.id).localeCompare(nameOf(y.id), 'pt'));
+  $('v-ini').innerHTML = `<div class="ini">
+    <div class="ini-head">
+      ${eu ? `<div class="eyebrow">${esc(dataLonga)}</div><h1>${saudacao()}, ${esc(primeiroNome(nome) || 'bem-vindo')}</h1><div class="sub">Bem-vindo ao seu panorama: as atividades em que você é o dono.</div>`
+        : `<button type="button" class="back" data-ini-u="${esc(S.uid)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Voltar para o meu panorama</button><div class="eyebrow">${esc(dataLonga)}</div><h1>${esc(nome)}</h1><div class="sub">${roleOf(u) ? esc(roleOf(u)) + ' · ' : ''}atividades em que é o dono</div>`}
+    </div>
+    <div class="etq-kpis ini-kpis">
+      <div class="kp"><span>Em aberto</span><b>${P.ab.length}</b></div>
+      <div class="kp${P.venc.length ? ' warn' : ''}"><span>Vencidas</span><b>${P.venc.length}</b></div>
+      <div class="kp"><span>Hoje</span><b>${P.hojeL.length}</b></div>
+      <div class="kp"><span>Próx. 7 dias</span><b>${P.prox.length}</b></div>
+      <div class="kp ok"><span>Concluídas 7 dias</span><b>${P.conc.length}</b></div>
+    </div>
+    ${P.locs.length ? `<div class="ini-locs"><div class="ini-lbl">Seus locais</div><div class="ini-chips">${P.locs.map(L => `<button type="button" class="ini-chip" data-loc="${esc(L.k)}" title="${esc(L.sub || L.label)}"><b>${esc(L.label)}</b><span>${L.n}</span>${L.v ? `<em>${L.v} venc.</em>` : ''}</button>`).join('')}</div></div>` : ''}
+    ${!P.mine.length ? `<div class="empty ini-empty"><b>${eu ? 'Você ainda não é dono de nenhuma atividade.' : 'Nenhuma atividade com este dono.'}</b><span>${eu ? 'O administrador define o dono ao lançar ou editar a atividade. Enquanto isso, veja todas na aba Atividades.' : ''}</span>${eu ? '<button type="button" class="btn" data-ini-tab="noite">Ver todas as atividades</button>' : ''}</div>` : ''}
+    ${P.mine.length && !P.ab.length ? '<div class="empty ini-empty"><b>Tudo em dia.</b><span>Nenhuma atividade em aberto.</span></div>' : ''}
+    ${sec('Precisam de atenção', P.atencao, {cls:'ini-at', max: S.iniMais ? 0 : 6})}
+    ${sec('Hoje', P.hojeL)}
+    ${sec('Próximos 7 dias', P.prox)}
+    ${P.depois ? `<p class="ro ini-dep">Mais ${P.depois} ${P.depois === 1 ? 'atividade programada' : 'atividades programadas'} depois de ${fmtShort(addDays(hoje, 7))}.</p>` : ''}
+    ${sec('Concluídas nos últimos 7 dias', P.conc, {cls:'ini-conc', max:4})}
+    ${equipe.length > 1 ? `<div class="sec ini-eq"><div class="sec-h"><h2>Equipe</h2><span>em aberto por dono</span></div><div class="eq-list">${equipe.map(e => `<button type="button" class="eq-row${e.id === u ? ' on' : ''}" data-ini-u="${esc(e.id)}"><span class="av">${esc(initials(nameOf(e.id)))}</span><span class="eq-n"><b>${esc(nameOf(e.id))}${e.id === S.uid ? ' <small>(você)</small>' : ''}</b><span>${esc(roleOf(e.id))}</span></span><span class="eq-c"><b>${e.ab}</b><small>abertas</small></span><span class="eq-c${e.v ? ' warn' : ''}"><b>${e.v}</b><small>vencidas</small></span><span class="eq-c"><b>${e.h}</b><small>hoje</small></span></button>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+
 /* ================= painel da atividade ================= */
 function openDrawer(id){
   S.openId = id; S.dwMode = null; S.dwHist = []; S.avEdit = false; S.histOpen = false; S.moreOpen = false;
@@ -1165,7 +1222,7 @@ function renderDrawerHead(){
   if (!S.avEdit) renderAv(a);
   const d1 = durOf(a);
   const kv = [['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
-    a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo previsto', a.efetivo] : null, a.motivo ? ['Motivo', a.motivo] : null, ['Inserida por', `${nameOf(a.criadoPor)}${roleOf(a.criadoPor) ? ' (' + roleOf(a.criadoPor) + ')' : ''}${a.criadoEm ? ' · ' + fmtTs(a.criadoEm) : ''}`]].filter(Boolean);
+    a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo previsto', a.efetivo] : null, a.motivo ? ['Motivo', a.motivo] : null, ['Dono', `${nameOf(donoOf(a))}${roleOf(donoOf(a)) ? ' (' + roleOf(donoOf(a)) + ')' : ''}`], ['Inserida por', `${nameOf(a.criadoPor)}${roleOf(a.criadoPor) ? ' (' + roleOf(a.criadoPor) + ')' : ''}${a.criadoEm ? ' · ' + fmtTs(a.criadoEm) : ''}`]].filter(Boolean);
   $('dw-info').innerHTML = `<dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
 }
 // avanço: a própria barra do topo é o controle
@@ -1577,6 +1634,7 @@ async function fichaCtx(a, fs, hs, max = 1600, onFoto = () => {}){
     ['Situação', situ], ['Local', localLine(a) || '—'], ['Fornecedor', a.fornecedor || 'Não informado'],
     ['Responsável no turno', a.responsavel || 'Não informado'], ['Efetivo previsto', a.efetivo || 'Não informado'],
     ['Prioridade', PRIOR[a.prioridade] || 'Normal'], tagsOf(a).length ? ['Etiquetas', tagsOf(a).join(', ')] : null,
+    ['Dono', nameOf(donoOf(a))],
     ['Inserida por', `${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}`],
     a.atualizadoPor ? ['Última alteração', `${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}`] : null,
   ].filter(Boolean);
@@ -1590,7 +1648,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=47');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=48');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1623,7 +1681,7 @@ function openLocal(k, nome = ''){
   if (S.openId) closeDrawer();
   S.loc = {k, nome}; S.locEnc = false; S.locView = 'lista';
   S.lgt = {zoom: S.gt.zoom === 'sem' ? 'qui' : S.gt.zoom, ref: defaultNight(), conc: true, grp: 'local', turno: '', jump: true, auto: true};
-  for (const v of ['v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
+  for (const v of ['v-ini','v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
   $('v-local').hidden = false; window.scrollTo({top:0});
   renderLocal();
   carregarTodas().then(() => { if (S.loc && S.loc.k === k) renderLocal(); });
@@ -1701,7 +1759,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=47');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=48');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1775,7 +1833,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=47');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=48');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -1868,6 +1926,7 @@ function createAct(data, origem){
   const actRef = doc(collection(db, 'atividades')); S.lastActId = actRef.id;
   const histRef = doc(collection(db, 'historico')), b = writeBatch(db);
   const et = tagsOf(data);
+  data.dono = isAdmin() && data.dono ? data.dono : S.uid;
   b.set(actRef, {...data, etiquetas:et, temEtiqueta:et.length > 0, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:Number(data.avanco) > 0 ? 'andamento' : 'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
   b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
   return commit(b);
@@ -1877,7 +1936,7 @@ function createAct(data, origem){
 function openForm(id, preset = {}){
   if (!canWrite()) return;
   const a = id ? all().get(id) : null;
-  const v = a ? {...a, turno:turnoOf(a)} : {noite:S.noite < defaultNight() ? defaultNight() : S.noite, turno:S.f.turno || '', tipoLocal:(S.f.tipo.length === 1 ? S.f.tipo[0] : '') || (S.f.loc.length === 1 ? {s:'setor', p:'pilar', z:'shopping'}[S.f.loc[0][0]] : '') || 'setor', setor:S.f.loc.length === 1 && S.f.loc[0][0] === 's' ? S.f.loc[0].slice(2) : '', pilar:S.f.loc.length === 1 && S.f.loc[0][0] === 'p' ? S.f.loc[0].slice(2) : '', local:S.f.loc.length === 1 && S.f.loc[0][0] === 'z' ? S.f.loc[0].slice(2) : '', prioridade:'normal', fornecedor:S.f.forn.length === 1 && S.f.forn[0] !== '__none__' ? S.f.forn[0] : '', etiquetas:[...S.f.etq], ...preset};
+  const v = a ? {...a, turno:turnoOf(a), dono:donoOf(a)} : {dono:S.uid, noite:S.noite < defaultNight() ? defaultNight() : S.noite, turno:S.f.turno || '', tipoLocal:(S.f.tipo.length === 1 ? S.f.tipo[0] : '') || (S.f.loc.length === 1 ? {s:'setor', p:'pilar', z:'shopping'}[S.f.loc[0][0]] : '') || 'setor', setor:S.f.loc.length === 1 && S.f.loc[0][0] === 's' ? S.f.loc[0].slice(2) : '', pilar:S.f.loc.length === 1 && S.f.loc[0][0] === 'p' ? S.f.loc[0].slice(2) : '', local:S.f.loc.length === 1 && S.f.loc[0][0] === 'z' ? S.f.loc[0].slice(2) : '', prioridade:'normal', fornecedor:S.f.forn.length === 1 && S.f.forn[0] !== '__none__' ? S.f.forn[0] : '', etiquetas:[...S.f.etq], ...preset};
   S.fromPend = !a && preset.fromPend ? preset.fromPend : null;
   const pdOrig = S.fromPend ? S.pend.get(S.fromPend) : null;
   $('sheet').innerHTML = `<h2>${a ? 'Editar atividade' : 'Nova atividade'}</h2>
@@ -1906,6 +1965,7 @@ function openForm(id, preset = {}){
     <div class="f"><label for="af-det">Detalhes / orientações para a equipe</label><textarea id="af-det" placeholder="Sequência, cuidados, liberações necessárias, contato no shopping…">${esc(v.detalhes||'')}</textarea></div>
     <div class="frow">
       <div class="f"><label for="af-forn">Fornecedor</label><input id="af-forn" list="dl-forn" value="${esc(v.fornecedor||'')}" placeholder="Selecione ou digite" autocomplete="off"></div>
+      <div class="f"><label for="af-dono">Dono da atividade</label><select id="af-dono"${isAdmin() ? '' : ' disabled'}>${donosPossiveis(v.dono).map(id => `<option value="${esc(id)}" ${id === v.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select><span class="f-hint">${isAdmin() ? 'Quem responde por ela e a vê no seu Início.' : 'Só o administrador altera o dono.'}</span></div>
       <div class="f"><label for="af-resp">Responsável no turno</label><input id="af-resp" value="${esc(v.responsavel||'')}" placeholder="Encarregado / técnico" autocomplete="off"></div>
       <div class="f"><label for="af-efet">Efetivo previsto</label><input id="af-efet" type="number" min="0" inputmode="numeric" value="${esc(v.efetivo||'')}"></div>
     </div>
@@ -1947,7 +2007,8 @@ function openForm(id, preset = {}){
     const d = {noite:$('af-noite').value, fim:$('af-fim').value || $('af-noite').value, avanco:Number($('af-av').value) || 0, turno, prioridade:$('af-prior').value, tipoLocal:tipo,
       setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? (pilarCode($('af-pilar').value) || $('af-pilar').value.trim()) : '', pilarLoja: tipo === 'pilar' ? $('af-pilar-loja').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
       nivel:$('af-nivel').value.trim(), eixo:$('af-eixo').value.trim(), titulo:$('af-titulo').value.trim(), detalhes:$('af-det').value.trim(),
-      fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim(), etiquetas:pk.get()};
+      fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim(), etiquetas:pk.get(),
+      dono: isAdmin() ? ($('af-dono').value || S.uid) : (a ? donoOf(a) : S.uid)};
     d.temEtiqueta = d.etiquetas.length > 0;
     if (!d.noite) return toast('Informe a data de início.');
     if (d.fim < d.noite) return toast('O término não pode ser antes do início.');
@@ -1981,7 +2042,7 @@ function openForm(id, preset = {}){
       else toast('Atividade inserida.');
       S.fromPend = null; return;
     }
-    const gv = (o, k) => String((k === 'etiquetas' ? tagsOf(o).join(', ') : k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
+    const gv = (o, k) => String((k === 'dono' ? donoOf(o) : k === 'etiquetas' ? tagsOf(o).join(', ') : k === 'turno' ? turnoOf(o) : k === 'fim' ? fimOf(o) : k === 'avanco' ? (o === a ? avOf(o) : Number(o.avanco) || 0) : o[k]) ?? '');
     const mudancas = Object.keys(FIELDS).filter(k => gv(a, k) !== gv(d, k)).map(k => ({campo:k, de:gv(a, k), para:gv(d, k)}));
     if (mudancas.some(m => m.campo === 'avanco') && autoAnd(a.status, d.avanco)){ d.status = 'andamento'; d.motivo = ''; mudancas.push({campo:'status', de:a.status, para:'andamento'}); }
     closeModal();
@@ -2067,10 +2128,10 @@ async function exportCsv(){
       s.forEach(d => { const v = d.data(SNAP); (hist[v.atividadeId] ||= []).push(v); });
     }
   } catch (e) { console.warn(e); }
-  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Loja / ambiente do pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
+  const head = ['Início','Término','Turno','Situação','Tipo de local','Setor','Pilar','Loja / ambiente do pilar','Local shopping','Nível','Eixo/complemento','Atividade','Etiquetas','Detalhes','Fornecedor','Responsável','Efetivo previsto','Prioridade','Status','Avanço (%)','Motivo','Última observação','Dono','Inserida por','Inserida em','Última alteração por','Última alteração em','Histórico'];
   const q = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const histTxt = a => (hist[a.id] || []).sort((x,y) => toDate(x.t)-toDate(y.t)).map(ev => `${fmtTs(ev.t)} ${autorEv(ev)}: ${evText(ev).replace(/<[^>]+>/g,'')}${ev.motivo ? ' ['+ev.motivo+']' : ''}${ev.obs ? ' — '+ev.obs : ''}`).join(' | ');
-  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < S.noite ? 'Vencida' : a.noite > S.noite ? 'A iniciar' : 'Em curso', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
+  const lines = [head.map(q).join(';'), ...rows.map(a => [fmtShort(a.noite), fmtShort(fimOf(a)), TURNOS[turnoOf(a)], a.status === 'concluida' ? 'Concluída' : a.status === 'cancelada' ? 'Cancelada' : fimOf(a) < S.noite ? 'Vencida' : a.noite > S.noite ? 'A iniciar' : 'Em curso', TIPO_LABEL[a.tipoLocal]||'', a.setor, a.tipoLocal === 'pilar' ? pilarCodeOf(a) : '', a.tipoLocal === 'pilar' ? pilarLojaOf(a) : '', a.local, a.nivel, a.eixo, a.titulo, tagsOf(a).join(', '), a.detalhes, a.fornecedor, a.responsavel, a.efetivo, PRIOR[a.prioridade]||'', STATUS[a.status]?.label||a.status, avOf(a), a.motivo, a.ultimaObs, nameOf(donoOf(a)), nameOf(a.criadoPor), fmtTs(a.criadoEm), nameOf(a.atualizadoPor), fmtTs(a.atualizadoEm), histTxt(a)].map(q).join(';'))];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'}));
   const el = document.createElement('a'); el.href = url; el.download = `Atividades_${S.dia ? S.dia : 'em_aberto_' + hoje}${ft ? '_' + ft : ''}.csv`; document.body.appendChild(el); el.click(); el.remove();
   logExport('csv', {arquivo: el.download, qtd: rows.length, periodo: `${S.dia ? 'dia ' + fmtShort(S.dia) + '/' + S.dia.slice(0, 4) + ' + vencidas' : 'todas em aberto em ' + fmtShort(hoje) + '/' + hoje.slice(0, 4)} · ${ft ? 'turno ' + TURNOS[ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
@@ -2142,7 +2203,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=47');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=48');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2190,7 +2251,7 @@ function normImport(x, turnoPadrao){
 }
 function openImportar(){
   if (!isAdmin()) return toast('Somente administradores podem importar atividades.');
-  const st = {arq:null, fonte:'', itens:[], nao:[], turno:'', ja:new Set(), sel:new Set(), rodando:false};
+  const st = {arq:null, fonte:'', itens:[], nao:[], turno:'', dono:S.uid, ja:new Set(), sel:new Set(), rodando:false};
   $('sheet').innerHTML = `<h2>Importar atividades</h2>
     <p class="ro" style="margin:-6px 0 14px">Escolha o arquivo <b>.json</b> preparado pelo Claude a partir de um relatório, planilha ou cronograma. Confira a lista antes de importar: cada atividade entra com o seu nome no histórico, como se tivesse sido lançada à mão.</p>
     <div class="f"><label class="imp-file"><input type="file" id="imp-in" accept=".json,application/json"><span>${ICON_DL}<b>Escolher arquivo</b><em id="imp-nome">nenhum arquivo</em></span></label></div>
@@ -2204,6 +2265,7 @@ function openImportar(){
     const porSt = {}; for (const x of ok) porSt[x.a.status] = (porSt[x.a.status] || 0) + 1;
     b.innerHTML = `${st.fonte ? `<div class="imp-fonte"><span>Fonte</span>${esc(st.fonte)}</div>` : ''}
       ${precisaTurno ? `<div class="f"><label>Turno <span class="ro">(o documento não informa)</span></label><div class="seg" id="imp-turno">${Object.entries(TURNOS).map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${st.turno === k}">${l}</button>`).join('')}</div></div>` : ''}
+      <div class="f"><label for="imp-dono">Dono das atividades</label><select id="imp-dono">${donosPossiveis(st.dono).map(id => `<option value="${esc(id)}" ${id === st.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select></div>
       <div class="imp-head"><label class="chk"><input type="checkbox" id="imp-all" ${ok.length && ok.length === st.itens.filter(x => !x.erros.length && !st.ja.has(x.raw.chave)).length ? 'checked' : ''}> ${st.itens.length} ${st.itens.length === 1 ? 'atividade' : 'atividades'} no arquivo</label>
         <span class="ro">${Object.entries(porSt).map(([k, n]) => `${n} ${stN(k, n)}`).join(' · ')}</span></div>
       <ul class="imp-list">${st.itens.map(x => { const ja = st.ja.has(x.raw.chave), bloq = ja || x.erros.length;
@@ -2215,6 +2277,7 @@ function openImportar(){
     const semTurno = precisaTurno && !st.turno && ok.length > 0;
     $('imp-go').disabled = !ok.length || st.rodando || semTurno; $('imp-go').textContent = semTurno ? 'Escolha o turno' : ok.length ? `Importar ${ok.length} ${ok.length === 1 ? 'atividade' : 'atividades'}` : 'Importar';
     if ($('imp-turno')) $('imp-turno').onclick = e => { const t = e.target.closest('[data-t]'); if (!t) return; st.turno = t.dataset.t; render(); };
+    $('imp-dono').onchange = e => { st.dono = e.target.value || S.uid; };
     $('imp-all').onchange = e => { for (const x of st.itens) if (e.target.checked) st.sel.add(x.i); else st.sel.delete(x.i); render(); };
     b.querySelectorAll('[data-imp]').forEach(c => c.onchange = () => { const i = Number(c.dataset.imp); if (c.checked) st.sel.add(i); else st.sel.delete(i); render(); });
   };
@@ -2251,7 +2314,7 @@ function openImportar(){
       const dados = {titulo:a.titulo, detalhes:a.detalhes, noite:a.noite, fim:a.fim, turno:a.turno, prioridade:a.prioridade, tipoLocal:a.tipoLocal,
         setor:a.tipoLocal === 'setor' ? a.setor : '', pilar:a.tipoLocal === 'pilar' ? a.pilar : '', pilarLoja:a.tipoLocal === 'pilar' ? a.pilarLoja : '', local:a.tipoLocal === 'shopping' ? a.local : '',
         nivel:a.nivel, eixo:a.eixo, fornecedor:a.fornecedor, responsavel:a.responsavel, efetivo:a.efetivo, etiquetas:a.etiquetas, temEtiqueta:a.etiquetas.length > 0,
-        ...(a.chave ? {chave:a.chave} : {})};
+        dono: st.dono || S.uid, ...(a.chave ? {chave:a.chave} : {})};
       try {
         const b1 = writeBatch(db);
         b1.set(actRef, {...dados, avanco: a.status === 'concluida' ? 0 : a.avanco, status:inicial, aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:h1.id});
@@ -2363,6 +2426,7 @@ async function montarExportIA({per, conc, filt}){
       if (a.detalhes) ln(`- Detalhes: ${String(a.detalhes).replace(/\s*\n\s*/g, ' / ')}`);
       if (a.motivo) ln(`- Motivo atual: ${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}`);
       if (a.ultimaObs) ln(`- Última observação: ${String(a.ultimaObs).replace(/\s*\n\s*/g, ' / ')}`);
+      ln(`- Dono: ${nameOf(donoOf(a))}`);
       ln(`- Inserida por ${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}${a.atualizadoPor ? ` · última alteração por ${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}` : ''}`);
       if (hs.length){ ln('- Histórico:'); for (const ev of hs) ln(`  - ${fmtTs(ev.t)} — ${autorEv(ev)}: ${evTxt(ev)}`); }
     }
@@ -2386,7 +2450,7 @@ let gerandoPdf = false;
 // texto dos filtros ativos (aparece no relatório)
 function filtrosTxt(){
   const f = S.f, p = [], L = (arr, fn) => arr.map(fn).join(', ');
-  if (f.autor.length) p.push(`inseridas por ${L(f.autor, nameOf)}`);
+  if (f.autor.length) p.push(`dono: ${L(f.autor, nameOf)}`);
   if (f.status.length) p.push(`status ${L(f.status, k => STATUS[k].label.toLowerCase())}`);
   if (f.tipo.length) p.push(L(f.tipo, t => ({setor:'setores', pilar:'pilares', shopping:'shopping'})[t]));
   if (f.loc.length) p.push(L(f.loc, v => v[0] === 's' ? 'setor ' + v.slice(2) : v[0] === 'p' ? 'pilar ' + v.slice(2) : v.slice(2)));
@@ -2402,7 +2466,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=47');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=48');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2433,6 +2497,9 @@ document.addEventListener('click', e => {
   if (!t.closest('.tab-more, .bn-more')) closeMore();
   if (!t.closest('.menu')){ $('who-pop').hidden = true; $('tools-pop').hidden = true; $('b-tools').setAttribute('aria-expanded','false'); for (const id of ['dw-more-pop','etq-more-pop']){ const mp = $(id); if (mp) mp.hidden = true; } if (S.uMenu){ S.uMenu = null; renderCadList(); } }
   if (!t.closest('.ms')) msClose();
+  { const iu = t.closest('[data-ini-u]'); if (iu){ S.iniU = iu.dataset.iniU === S.uid ? null : iu.dataset.iniU; S.iniMais = false; renderAll(); window.scrollTo({top:0, behavior:'smooth'}); return; } }
+  if (t.closest('[data-ini-mais]')){ S.iniMais = true; return renderAll(); }
+  { const it = t.closest('[data-ini-tab]'); if (it) return setTab(it.dataset.iniTab); }
   { const lo = t.closest('[data-loc]'); if (lo) return openLocal(lo.dataset.loc); }
   if (t.closest('[data-loc-back]')) return closeLocal();
   { const x = t.closest('[data-loc-view]'); if (x){ S.locView = x.dataset.locView; if (S.locView === 'cal') S.lgt.jump = true; return renderLocal(); } }

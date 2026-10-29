@@ -230,11 +230,11 @@ export async function gerarRelatorioPDF(ctx){
     y += 13;
     const items = [...g.items].sort((a, b) => prRank(a.prioridade) - prRank(b.prioridade) || ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.noite).localeCompare(String(b.noite)));
     doc.autoTable({...tblBase, startY: y,
-      head:[['Atividade', 'Etiqueta', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Inserida por', 'Motivo / última observação']],
+      head:[['Atividade', 'Etiqueta', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Dono', 'Motivo / última observação']],
       body: items.map(a => {
         const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · ');
         const et = Array.isArray(a.etiquetas) && a.etiquetas.length ? a.etiquetas.join('\n') : '-';
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(et), `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t(nomeDe(a.criadoPor)) + (a.criadoEm && ctx.fmtTs ? '\n' + ctx.fmtTs(a.criadoEm) : ''), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
+        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(et), `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t(nomeDe(a.dono || a.criadoPor)) + (a.criadoEm && ctx.fmtTs ? '\n' + ctx.fmtTs(a.criadoEm) : ''), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
       }),
       columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1], textColor:C.muted}, 2:{cellWidth:COLW[2]}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:COLW[6]}, 7:{cellWidth:'auto'}},
       didParseCell: d => {
@@ -422,7 +422,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       let lx = M + 2 + ix;
       if (a.prioridade === 'critica' || a.prioridade === 'alta'){ fill(a.prioridade === 'critica' ? ST.impedida.c : ST.parcial.c); doc.circle(lx + .8, r.y + 2.7, .8, 'F'); lx += 2.6; }
       color(C.ink); font('bold', 6.6); text(fit(a.titulo, gx - lx - 2), lx, r.y + 3.3);
-      const meta = [ctx.lojaDe ? ctx.lojaDe(a) : '', ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.criadoPor)].filter(Boolean).join(' · ');
+      const meta = [ctx.lojaDe ? ctx.lojaDe(a) : '', ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.dono || a.criadoPor)].filter(Boolean).join(' · ');
       color(C.faint); font('normal', 5.4); text(fit(meta, gx - M - 4 - ix), M + 2 + ix, r.y + 6.2);
       const bh = 4.4, by = r.y + (rowH - bh) / 2;
       // atraso: faixa até hoje

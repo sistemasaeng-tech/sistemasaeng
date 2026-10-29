@@ -1333,3 +1333,51 @@ button.pd-c{cursor:pointer}
 .imp-nao{margin-top:12px;font-size:13px}
 .imp-nao summary{cursor:pointer;color:var(--muted);font-weight:600}
 .imp-nao ul{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+
+/* v48: Início (panorama do dono) e dono da atividade */
+.f .f-hint{display:block;margin-top:5px;font-size:12px;color:var(--muted);font-weight:500}
+.f select:disabled{opacity:.7}
+.ini{display:flex;flex-direction:column;gap:18px}
+.ini-head h1{margin:2px 0 4px;font-size:clamp(26px,4vw,34px);letter-spacing:-.025em;line-height:1.1}
+.ini-head .sub{color:var(--muted);font-size:14.5px}
+.ini-head .back{display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:6px 8px 6px 0;margin-bottom:4px;color:var(--brand-text);font-weight:700;font-size:14px;cursor:pointer}
+.ini-head .back svg{width:18px;height:18px}
+.ini-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
+.ini-kpis .kp.ok b{color:var(--st-ok)}
+.ini-lbl{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.ini-chips{display:flex;flex-wrap:wrap;gap:8px}
+.ini-chip{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-size:13.5px;cursor:pointer;max-width:100%}
+.ini-chip b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ini-chip span{font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.ini-chip em{font-style:normal;font-size:11.5px;font-weight:700;color:var(--st-nao);background:color-mix(in srgb,var(--st-nao) 14%,transparent);border-radius:10px;padding:2px 7px}
+.ini-chip:hover{border-color:var(--brand)}
+.ini-sec .sec-h h2{font-size:17px}
+.ini-at .sec-h h2{color:var(--st-nao)}
+.ini-mais{margin-top:10px}
+.ini-dep{margin:-6px 0 0}
+.ini-empty{display:flex;flex-direction:column;align-items:center;gap:8px}
+.ini-empty b{color:var(--fg);font-size:15px}
+.ini-empty .btn{margin-top:6px}
+.ini-eq .sec-h span{font-size:12.5px;color:var(--muted)}
+.eq-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+.eq-row{display:grid;grid-template-columns:36px minmax(0,1fr) 64px 64px 52px;align-items:center;gap:10px;padding:10px 14px;border:0;border-top:1px solid var(--line);background:none;color:var(--fg);text-align:left;cursor:pointer;font:inherit}
+.eq-row:first-child{border-top:0}
+.eq-row:hover{background:var(--surface-2)}
+.eq-row.on{background:color-mix(in srgb,var(--brand) 9%,transparent)}
+.eq-row .av{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--surface-2);font-weight:800;font-size:12.5px;color:var(--brand-text)}
+.eq-n{display:flex;flex-direction:column;min-width:0}
+.eq-n b{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eq-n b small{font-weight:500;color:var(--muted)}
+.eq-n span{font-size:12px;color:var(--muted)}
+.eq-c{display:flex;flex-direction:column;align-items:flex-end}
+.eq-c b{font-size:17px;font-variant-numeric:tabular-nums}
+.eq-c small{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.eq-c.warn b{color:var(--st-nao)}
+@media (max-width:760px){
+  .ini-kpis{grid-template-columns:repeat(6,minmax(0,1fr))} .ini-kpis .kp{grid-column:span 2} .ini-kpis .kp:nth-child(n+4){grid-column:span 3}
+  .ini-kpis .kp{padding:10px 11px}
+  .ini-kpis .kp span{font-size:10px;letter-spacing:.05em}
+  .ini-kpis .kp b{font-size:21px}
+  .eq-row{grid-template-columns:32px minmax(0,1fr) 46px 50px 38px;gap:8px;padding:10px 12px}
+  .eq-c small{font-size:9px}
+}
