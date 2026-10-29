@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 56; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 57; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -721,7 +721,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=56');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=57');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1138,14 +1138,78 @@ function setNight(n){
 }
 
 /* ================= Início: panorama de quem entrou (atividades em que é o dono) ================= */
-S.iniU = null; S.iniMais = new Set(); // seções do Início abertas com "Ver mais"
+S.iniConc = {lista:new Map(), t:0, carregando:false}; // concluídas dos últimos 14 dias (para o gráfico)
+async function carregarConcluidas(){
+  if (S.iniConc.carregando || Date.now() - S.iniConc.t < 5 * 60000 || !navigator.onLine) return;
+  S.iniConc.carregando = true;
+  try {
+    const desde = Timestamp.fromDate(new Date(Date.now() - 15 * 86400000));
+    const snap = await getDocs(query(collection(db, 'atividades'), where('concluidoEm', '>=', desde), limit(1500)));
+    const m = new Map(); snap.forEach(d => m.set(d.id, {id:d.id, ...d.data()}));
+    S.iniConc.lista = m; S.iniConc.t = Date.now();
+    if (S.tab === 'ini' && !S.loc) renderInicio();
+  } catch (e){ console.warn('concluídas do Início', e); S.iniConc.t = Date.now(); }
+  finally { S.iniConc.carregando = false; }
+}
+/* ---- gráficos do Início (HTML + CSS, sem biblioteca) ---- */
+const pctTxt = (n, t) => t ? Math.round(n / t * 100) + '%' : '0%';
+function grafSituacao(ab){
+  const ks = ['andamento','programada','parcial','nao_iniciada','impedida'].filter(k => ab.some(a => a.status === k));
+  if (!ab.length) return '<div class="gf-vazio">Nenhuma atividade em aberto.</div>';
+  const cnt = k => ab.filter(a => a.status === k).length, max = Math.max(...ks.map(cnt));
+  return `<div class="gf-rows">${ks.map(k => { const n = cnt(k), tip = `${STATUS[k].label}: ${n} ${n === 1 ? 'atividade' : 'atividades'} (${pctTxt(n, ab.length)})`;
+    return `<div class="gf-row" tabindex="0" data-tip="${esc(tip)}" aria-label="${esc(tip)}"><span class="gf-l">${esc(STATUS[k].label)}</span><span class="gf-track"><i style="width:${(n / max * 100).toFixed(1)}%;background:${cvar(k)}"></i></span><b class="gf-v">${n}</b></div>`; }).join('')}</div>`
+    + grafPrazo(ab);
+}
+function grafPrazo(ab, hoje = defaultNight()){
+  const v = ab.filter(a => fimOf(a) < hoje).length, ok = ab.length - v, emCurso = ab.filter(a => a.noite <= hoje), av = emCurso.length ? Math.round(emCurso.reduce((s, a) => s + avOf(a), 0) / emCurso.length) : 0;
+  return `<div class="gf-prazo">
+    <div class="gf-ph"><span>Prazo</span><span><b>${pctTxt(ok, ab.length)}</b> no prazo</span></div>
+    <div class="gf-pbar" role="img" aria-label="${ok} no prazo e ${v} vencidas">${ok ? `<i tabindex="0" style="flex:${ok};background:var(--st-and)" data-tip="${ok} no prazo (${pctTxt(ok, ab.length)})"></i>` : ''}${v ? `<i tabindex="0" style="flex:${v};background:var(--st-nao)" data-tip="${v} ${v === 1 ? 'vencida' : 'vencidas'} (${pctTxt(v, ab.length)})"></i>` : ''}</div>
+    <div class="gf-leg"><span><i style="background:var(--st-and)"></i>${ok} no prazo</span><span><i style="background:var(--st-nao)"></i>${v} ${v === 1 ? 'vencida' : 'vencidas'}</span>${emCurso.length ? `<span class="gf-av">avanço médio das iniciadas: <b>${av}%</b></span>` : ''}</div>
+  </div>`;
+}
+function grafLocais(ab, hoje){
+  if (!ab.length) return '<div class="gf-vazio">Nenhuma atividade em aberto.</div>';
+  const m = new Map(); for (const a of ab){ const g = groupKey(a); if (!m.has(g.k)) m.set(g.k, {k:g.k, label:g.label, sub:g.sub, n:0, v:0}); const L = m.get(g.k); L.n++; if (fimOf(a) < hoje) L.v++; }
+  const ls = [...m.values()].sort((x, y) => y.n - x.n || y.v - x.v || x.label.localeCompare(y.label, 'pt')), top = ls.slice(0, 6), max = Math.max(...top.map(x => x.n)), resto = ls.length - top.length;
+  return `<div class="gf-leg"><span><i style="background:var(--st-and)"></i>No prazo</span><span><i style="background:var(--st-nao)"></i>Vencidas</span></div>
+    <div class="gf-rows">${top.map(L => { const ok = L.n - L.v, tip = `${L.label}: ${L.n} em aberto · ${L.v} ${L.v === 1 ? 'vencida' : 'vencidas'}`;
+      return `<button type="button" class="gf-row gf-loc" data-loc="${esc(L.k)}" data-tip="${esc(tip)}" aria-label="${esc(tip)}. Abrir a página do local"><span class="gf-l" title="${esc(L.sub || L.label)}">${esc(L.label)}</span><span class="gf-track"><span class="gf-stack" style="width:${(L.n / max * 100).toFixed(1)}%">${L.v ? `<i style="flex:${L.v};background:var(--st-nao)"></i>` : ''}${ok ? `<i style="flex:${ok};background:var(--st-and)"></i>` : ''}</span></span><b class="gf-v">${L.n}</b></button>`; }).join('')}</div>
+    ${resto ? `<div class="gf-nota">+ ${resto} ${resto === 1 ? 'local' : 'locais'} com menos atividades</div>` : ''}`;
+}
+function grafColunas(dias, cor, unid, hoje, nota = ''){
+  const max = Math.max(1, ...dias.map(x => x.n)), tot = dias.reduce((s, x) => s + x.n, 0), top = Math.max(...dias.map(x => x.n));
+  return `<div class="gf-cols" style="--cor:${cor}">
+    <div class="gf-ymax"><span>${max}</span></div>
+    <div class="gf-plot">${dias.map(x => { const dt = parseYmd(x.d), we = dt.getDay() === 0 || dt.getDay() === 6, tip = `${DOW[dt.getDay()]} ${fmtShort(x.d)}: ${x.n} ${x.n === 1 ? unid[0] : unid[1]}`;
+      return `<div class="gf-col${x.d === hoje ? ' hj' : ''}${we ? ' we' : ''}" tabindex="0" data-tip="${esc(tip)}" aria-label="${esc(tip)}"><div class="gf-bar-w">${x.n && x.n === top ? `<em>${x.n}</em>` : ''}<i style="height:${(x.n / max * 100).toFixed(1)}%"></i></div><span class="gf-x">${dt.getDate()}</span></div>`; }).join('')}</div>
+  </div><div class="gf-nota">${nota || `${tot} ${tot === 1 ? unid[0] : unid[1]} no período`}</div>`;
+}
+S.iniU = null; S.iniMais = new Set();
+// dica flutuante dos gráficos (mouse, teclado e toque)
+{ const tip = document.createElement('div'); tip.id = 'gf-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true; document.body.appendChild(tip);
+  let atual = null, tm = null;
+  const mostra = el => { const t = el.dataset.tip; if (!t) return; atual = el; tip.textContent = t; tip.hidden = false;
+    const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, alvo = el.querySelector('i, .gf-stack') || el, ra = alvo.getBoundingClientRect();
+    let x = (el.classList.contains('gf-col') ? r.left + r.width / 2 : Math.min(ra.right, r.right - 40)) - w / 2; x = Math.max(8, Math.min(window.innerWidth - w - 8, x));
+    let y = (el.classList.contains('gf-col') ? ra.top : r.top) - h - 8; if (y < 8) y = r.bottom + 8;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px'; };
+  const esconde = () => { atual = null; tip.hidden = true; };
+  document.addEventListener('pointerover', e => { if (e.pointerType === 'touch') return; const el = e.target.closest && e.target.closest('[data-tip]'); if (el && el !== atual) mostra(el); else if (!el && atual) esconde(); });
+  document.addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el) mostra(el); });
+  document.addEventListener('focusout', e => { if (e.target === atual) esconde(); });
+  document.addEventListener('pointerdown', e => { if (e.pointerType !== 'touch') return; const el = e.target.closest && e.target.closest('[data-tip]'); if (!el || el.tagName === 'BUTTON') return esconde(); mostra(el); clearTimeout(tm); tm = setTimeout(esconde, 2500); });
+  window.addEventListener('scroll', esconde, {passive:true});
+} // seções do Início abertas com "Ver mais"
 const saudacao = () => { const h = new Date().getHours(); return h < 5 ? 'Boa noite' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; };
 const primeiroNome = n => String(n || '').trim().split(/\s+/)[0] || '';
 const abertaAtv = a => a.aberta && STATUS[a.status]?.aberta;
 function panoramaDe(u, hoje = defaultNight()){
   const em7 = addDays(hoje, 7), sem7 = addDays(hoje, -7);
-  const meus = new Set(setoresDe(u));
-  const mine = [...all().values()].filter(a => donoOf(a) === u || (meus.size && meus.has(setorOf(a)))), ab = mine.filter(abertaAtv);
+  const meus = new Set(setoresDe(u)), noEscopo = a => donoOf(a) === u || (meus.size && meus.has(setorOf(a)));
+  const base = new Map(all()); for (const [id, a] of S.iniConc.lista) if (!base.has(id)) base.set(id, a);
+  const mine = [...base.values()].filter(noEscopo), ab = mine.filter(abertaAtv);
   const venc = ab.filter(a => fimOf(a) < hoje);
   const atencao = ab.filter(a => fimOf(a) < hoje || a.status === 'impedida' || a.status === 'nao_iniciada')
     .sort((x, y) => (fimOf(x) < hoje ? 0 : 1) - (fimOf(y) < hoje ? 0 : 1) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
@@ -1156,9 +1220,12 @@ function panoramaDe(u, hoje = defaultNight()){
   const conc = mine.filter(a => a.status === 'concluida' && concDay(a) >= sem7).sort((x, y) => concDay(y).localeCompare(concDay(x)));
   const avs = ab.filter(a => a.noite <= hoje).map(avOf), avMed = avs.length ? Math.round(avs.reduce((s, v) => s + v, 0) / avs.length) : 0;
   const locs = new Map(); for (const a of ab){ const g = groupKey(a); if (!locs.has(g.k)) locs.set(g.k, {k:g.k, label:g.label, sub:g.sub, n:0, v:0}); const L = locs.get(g.k); L.n++; if (fimOf(a) < hoje) L.v++; }
-  return {mine, ab, venc, atencao, hojeL, prox, depois, conc, avMed, locs:[...locs.values()].sort((x, y) => y.v - x.v || y.n - x.n || x.label.localeCompare(y.label, 'pt'))};
+  const diasConc = Array.from({length:14}, (_, i) => { const d = addDays(hoje, i - 13); return {d, n: mine.filter(a => a.status === 'concluida' && concDay(a) === d).length}; });
+  const diasProg = Array.from({length:14}, (_, i) => { const d = addDays(hoje, i); return {d, n: ab.filter(a => a.noite <= d && fimOf(a) >= d && fimOf(a) >= hoje).length}; });
+  return {diasConc, diasProg, mine, ab, venc, atencao, hojeL, prox, depois, conc, avMed, locs:[...locs.values()].sort((x, y) => y.v - x.v || y.n - x.n || x.label.localeCompare(y.label, 'pt'))};
 }
 function renderInicio(){
+  carregarConcluidas();
   const hoje = defaultNight(), u = S.iniU || S.uid, eu = u === S.uid, P = panoramaDe(u, hoje), nome = nameOf(u);
   const d = parseYmd(hoje), dataLonga = `${DOW[d.getDay()][0].toUpperCase()}${DOW[d.getDay()].slice(1)}, ${d.getDate()} de ${['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'][d.getMonth()]}`;
   const sec = (tit, lista, opt = {}) => { const aberto = opt.k && S.iniMais.has(opt.k), lim = opt.max; if (aberto) opt.max = 0; return lista.length ? `<div class="sec ini-sec${opt.cls ? ' ' + opt.cls : ''}"><div class="sec-h"><h2>${tit}</h2><span>${lista.length}</span>${opt.btn || ''}</div><div class="cards">${(opt.max ? lista.slice(0, opt.max) : lista).map(a => card(a, fimOf(a) < hoje && abertaAtv(a), hoje, true)).join('')}</div>${opt.max && lista.length > opt.max ? `<button type="button" class="link-btn ini-mais" data-ini-mais="${opt.k}">Ver mais ${lista.length - opt.max}</button>` : aberto && lim && lista.length > lim ? `<button type="button" class="link-btn ini-mais" data-ini-menos="${opt.k}">Ver menos</button>` : ''}</div>` : ''; };
@@ -1174,7 +1241,12 @@ function renderInicio(){
       <div class="kp"><span>Próx. 7 dias</span><b>${P.prox.length}</b></div>
       <div class="kp ok"><span>Concluídas 7 dias</span><b>${P.conc.length}</b></div>
     </div>
-    ${P.locs.length ? `<div class="ini-locs"><div class="ini-lbl">Seus locais</div><div class="ini-chips">${P.locs.map(L => `<button type="button" class="ini-chip" data-loc="${esc(L.k)}" title="${esc(L.sub || L.label)}"><b>${esc(L.label)}</b><span>${L.n}</span>${L.v ? `<em>${L.v} venc.</em>` : ''}</button>`).join('')}</div></div>` : ''}
+    ${P.mine.length ? `<div class="ini-charts">
+      <section class="gf"><header><h3>Situação</h3><span>${P.ab.length} em aberto</span></header>${grafSituacao(P.ab)}</section>
+      <section class="gf"><header><h3>Por local</h3><span>toque para abrir</span></header>${grafLocais(P.ab, hoje)}</section>
+      <section class="gf"><header><h3>Concluídas</h3><span>últimos 14 dias</span></header>${grafColunas(P.diasConc, 'var(--st-ok)', ['concluída', 'concluídas'], hoje)}</section>
+      <section class="gf"><header><h3>Programação</h3><span>em curso nos próximos 14 dias</span></header>${grafColunas(P.diasProg, 'var(--st-and)', ['atividade em curso', 'atividades em curso'], hoje, (n => `${n} ${n === 1 ? 'atividade programada' : 'atividades programadas'} no período (sem as vencidas)`)(P.ab.filter(a => a.noite <= addDays(hoje, 13) && fimOf(a) >= hoje).length))}</section>
+    </div>` : ''}
     ${!P.mine.length ? `<div class="empty ini-empty"><b>${eu ? (setoresDe(u).length ? 'Nenhuma atividade nos seus setores.' : 'Você ainda não tem setor nem atividades.') : 'Nenhuma atividade.'}</b><span>${eu && !setoresDe(u).length ? (isAdmin() ? 'Defina os coordenadores em Cadastros → Setores.' : 'O administrador define o seu setor em Cadastros. Enquanto isso, veja todas na aba Atividades.') : ''}</span>${eu ? '<button type="button" class="btn" data-ini-tab="noite">Ver todas as atividades</button>' : ''}</div>` : ''}
     ${P.mine.length && !P.ab.length ? '<div class="empty ini-empty"><b>Tudo em dia.</b><span>Nenhuma atividade em aberto.</span></div>' : ''}
     ${sec('Precisam de atenção', P.atencao, {cls:'ini-at', max:6, k:'at'})}
@@ -1648,7 +1720,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=56');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=57');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1759,7 +1831,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=56');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=57');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1833,7 +1905,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=56');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=57');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2203,7 +2275,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=56');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=57');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2500,7 +2572,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=56');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=57');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
