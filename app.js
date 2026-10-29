@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 57; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 58; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -721,7 +721,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=57');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=58');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1720,7 +1720,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=57');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=58');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1751,7 +1751,7 @@ function metaLocal(k, acts){
 }
 function openLocal(k, nome = ''){
   if (S.openId) closeDrawer();
-  S.loc = {k, nome}; S.locEnc = false; S.locView = 'lista';
+  S.loc = {k, nome}; S.locEnc = false; S.locView = 'lista'; S.locArea = null;
   S.lgt = {zoom: S.gt.zoom === 'sem' ? 'qui' : S.gt.zoom, ref: defaultNight(), conc: true, grp: 'local', turno: '', jump: true, auto: true};
   for (const v of ['v-ini','v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
   $('v-local').hidden = false; window.scrollTo({top:0});
@@ -1759,6 +1759,85 @@ function openLocal(k, nome = ''){
   carregarTodas().then(() => { if (S.loc && S.loc.k === k) renderLocal(); });
 }
 function closeLocal(){ S.loc = null; setTab(S.tab); }
+/* ================= plantas dos setores (ilustração clicável na página do setor) ================= */
+// Coordenadas na escala da prancha (pontos do PDF a 72 dpi). Eixos e áreas medidos na planta de referência.
+// Cada área sabe os eixos que ocupa; a atividade é ligada à área pelo campo "Eixo" (ex.: "9-11 / B-C") ou pelo nome no título.
+const PLANTAS = {
+  D1: {
+    fonte: 'SCISP-096-ARQ-PE-50-601-R00 · Planta baixa – indicação de cortes (3º pav. 114,30 · Setor D)',
+    vb: [1180, 625, 1010, 1735],
+    eixosX: {'8':1294, '9':1553, '10':1812, '11':2072},
+    eixosY: {A:186, B:763, C:936, D:1195, E:1455, F:1714, G:1974, H:2320},
+    areas: [
+      {id:'terraco3', nome:'Terraço Rest. 3', curto:'Terraço\nRest. 3', x:1340, y:760, w:204, h:706, rx:/terra[çc]o|rest(aurante|\.)?\s*0?3\b/i},
+      {id:'loja7', nome:'Loja 7', x:1544, y:760, w:542, h:406, rx:/\bloja\s*0?7\b/i},
+      {id:'loja1', nome:'Loja 1', x:1544, y:1166, w:542, h:300, rx:/\bloja\s*0?1\b/i},
+      {id:'lobby', nome:'Lobby NK', x:1324, y:1466, w:762, h:320, lx:1945, rx:/\blobby\b/i},
+      {id:'bar2', nome:'Bar 2', x:1324, y:1786, w:220, h:534, rx:/\bbar\s*0?2\b/i},
+      {id:'loja2', nome:'Loja 2', x:1544, y:1786, w:542, h:534, rx:/\bloja\s*0?2\b/i},
+    ],
+    detalhes: [{x:1574, y:1530, w:220, h:200, nome:'Escadas rolantes'}],
+  },
+};
+const plantaDe = k => k && k.startsWith('s:') ? PLANTAS[k.slice(2)] || null : null;
+// posição em "unidades de eixo": números valem o próprio número; letras, a posição no alfabeto (A=0, B=1…)
+function eixoUn(px, mapa, letras){
+  const pts = Object.entries(mapa).map(([k, v]) => [letras ? k.charCodeAt(0) - 65 : Number(k), v]).sort((a, b) => a[1] - b[1]);
+  if (px <= pts[0][1]){ const [a, b] = pts; return a[0] + (px - a[1]) / (b[1] - a[1]) * (b[0] - a[0]); }
+  for (let i = 1; i < pts.length; i++) if (px <= pts[i][1]){ const a = pts[i - 1], b = pts[i]; return a[0] + (px - a[1]) / (b[1] - a[1]) * (b[0] - a[0]); }
+  const a = pts[pts.length - 2], b = pts[pts.length - 1]; return b[0] + (px - b[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+}
+function faixasArea(pl, ar){
+  if (!ar._f) ar._f = {n:[eixoUn(ar.x, pl.eixosX, false), eixoUn(ar.x + ar.w, pl.eixosX, false)], l:[eixoUn(ar.y, pl.eixosY, true), eixoUn(ar.y + ar.h, pl.eixosY, true)]};
+  return ar._f;
+}
+// lê o campo Eixo: números (7–40) e letras maiúsculas isoladas; usa o menor e o maior de cada
+function lerEixo(txt){
+  const s = String(txt || '').replace(/[–—]/g, '-');
+  const ns = [...s.matchAll(/(?<![\d.,])(\d{1,2}(?:[.,]\d+)?)(?![\d.,]*\d)/g)].map(m => Number(m[1].replace(',', '.'))).filter(n => n >= 1 && n <= 40);
+  const ls = [...s.matchAll(/(?<![A-Za-zÀ-ÿ])([A-Z])(?![A-Za-zÀ-ÿ])/g)].map(m => m[1].charCodeAt(0) - 65);
+  return {n: ns.length ? [Math.min(...ns), Math.max(...ns)] : null, l: ls.length ? [Math.min(...ls), Math.max(...ls)] : null};
+}
+const cruza = (a, f) => a[0] === a[1] ? a[0] >= f[0] - .25 && a[0] <= f[1] + .25 : Math.min(a[1], f[1]) - Math.max(a[0], f[0]) > .1;
+function areasDaAtv(a, pl){
+  const e = lerEixo(a.eixo), txt = [a.titulo, a.eixo, a.local, a.pilarLoja, a.detalhes].join(' '), out = [];
+  for (const ar of pl.areas){
+    const f = faixasArea(pl, ar);
+    const porEixo = (e.n || e.l) && (!e.n || cruza(e.n, f.n)) && (!e.l || cruza(e.l, f.l));
+    if (porEixo || ar.rx.test(txt)) out.push(ar.id);
+  }
+  return out;
+}
+const eixoTxt = (pl, ar) => { const f = faixasArea(pl, ar), r = v => Math.round(v * 2) / 2, L = v => { const i = Math.round(v); return Math.abs(v - i) < .2 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + Math.floor(v)) + '/' + String.fromCharCode(66 + Math.floor(v)); };
+  return `Eixos ${r(f.n[0])}–${r(f.n[1])} · ${L(f.l[0])}–${L(f.l[1])}`.replace(/\.5/g, ',5'); };
+function plantaHTML(pl, acts, hoje){
+  const st = {}; for (const ar of pl.areas) st[ar.id] = {ab:0, v:0, tot:0};
+  let sem = 0;
+  for (const a of acts){ const ids = areasDaAtv(a, pl); if (!ids.length){ if (abertaAtv(a)) sem++; continue; } for (const id of ids){ st[id].tot++; if (abertaAtv(a)){ st[id].ab++; if (fimOf(a) < hoje) st[id].v++; } } }
+  const [vx, vy, vw, vh] = pl.vb, sel = S.locArea;
+  const eixos = [
+    ...Object.entries(pl.eixosX).map(([k, x]) => `<line class="pl-ax" x1="${x}" y1="${vy + 62}" x2="${x}" y2="${vy + vh - 10}"/><circle class="pl-bb" cx="${x}" cy="${vy + 36}" r="24"/><text class="pl-bt" x="${x}" y="${vy + 37}">${k}</text>`),
+    ...Object.entries(pl.eixosY).filter(([, y]) => y > vy && y < vy + vh).map(([k, y]) => `<line class="pl-ax" x1="${vx + 62}" y1="${y}" x2="${vx + vw - 10}" y2="${y}"/><circle class="pl-bb" cx="${vx + 36}" cy="${y}" r="24"/><text class="pl-bt" x="${vx + 36}" y="${y + 1}">${k}</text>`),
+  ].join('');
+  const areas = pl.areas.map(ar => { const s = st[ar.id], cls = s.v ? 'venc' : s.ab ? 'ab' : 'vazia', cx = ar.lx || ar.x + ar.w / 2, cy = ar.ly || ar.y + ar.h / 2, linhas = (ar.curto || ar.nome).split('\n');
+    const tip = `${ar.nome} · ${s.ab} em aberto${s.v ? ` · ${s.v} ${s.v === 1 ? 'vencida' : 'vencidas'}` : ''} · ${eixoTxt(pl, ar)}`;
+    return `<g class="pl-area ${cls}${sel === ar.id ? ' on' : ''}${sel && sel !== ar.id ? ' off' : ''}" data-planta-area="${ar.id}" role="button" tabindex="0" aria-pressed="${sel === ar.id}" aria-label="${esc(tip)}" data-tip="${esc(tip)}">
+      <rect x="${ar.x + 5}" y="${ar.y + 5}" width="${ar.w - 10}" height="${ar.h - 10}" rx="10"/>
+      ${linhas.map((l, i) => `<text class="pl-nm" x="${cx}" y="${cy - (s.ab ? 38 : 0) + (i - (linhas.length - 1) / 2) * 46}">${esc(l)}</text>`).join('')}
+      ${s.ab ? `<g class="pl-badge"><circle cx="${cx}" cy="${cy + 30 + (linhas.length - 1) * 20}" r="29"/><text x="${cx}" y="${cy + 31 + (linhas.length - 1) * 20}">${s.ab}</text></g>` : ''}
+    </g>`; }).join('');
+  const det = (pl.detalhes || []).map(d => `<g class="pl-det" aria-hidden="true"><rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" rx="6"/>${Array.from({length:7}, (_, i) => `<line x1="${d.x + 12}" x2="${d.x + d.w - 12}" y1="${d.y + 22 + i * 26}" y2="${d.y + 22 + i * 26}"/>`).join('')}</g>`).join('');
+  const nomeSel = sel === '__sem__' ? 'Sem loja identificada' : (pl.areas.find(a => a.id === sel) || {}).nome;
+  return `<section class="planta-card">
+    <header><h3>Planta do setor</h3><span>toque numa loja para filtrar</span></header>
+    <div class="pl-wrap"><svg class="planta" viewBox="${pl.vb.join(' ')}" role="group" aria-label="Planta do setor com as lojas">${eixos}${areas}${det}</svg></div>
+    <div class="gf-leg pl-leg"><span><i style="background:var(--st-nao)"></i>com vencidas</span><span><i style="background:var(--st-and)"></i>em aberto</span><span><i class="pl-leg-vz"></i>sem atividade</span></div>
+    ${sel ? `<div class="pl-sel"><span>Filtrando: <b>${esc(nomeSel || '')}</b></span><button type="button" class="link-btn" data-planta-limpa>Ver todas</button></div>` : ''}
+    ${sem ? `<button type="button" class="link-btn pl-sem${sel === '__sem__' ? ' on' : ''}" data-planta-sem>${sem} em aberto sem loja identificada${sel === '__sem__' ? '' : ' — ver'}</button>` : ''}
+    <p class="pl-fonte">Base: ${esc(pl.fonte)}. A loja é identificada pelo campo Eixo da atividade (ex.: “9-11 / B-C”) ou pelo nome no título.</p>
+  </section>`;
+}
+
 function renderLocal(){
   const k = S.loc.k, acts = atividadesDoLocal(k), hoje = defaultNight(), m = metaLocal(k, acts);
   const ab = acts.filter(a => a.aberta && STATUS[a.status]?.aberta).sort((x, y) => (fimOf(x) < hoje ? 0 : 1) - (fimOf(y) < hoje ? 0 : 1) || x.noite.localeCompare(y.noite) || prRank(x.prioridade) - prRank(y.prioridade));
@@ -1768,6 +1847,8 @@ function renderLocal(){
   const bar = acts.length ? ORDER.filter(s2 => cnt[s2]).map(s2 => `<i style="width:${(cnt[s2] / acts.length * 100).toFixed(2)}%;background:${cvar(s2)}" title="${esc(STATUS[s2].label)}: ${cnt[s2]}"></i>`).join('') : '';
   const leg = ORDER.filter(s2 => cnt[s2]).map(s2 => `<span><i class="dot" style="--c:${cvar(s2)}"></i>${cnt[s2]} ${esc(stN(s2, cnt[s2]))}</span>`).join('');
   const encOpen = S.locEnc || !ab.length, carregando = !S.todas;
+  const pl = plantaDe(k), selA = pl && S.locArea, naArea = a => !selA || (selA === '__sem__' ? !areasDaAtv(a, pl).length : areasDaAtv(a, pl).includes(selA));
+  const abF = ab.filter(naArea), encF = enc.filter(naArea);
   $('v-local').innerHTML = `<div class="cad-page loc-page">
     <button type="button" class="back" data-loc-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Voltar</button>
     <div class="loc-head grp-${m.tp}"${m.tp === 'etq' ? ` style="--tc:${tagCor(m.nome)}"` : ''}>${m.tp === 'etq' ? `<span class="etq-ico lg">${ICON_TAG}</span>` : `<span class="grp-ic lg">${ico(m.tp)}</span>`}<div class="loc-ht"><div class="eyebrow">${esc(m.tipo)}</div><h1>${esc(m.nome)}</h1>${m.sub ? `<p>${esc(m.sub)}</p>` : ''}</div>
@@ -1787,14 +1868,16 @@ function renderLocal(){
       ${m.tp === 'etq' ? `<button type="button" class="btn" id="etq-crono"><span class="exp-ic xls">XLS</span>Cronograma</button>` : ''}
       ${canWrite() ? `<button type="button" class="btn" data-loc-new><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${m.tp === 'etq' ? 'Nova atividade com esta etiqueta' : 'Nova atividade aqui'}</button>` : ''}
     </div>
+    ${pl ? `<div class="loc-body"><aside class="loc-side">${plantaHTML(pl, acts, hoje)}</aside><div class="loc-main">` : ''}
     <div class="seg loc-seg" role="group" aria-label="Visualização"><button type="button" data-loc-view="lista" aria-pressed="${S.locView !== 'cal'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Lista</button><button type="button" data-loc-view="cal" aria-pressed="${S.locView === 'cal'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3M7 14h5M9 17.5h7"/></svg>Calendário</button></div>
     ${carregando ? '<p class="ro loc-load">Buscando as atividades antigas deste local…</p>' : ''}
     ${S.locView === 'cal' ? '<div id="lgt"></div>' : `
-    ${ab.length ? `<div class="sec"><div class="sec-h"><h2>Em aberto</h2><span>${ab.length}</span></div><div class="cards">${ab.map(a => card(a, fimOf(a) < hoje, hoje, true)).join('')}</div></div>` : ''}
-    ${enc.length ? `<div class="sec"><div class="sec-h"><h2>Concluídas e canceladas</h2><span>${enc.length}</span>${ab.length ? `<button type="button" class="link-btn" data-loc-enc>${encOpen ? 'Ocultar' : 'Mostrar'}</button>` : ''}</div>${encOpen ? `<div class="cards">${enc.map(a => card(a, false, hoje, true)).join('')}</div>` : ''}</div>` : ''}
-    ${!acts.length && !carregando ? '<div class="empty">Nenhuma atividade neste local.</div>' : ''}`}
+    ${abF.length ? `<div class="sec"><div class="sec-h"><h2>Em aberto</h2><span>${abF.length}</span></div><div class="cards">${abF.map(a => card(a, fimOf(a) < hoje, hoje, true)).join('')}</div></div>` : ''}
+    ${encF.length ? `<div class="sec"><div class="sec-h"><h2>Concluídas e canceladas</h2><span>${encF.length}</span>${abF.length ? `<button type="button" class="link-btn" data-loc-enc>${encOpen ? 'Ocultar' : 'Mostrar'}</button>` : ''}</div>${encOpen || !abF.length ? `<div class="cards">${encF.map(a => card(a, false, hoje, true)).join('')}</div>` : ''}</div>` : ''}
+    ${!acts.length && !carregando ? '<div class="empty">Nenhuma atividade neste local.</div>' : acts.length && selA && !abF.length && !encF.length ? '<div class="empty">Nenhuma atividade identificada nesta loja. Confira o campo Eixo das atividades do setor.</div>' : ''}`}
+    ${pl ? '</div></div>' : ''}
   </div>`;
-  if (S.locView === 'cal') renderLocalCal(acts, m);
+  if (S.locView === 'cal') renderLocalCal(selA ? acts.filter(naArea) : acts, m);
 }
 // calendário da página do local: mesmas funções do calendário principal, só com as atividades deste local
 function renderLocalCal(acts, m){
@@ -1831,7 +1914,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=57');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=58');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1905,7 +1988,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=57');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=58');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2275,7 +2358,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=57');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=58');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2572,7 +2655,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=57');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=58');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2609,6 +2692,9 @@ document.addEventListener('click', e => {
   { const it = t.closest('[data-ini-tab]'); if (it) return setTab(it.dataset.iniTab); }
   { const lo = t.closest('[data-loc]'); if (lo) return openLocal(lo.dataset.loc); }
   if (t.closest('[data-loc-back]')) return closeLocal();
+  { const pa = t.closest('[data-planta-area]'); if (pa){ S.locArea = S.locArea === pa.dataset.plantaArea ? null : pa.dataset.plantaArea; return renderLocal(); } }
+  if (t.closest('[data-planta-sem]')){ S.locArea = S.locArea === '__sem__' ? null : '__sem__'; return renderLocal(); }
+  if (t.closest('[data-planta-limpa]')){ S.locArea = null; return renderLocal(); }
   { const x = t.closest('[data-loc-view]'); if (x){ S.locView = x.dataset.locView; if (S.locView === 'cal') S.lgt.jump = true; return renderLocal(); } }
   { const x = t.closest('[data-lgt-nav]'); if (x){ gtShift(Number(x.dataset.lgtNav), S.lgt); return; } }
   if (t.closest('[data-lgt-hoje]')){ if (S.lgt.zoom === 'per'){ const n = gtRange(S.lgt).n; gtDatas(S.lgt, defaultNight(), addDays(defaultNight(), n - 1)); } else { S.lgt.ref = defaultNight(); S.lgt.jump = true; } return renderLocal(); }
@@ -2741,6 +2827,7 @@ $('m-resumo').onclick = async () => {
 $('m-sair').onclick = () => { $('who-pop').hidden = true; signOut(auth); };
 $('dw-close').onclick = closeDrawer;
 $('scrim').onclick = () => { if (!$('modal').hidden) closeModal(); else closeDrawer(); };
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('[data-planta-area]')){ e.preventDefault(); e.target.closest('[data-planta-area]').dispatchEvent(new MouseEvent('click', {bubbles:true})); return; } });
 document.addEventListener('keydown', e => { if (e.target.closest && e.target.closest('[data-loc]')) return; const gh = e.target.closest && e.target.closest('[data-grp]'); if (gh && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleGrp(gh.dataset.grp); } });
 document.addEventListener('keydown', e => { const x = e.target.closest && e.target.closest('[data-pd-open]'); if (x && (e.key === 'Enter' || e.key === ' ') && e.target === x){ e.preventDefault(); openPendForm(x.dataset.pdOpen); } });
 $('pd-new').onclick = () => openPendForm(null);
