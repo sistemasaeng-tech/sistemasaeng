@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 54; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 55; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -719,7 +719,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=54');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=55');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1646,7 +1646,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=54');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=55');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1757,7 +1757,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=54');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=55');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1831,7 +1831,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=54');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=55');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2217,7 +2217,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=54');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=55');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2265,7 +2265,7 @@ function normImport(x, turnoPadrao){
 }
 function openImportar(){
   if (!isAdmin()) return toast('Somente administradores podem importar atividades.');
-  const st = {arq:null, fonte:'', itens:[], nao:[], turno:'', dono:'__setor__', ja:new Set(), sel:new Set(), rodando:false};
+  const st = {arq:null, fonte:'', itens:[], nao:[], turno:'', dono:'__setor__', ja:new Set(), jaDocs:new Map(), sel:new Set(), rodando:false, desfazer:null, novoDono:''};
   $('sheet').innerHTML = `<h2>Importar atividades</h2>
     <p class="ro" style="margin:-6px 0 14px">Escolha o arquivo <b>.json</b> preparado pelo Claude a partir de um relatório, planilha ou cronograma. Confira a lista antes de importar: cada atividade entra com o seu nome no histórico, como se tivesse sido lançada à mão.</p>
     <div class="f"><label class="imp-file"><input type="file" id="imp-in" accept=".json,application/json"><span>${ICON_DL}<b>Escolher arquivo</b><em id="imp-nome">nenhum arquivo</em></span></label></div>
@@ -2277,7 +2277,12 @@ function openImportar(){
     for (const x of st.itens) Object.assign(x, normImport(x.raw, st.turno));
     const ok = st.itens.filter(x => st.sel.has(x.i) && !x.erros.length && !st.ja.has(x.raw.chave));
     const porSt = {}; for (const x of ok) porSt[x.a.status] = (porSt[x.a.status] || 0) + 1;
-    b.innerHTML = `${st.fonte ? `<div class="imp-fonte"><span>Fonte</span>${esc(st.fonte)}</div>` : ''}
+    const nJa = st.jaDocs.size;
+    const caixaJa = nJa ? `<div class="imp-ja"><b>${nJa} ${nJa === 1 ? 'atividade deste arquivo já está' : 'atividades deste arquivo já estão'} no sistema.</b>
+      ${st.desfazer === 'del' ? `<p>Excluir ${nJa === 1 ? 'a atividade importada' : `as ${nJa} atividades importadas`}? Fica um registro de exclusão no histórico de cada uma. Depois você pode importar o arquivo de novo.</p><div class="imp-ja-a"><button type="button" class="btn" data-imp-ja="">Cancelar</button><button type="button" class="btn danger" data-imp-ja="del-ok">Excluir ${nJa}</button></div>`
+        : st.desfazer === 'dono' ? `<p>Novo dono para ${nJa === 1 ? 'ela' : `as ${nJa}`}:</p><div class="imp-ja-a"><select id="imp-novo-dono"><option value="__setor__">Coordenador do setor de cada uma</option>${donosPossiveis().map(id => `<option value="${esc(id)}" ${id === st.novoDono ? 'selected' : ''}>${esc(nameOf(id))}</option>`).join('')}</select><button type="button" class="btn" data-imp-ja="">Cancelar</button><button type="button" class="btn pri" data-imp-ja="dono-ok">Trocar o dono</button></div>`
+        : `<div class="imp-ja-a"><button type="button" class="btn" data-imp-ja="dono">Trocar o dono delas</button><button type="button" class="btn danger-ghost" data-imp-ja="del">Desfazer a importação</button></div>`}</div>` : '';
+    b.innerHTML = `${st.fonte ? `<div class="imp-fonte"><span>Fonte</span>${esc(st.fonte)}</div>` : ''}${caixaJa}
       ${precisaTurno ? `<div class="f"><label>Turno <span class="ro">(o documento não informa)</span></label><div class="seg" id="imp-turno">${Object.entries(TURNOS).map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${st.turno === k}">${l}</button>`).join('')}</div></div>` : ''}
       <div class="f"><label for="imp-dono">Dono das atividades</label><select id="imp-dono"><option value="__setor__" ${st.dono === '__setor__' ? 'selected' : ''}>Coordenador do setor (automático)</option>${donosPossiveis().map(id => `<option value="${esc(id)}" ${id === st.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select></div>
       <div class="imp-head"><label class="chk"><input type="checkbox" id="imp-all" ${ok.length && ok.length === st.itens.filter(x => !x.erros.length && !st.ja.has(x.raw.chave)).length ? 'checked' : ''}> ${st.itens.length} ${st.itens.length === 1 ? 'atividade' : 'atividades'} no arquivo</label>
@@ -2292,10 +2297,39 @@ function openImportar(){
     $('imp-go').disabled = !ok.length || st.rodando || semTurno; $('imp-go').textContent = semTurno ? 'Escolha o turno' : ok.length ? `Importar ${ok.length} ${ok.length === 1 ? 'atividade' : 'atividades'}` : 'Importar';
     if ($('imp-turno')) $('imp-turno').onclick = e => { const t = e.target.closest('[data-t]'); if (!t) return; st.turno = t.dataset.t; render(); };
     $('imp-dono').onchange = e => { st.dono = e.target.value || '__setor__'; };
+    if ($('imp-novo-dono')) $('imp-novo-dono').onchange = e => { st.novoDono = e.target.value; };
+    b.querySelectorAll('[data-imp-ja]').forEach(x => x.onclick = () => { const v = x.dataset.impJa; if (v === 'del-ok') return desfazerImport('del'); if (v === 'dono-ok') return desfazerImport('dono'); st.desfazer = v || null; render(); });
     $('imp-all').onchange = e => { for (const x of st.itens) if (e.target.checked) st.sel.add(x.i); else st.sel.delete(x.i); render(); };
     b.querySelectorAll('[data-imp]').forEach(c => c.onchange = () => { const i = Number(c.dataset.imp); if (c.checked) st.sel.add(i); else st.sel.delete(i); render(); });
   };
   $('imp-cancel').onclick = () => { if (!st.rodando) closeModal(); };
+  // desfazer: exclui (ou troca o dono de) as atividades deste arquivo que já estão no sistema — uma por vez, cada uma com seu registro
+  const desfazerImport = async modo => {
+    if (st.rodando || !isAdmin()) return;
+    if (!navigator.onLine) return toast('Sem internet: é preciso estar online.');
+    const lista = [...st.jaDocs.values()], novo = $('imp-novo-dono')?.value || '__setor__';
+    st.rodando = true; $('imp-go').disabled = true; $('imp-cancel').disabled = true;
+    const bt = $('imp-body').querySelector(modo === 'del' ? '[data-imp-ja="del-ok"]' : '[data-imp-ja="dono-ok"]');
+    let ok = 0, falhas = 0;
+    for (const a of lista){
+      if (bt) bt.textContent = `${modo === 'del' ? 'Excluindo' : 'Atualizando'} ${ok + falhas + 1} de ${lista.length}…`;
+      try {
+        const hRef = doc(collection(db, 'historico')), b = writeBatch(db), ref = doc(db, 'atividades', a.id);
+        if (modo === 'del'){ b.delete(ref); b.set(hRef, evDoc(a.id, a, {tipo:'excluiu', obs:`Importação desfeita (${st.fonte}).`})); }
+        else {
+          const d = novo === '__setor__' ? (coordSetor(setorOf(a)) || S.uid) : novo;
+          if (d === donoOf(a)){ ok++; continue; }
+          b.update(ref, {dono:d, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
+          b.set(hRef, evDoc(a.id, a, {tipo:'editou', mudancas:[{campo:'dono', de:donoOf(a), para:d}]}));
+        }
+        await b.commit(); ok++;
+        if (modo === 'del'){ st.jaDocs.delete(a.id); st.ja.delete(a.chave); } else st.jaDocs.set(a.id, {...a, dono: novo === '__setor__' ? (coordSetor(setorOf(a)) || S.uid) : novo});
+      } catch (err){ console.warn('desfazer importação', a.id, err); falhas++; }
+    }
+    st.rodando = false; st.desfazer = null; $('imp-cancel').disabled = false;
+    render();
+    toast(falhas ? `${ok} ok, ${falhas} com erro. Tente de novo.` : modo === 'del' ? `${ok} ${ok === 1 ? 'atividade excluída' : 'atividades excluídas'}. Se quiser, importe de novo.` : `Dono trocado em ${ok} ${ok === 1 ? 'atividade' : 'atividades'}.`);
+  };
   $('imp-in').onchange = async e => {
     const f = e.target.files?.[0]; if (!f) return;
     $('imp-nome').textContent = f.name;
@@ -2304,12 +2338,12 @@ function openImportar(){
       if (!Array.isArray(lista)) throw new Error('formato');
       st.arq = f.name; st.fonte = String(j.fonte || f.name).slice(0, 200); st.nao = Array.isArray(j.naoLancadas) ? j.naoLancadas : [];
       st.itens = lista.slice(0, 300).map((raw, i) => ({i, raw: {...raw, chave: raw.chave ? String(raw.chave).slice(0, 150) : ''}}));
-      st.sel = new Set(st.itens.map(x => x.i)); st.ja = new Set();
+      st.sel = new Set(st.itens.map(x => x.i)); st.ja = new Set(); st.jaDocs = new Map(); st.desfazer = null;
       const chaves = [...new Set(st.itens.map(x => x.raw.chave).filter(Boolean))];
       $('imp-body').innerHTML = '<div class="cf-prev">Conferindo se alguma já foi importada…</div>';
       for (let k = 0; k < chaves.length; k += 30){
         const s = await getDocs(query(collection(db, 'atividades'), where('chave', 'in', chaves.slice(k, k + 30))));
-        s.forEach(d => st.ja.add(d.data().chave));
+        s.forEach(d => { st.ja.add(d.data().chave); st.jaDocs.set(d.id, {id:d.id, ...d.data()}); });
       }
       render();
     } catch (err){ console.warn(err); st.itens = []; $('imp-body').innerHTML = `<div class="cf-prev">${err.message === 'formato' || err instanceof SyntaxError ? 'Arquivo inválido: use o .json preparado pelo Claude.' : navigator.onLine ? 'Não foi possível ler o arquivo.' : 'Sem internet: é preciso estar online para importar.'}</div>`; $('imp-go').disabled = true; }
@@ -2480,7 +2514,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=54');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=55');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
