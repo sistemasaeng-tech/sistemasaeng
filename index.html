@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=46">
+<link rel="stylesheet" href="styles.css?v=47">
 </head>
 <body>
 
@@ -99,6 +99,7 @@
           <button type="button" id="exp-pdf"><span class="exp-ic pdf">PDF</span><span class="exp-tx"><b>Relatório PDF</b><span>Atividades em aberto por setor</span></span></button>
           <button type="button" id="exp-csv"><span class="exp-ic csv">CSV</span><span class="exp-tx"><b>Planilha CSV</b><span>Lista atual, com histórico</span></span></button>
           <button type="button" id="exp-ia"><span class="exp-ic ia">IA</span><span class="exp-tx"><b>Exportar para o Claude</b><span>Tudo por atividade, para perguntar à IA</span></span></button>
+          <button type="button" id="imp-ia" hidden><span class="exp-ic ia">IN</span><span class="exp-tx"><b>Importar atividades</b><span>Arquivo .json preparado pelo Claude</span></span></button>
         </div>
       </div>
       <button class="btn pri" id="b-new" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Nova atividade</span></button>
@@ -222,6 +223,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=46"></script>
+<script type="module" src="app.js?v=47"></script>
 </body>
 </html>
