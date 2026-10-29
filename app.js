@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 55; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 56; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -151,7 +151,9 @@ const donoOf = a => a?.dono || a?.criadoPor || '';
 const coordSetor = cod => (S.cad.setores.find(x => x.codigo === cod) || {}).coord || '';
 const setoresDe = u => S.cad.setores.filter(x => x.coord && x.coord === u).map(x => x.codigo);
 const listaPt = arr => arr.length <= 1 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' e ' + arr[arr.length - 1];
-const donosPossiveis = (atual = '') => { const ids = Object.entries(S.usuarios).filter(([, u]) => ['usuario','admin'].includes(u.papel)).map(([id]) => id); if (S.uid && !ids.includes(S.uid)) ids.push(S.uid); if (atual && !ids.includes(atual)) ids.push(atual); return ids.sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')); };
+const aprovados = (atual = '') => { const ids = Object.entries(S.usuarios).filter(([, u]) => ['usuario','admin'].includes(u.papel)).map(([id]) => id); if (atual && !ids.includes(atual)) ids.push(atual); return ids.sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')); };
+// dono da atividade: só residentes (mais o dono atual, se for outra pessoa, para não perder a informação)
+const donosPossiveis = (atual = '') => { const ids = Object.entries(S.usuarios).filter(([, u]) => ['usuario','admin'].includes(u.papel) && lc(u.funcao) === 'residente').map(([id]) => id); if (atual && !ids.includes(atual)) ids.push(atual); return ids.sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')); };
 
 // Pilar: o mesmo pilar pode estar em lojas diferentes conforme o piso, por isso a loja/ambiente é um campo próprio
 const pilarCodeOf = a => pilarCode(a.pilar) || String(a.pilar || '').trim();
@@ -719,7 +721,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=55');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=56');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -916,7 +918,7 @@ const ICONS = {
 const ico = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
 const CAD_DEF = [
   {key:'fornecedores', title:'Fornecedores', hint:'Empresas que atuam na obra.', cols:[['nome','Nome da empresa'],['disciplina','Disciplina (opcional)']], k:'nome', v:'disciplina'},
-  {key:'setores', title:'Setores', hint:'Código, frentes principais e o coordenador responsável. O coordenador vê as atividades do setor no Início e vira o dono das atividades lançadas ali.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
+  {key:'setores', title:'Setores', hint:'Código, frentes principais e o coordenador responsável. O coordenador vê no Início todas as atividades dos setores dele.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
   {key:'niveis', title:'Níveis', hint:'Cotas de nível usadas nos relatos (m).', cols:[['valor','Nível (ex.: 114,30)']], k:'valor'},
   {key:'pilares', title:'Pilares', hint:'Cadastre o mesmo pilar uma vez para cada loja ou ambiente que ele atravessa (ex.: P34 · Loja Lenny e P34 · Loja Corello).', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Loja / ambiente'],['setor','Setor']], k:'codigo', v:'referencia', v2:'eixo'},
   {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio. Informe o setor da obra a que cada local pertence: ao filtrar o setor, os trabalhos do local também aparecem.', cols:[['nome','Nome do local'],['setor','Setor']], k:'nome'},
@@ -986,7 +988,7 @@ function renderCadList(){
   $('cad-count').textContent = q ? `${items.length} de ${all.length}` : `${all.length} ${all.length === 1 ? 'item' : 'itens'}`;
   list.innerHTML = items.length ? items.map(x => `<div class="cad-item">
       <div class="ci-tx"><b>${esc(x.k)}</b>${x.v ? `<span>${esc(x.v)}</span>` : ''}</div>
-      ${d.key === 'setores' ? (admin ? `<select class="ci-setor ci-coord" data-cad-coord="${x.i}" aria-label="Coordenador do Setor ${esc(x.k)}"><option value="">Sem coordenador</option>${donosPossiveis(x.o.coord).map(id => `<option value="${esc(id)}" ${id === (x.o.coord || '') ? 'selected' : ''}>${esc(shortName(nameOf(id)))}</option>`).join('')}</select>` : (x.o.coord ? `<span class="ci-st">Coord.: ${esc(shortName(nameOf(x.o.coord)))}</span>` : '')) : ''}
+      ${d.key === 'setores' ? (admin ? `<select class="ci-setor ci-coord" data-cad-coord="${x.i}" aria-label="Coordenador do Setor ${esc(x.k)}"><option value="">Sem coordenador</option>${aprovados(x.o.coord).map(id => `<option value="${esc(id)}" ${id === (x.o.coord || '') ? 'selected' : ''}>${esc(shortName(nameOf(id)))}</option>`).join('')}</select>` : (x.o.coord ? `<span class="ci-st">Coord.: ${esc(shortName(nameOf(x.o.coord)))}</span>` : '')) : ''}
       ${d.key === 'pilares' || d.key === 'locais' ? (admin ? `<select class="ci-setor" data-cad-setor="${d.key}:${x.i}" aria-label="Setor de ${esc(x.k)}"><option value="">Sem setor</option>${S.cad.setores.map(z => `<option value="${esc(z.codigo)}" ${z.codigo === (x.o.setor || '') ? 'selected' : ''}>Setor ${esc(z.codigo)}</option>`).join('')}</select>` : (x.o.setor ? `<span class="ci-st">Setor ${esc(x.o.setor)}</span>` : '')) : ''}
       ${admin ? (S.cadDel === `${d.key}:${x.i}` ? `<div class="ci-conf"><span>Remover?</span><button type="button" class="btn danger" data-del="${d.key}:${x.i}">Sim</button><button type="button" class="btn" data-del-cancel>Não</button></div>`
         : `<button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
@@ -1646,7 +1648,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=55');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=56');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1757,7 +1759,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=55');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=56');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1831,7 +1833,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=55');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=56');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -1924,7 +1926,7 @@ function createAct(data, origem){
   const actRef = doc(collection(db, 'atividades')); S.lastActId = actRef.id;
   const histRef = doc(collection(db, 'historico')), b = writeBatch(db);
   const et = tagsOf(data);
-  data.dono = isAdmin() && data.dono ? data.dono : (coordSetor(setorOf(data)) || S.uid);
+  data.dono = isAdmin() && data.dono ? data.dono : S.uid;
   b.set(actRef, {...data, etiquetas:et, temEtiqueta:et.length > 0, avanco:Number(data.avanco) || 0, fim:data.fim || data.noite, status:Number(data.avanco) > 0 ? 'andamento' : 'programada', aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
   b.set(histRef, evDoc(actRef.id, data, {tipo:'criou', noite:data.noite, turno:data.turno, ...(origem ? {origem} : {})}));
   return commit(b);
@@ -1963,7 +1965,7 @@ function openForm(id, preset = {}){
     <div class="f"><label for="af-det">Detalhes / orientações para a equipe</label><textarea id="af-det" placeholder="Sequência, cuidados, liberações necessárias, contato no shopping…">${esc(v.detalhes||'')}</textarea></div>
     <div class="frow">
       <div class="f"><label for="af-forn">Fornecedor</label><input id="af-forn" list="dl-forn" value="${esc(v.fornecedor||'')}" placeholder="Selecione ou digite" autocomplete="off"></div>
-      <div class="f"><label for="af-dono">Dono da atividade</label><select id="af-dono"${isAdmin() ? '' : ' disabled'}>${donosPossiveis(v.dono).map(id => `<option value="${esc(id)}" ${id === v.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select><span class="f-hint">${isAdmin() ? 'Quem responde por ela e a vê no seu Início.' : 'Só o administrador altera o dono.'}</span></div>
+      <div class="f"><label for="af-dono">Dono da atividade</label><select id="af-dono"${isAdmin() ? '' : ' disabled'}>${donosPossiveis(v.dono).map(id => `<option value="${esc(id)}" ${id === v.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select><span class="f-hint">${isAdmin() ? 'Quem lança é o dono; você pode passar para outro residente.' : 'Quem lança é o dono. Só o administrador altera.'}</span></div>
       <div class="f"><label for="af-resp">Responsável no turno</label><input id="af-resp" value="${esc(v.responsavel||'')}" placeholder="Encarregado / técnico" autocomplete="off"></div>
       <div class="f"><label for="af-efet">Efetivo previsto</label><input id="af-efet" type="number" min="0" inputmode="numeric" value="${esc(v.efetivo||'')}"></div>
     </div>
@@ -1993,22 +1995,6 @@ function openForm(id, preset = {}){
     $('dl-pilar-loja').innerHTML = [...set].sort((x, y) => x.localeCompare(y, 'pt')).map(l => `<option value="${esc(l)}"></option>`).join('');
   };
   $('af-pilar').addEventListener('input', syncLojas); syncLojas();
-  // dono automático: coordenador do setor do local escolhido (o administrador pode trocar)
-  let donoMexido = !!a;
-  const donoAuto = () => {
-    const tmp = {tipoLocal:tipo, setor:$('af-setor')?.value || '', pilar:pilarCode($('af-pilar').value) || $('af-pilar').value.trim(), pilarLoja:$('af-pilar-loja').value.trim(), local:$('af-local').value.trim()};
-    const st = setorOf(tmp), c = st ? coordSetor(st) : '';
-    return {st, c, u: c || S.uid};
-  };
-  const syncDono = () => {
-    const {st, c, u} = donoAuto(), sel = $('af-dono'), h = sel.parentElement.querySelector('.f-hint');
-    if (!donoMexido && u && [...sel.options].some(o => o.value === u)) sel.value = u;
-    if (h && !a) h.textContent = c ? `Coordenador do Setor ${st}${isAdmin() ? ' (você pode trocar)' : ''}.` : (isAdmin() ? 'Quem responde por ela e a vê no seu Início.' : 'Só o administrador altera o dono.');
-  };
-  $('af-dono').addEventListener('change', () => { donoMexido = true; });
-  for (const ev of ['input', 'change']) $('af').addEventListener(ev, e => { if (e.target.id !== 'af-dono') syncDono(); });
-  $('af-tipo').addEventListener('click', () => setTimeout(syncDono));
-  syncDono();
   const pk = tagPicker($('af-etq'), tagsOf(v));
   $('af-noite').insertAdjacentHTML('afterend', '<span class="ro" id="af-noite-h"></span>'); syncTurno();
   for (const id of ['af-noite','af-fim']) $(id).addEventListener('change', () => { $('af-warn').hidden = true; delete $('af-warn').dataset.ok; });
@@ -2022,7 +2008,7 @@ function openForm(id, preset = {}){
       setor: tipo === 'setor' ? $('af-setor').value : '', pilar: tipo === 'pilar' ? (pilarCode($('af-pilar').value) || $('af-pilar').value.trim()) : '', pilarLoja: tipo === 'pilar' ? $('af-pilar-loja').value.trim() : '', local: tipo === 'shopping' ? $('af-local').value.trim() : '',
       nivel:$('af-nivel').value.trim(), eixo:$('af-eixo').value.trim(), titulo:$('af-titulo').value.trim(), detalhes:$('af-det').value.trim(),
       fornecedor:$('af-forn').value.trim(), responsavel:$('af-resp').value.trim(), efetivo:$('af-efet').value.trim(), etiquetas:pk.get(),
-      dono: isAdmin() ? ($('af-dono').value || S.uid) : (a ? donoOf(a) : '')};
+      dono: isAdmin() ? ($('af-dono').value || S.uid) : (a ? donoOf(a) : S.uid)};
     d.temEtiqueta = d.etiquetas.length > 0;
     if (!d.noite) return toast('Informe a data de início.');
     if (d.fim < d.noite) return toast('O término não pode ser antes do início.');
@@ -2217,7 +2203,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=55');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=56');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2265,7 +2251,7 @@ function normImport(x, turnoPadrao){
 }
 function openImportar(){
   if (!isAdmin()) return toast('Somente administradores podem importar atividades.');
-  const st = {arq:null, fonte:'', itens:[], nao:[], turno:'', dono:'__setor__', ja:new Set(), jaDocs:new Map(), sel:new Set(), rodando:false, desfazer:null, novoDono:''};
+  const st = {arq:null, fonte:'', itens:[], nao:[], turno:'', dono:S.uid, ja:new Set(), jaDocs:new Map(), sel:new Set(), rodando:false, desfazer:null, novoDono:''};
   $('sheet').innerHTML = `<h2>Importar atividades</h2>
     <p class="ro" style="margin:-6px 0 14px">Escolha o arquivo <b>.json</b> preparado pelo Claude a partir de um relatório, planilha ou cronograma. Confira a lista antes de importar: cada atividade entra com o seu nome no histórico, como se tivesse sido lançada à mão.</p>
     <div class="f"><label class="imp-file"><input type="file" id="imp-in" accept=".json,application/json"><span>${ICON_DL}<b>Escolher arquivo</b><em id="imp-nome">nenhum arquivo</em></span></label></div>
@@ -2280,11 +2266,11 @@ function openImportar(){
     const nJa = st.jaDocs.size;
     const caixaJa = nJa ? `<div class="imp-ja"><b>${nJa} ${nJa === 1 ? 'atividade deste arquivo já está' : 'atividades deste arquivo já estão'} no sistema.</b>
       ${st.desfazer === 'del' ? `<p>Excluir ${nJa === 1 ? 'a atividade importada' : `as ${nJa} atividades importadas`}? Fica um registro de exclusão no histórico de cada uma. Depois você pode importar o arquivo de novo.</p><div class="imp-ja-a"><button type="button" class="btn" data-imp-ja="">Cancelar</button><button type="button" class="btn danger" data-imp-ja="del-ok">Excluir ${nJa}</button></div>`
-        : st.desfazer === 'dono' ? `<p>Novo dono para ${nJa === 1 ? 'ela' : `as ${nJa}`}:</p><div class="imp-ja-a"><select id="imp-novo-dono"><option value="__setor__">Coordenador do setor de cada uma</option>${donosPossiveis().map(id => `<option value="${esc(id)}" ${id === st.novoDono ? 'selected' : ''}>${esc(nameOf(id))}</option>`).join('')}</select><button type="button" class="btn" data-imp-ja="">Cancelar</button><button type="button" class="btn pri" data-imp-ja="dono-ok">Trocar o dono</button></div>`
+        : st.desfazer === 'dono' ? `<p>Novo dono para ${nJa === 1 ? 'ela' : `as ${nJa}`}:</p><div class="imp-ja-a"><select id="imp-novo-dono">${donosPossiveis(st.novoDono || S.uid).map(id => `<option value="${esc(id)}" ${id === (st.novoDono || S.uid) ? 'selected' : ''}>${esc(nameOf(id))}</option>`).join('')}</select><button type="button" class="btn" data-imp-ja="">Cancelar</button><button type="button" class="btn pri" data-imp-ja="dono-ok">Trocar o dono</button></div>`
         : `<div class="imp-ja-a"><button type="button" class="btn" data-imp-ja="dono">Trocar o dono delas</button><button type="button" class="btn danger-ghost" data-imp-ja="del">Desfazer a importação</button></div>`}</div>` : '';
     b.innerHTML = `${st.fonte ? `<div class="imp-fonte"><span>Fonte</span>${esc(st.fonte)}</div>` : ''}${caixaJa}
       ${precisaTurno ? `<div class="f"><label>Turno <span class="ro">(o documento não informa)</span></label><div class="seg" id="imp-turno">${Object.entries(TURNOS).map(([k, l]) => `<button type="button" data-t="${k}" aria-pressed="${st.turno === k}">${l}</button>`).join('')}</div></div>` : ''}
-      <div class="f"><label for="imp-dono">Dono das atividades</label><select id="imp-dono"><option value="__setor__" ${st.dono === '__setor__' ? 'selected' : ''}>Coordenador do setor (automático)</option>${donosPossiveis().map(id => `<option value="${esc(id)}" ${id === st.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select></div>
+      <div class="f"><label for="imp-dono">Dono das atividades</label><select id="imp-dono">${donosPossiveis(st.dono).map(id => `<option value="${esc(id)}" ${id === st.dono ? 'selected' : ''}>${esc(nameOf(id))}${roleOf(id) ? ' · ' + esc(roleOf(id)) : ''}</option>`).join('')}</select></div>
       <div class="imp-head"><label class="chk"><input type="checkbox" id="imp-all" ${ok.length && ok.length === st.itens.filter(x => !x.erros.length && !st.ja.has(x.raw.chave)).length ? 'checked' : ''}> ${st.itens.length} ${st.itens.length === 1 ? 'atividade' : 'atividades'} no arquivo</label>
         <span class="ro">${Object.entries(porSt).map(([k, n]) => `${n} ${stN(k, n)}`).join(' · ')}</span></div>
       <ul class="imp-list">${st.itens.map(x => { const ja = st.ja.has(x.raw.chave), bloq = ja || x.erros.length;
@@ -2296,7 +2282,7 @@ function openImportar(){
     const semTurno = precisaTurno && !st.turno && ok.length > 0;
     $('imp-go').disabled = !ok.length || st.rodando || semTurno; $('imp-go').textContent = semTurno ? 'Escolha o turno' : ok.length ? `Importar ${ok.length} ${ok.length === 1 ? 'atividade' : 'atividades'}` : 'Importar';
     if ($('imp-turno')) $('imp-turno').onclick = e => { const t = e.target.closest('[data-t]'); if (!t) return; st.turno = t.dataset.t; render(); };
-    $('imp-dono').onchange = e => { st.dono = e.target.value || '__setor__'; };
+    $('imp-dono').onchange = e => { st.dono = e.target.value || S.uid; };
     if ($('imp-novo-dono')) $('imp-novo-dono').onchange = e => { st.novoDono = e.target.value; };
     b.querySelectorAll('[data-imp-ja]').forEach(x => x.onclick = () => { const v = x.dataset.impJa; if (v === 'del-ok') return desfazerImport('del'); if (v === 'dono-ok') return desfazerImport('dono'); st.desfazer = v || null; render(); });
     $('imp-all').onchange = e => { for (const x of st.itens) if (e.target.checked) st.sel.add(x.i); else st.sel.delete(x.i); render(); };
@@ -2307,7 +2293,7 @@ function openImportar(){
   const desfazerImport = async modo => {
     if (st.rodando || !isAdmin()) return;
     if (!navigator.onLine) return toast('Sem internet: é preciso estar online.');
-    const lista = [...st.jaDocs.values()], novo = $('imp-novo-dono')?.value || '__setor__';
+    const lista = [...st.jaDocs.values()], novo = $('imp-novo-dono')?.value || S.uid;
     st.rodando = true; $('imp-go').disabled = true; $('imp-cancel').disabled = true;
     const bt = $('imp-body').querySelector(modo === 'del' ? '[data-imp-ja="del-ok"]' : '[data-imp-ja="dono-ok"]');
     let ok = 0, falhas = 0;
@@ -2317,13 +2303,13 @@ function openImportar(){
         const hRef = doc(collection(db, 'historico')), b = writeBatch(db), ref = doc(db, 'atividades', a.id);
         if (modo === 'del'){ b.delete(ref); b.set(hRef, evDoc(a.id, a, {tipo:'excluiu', obs:`Importação desfeita (${st.fonte}).`})); }
         else {
-          const d = novo === '__setor__' ? (coordSetor(setorOf(a)) || S.uid) : novo;
+          const d = novo;
           if (d === donoOf(a)){ ok++; continue; }
           b.update(ref, {dono:d, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
           b.set(hRef, evDoc(a.id, a, {tipo:'editou', mudancas:[{campo:'dono', de:donoOf(a), para:d}]}));
         }
         await b.commit(); ok++;
-        if (modo === 'del'){ st.jaDocs.delete(a.id); st.ja.delete(a.chave); } else st.jaDocs.set(a.id, {...a, dono: novo === '__setor__' ? (coordSetor(setorOf(a)) || S.uid) : novo});
+        if (modo === 'del'){ st.jaDocs.delete(a.id); st.ja.delete(a.chave); } else st.jaDocs.set(a.id, {...a, dono: novo});
       } catch (err){ console.warn('desfazer importação', a.id, err); falhas++; }
     }
     st.rodando = false; st.desfazer = null; $('imp-cancel').disabled = false;
@@ -2362,7 +2348,7 @@ function openImportar(){
       const dados = {titulo:a.titulo, detalhes:a.detalhes, noite:a.noite, fim:a.fim, turno:a.turno, prioridade:a.prioridade, tipoLocal:a.tipoLocal,
         setor:a.tipoLocal === 'setor' ? a.setor : '', pilar:a.tipoLocal === 'pilar' ? a.pilar : '', pilarLoja:a.tipoLocal === 'pilar' ? a.pilarLoja : '', local:a.tipoLocal === 'shopping' ? a.local : '',
         nivel:a.nivel, eixo:a.eixo, fornecedor:a.fornecedor, responsavel:a.responsavel, efetivo:a.efetivo, etiquetas:a.etiquetas, temEtiqueta:a.etiquetas.length > 0,
-        dono: st.dono === '__setor__' ? (coordSetor(setorOf(a)) || S.uid) : (st.dono || S.uid), ...(a.chave ? {chave:a.chave} : {})};
+        dono: st.dono || S.uid, ...(a.chave ? {chave:a.chave} : {})};
       try {
         const b1 = writeBatch(db);
         b1.set(actRef, {...dados, avanco: a.status === 'concluida' ? 0 : a.avanco, status:inicial, aberta:true, motivo:'', pct:'', ultimaObs:'', criadoPor:S.uid, criadoEm:serverTimestamp(), atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:h1.id});
@@ -2514,7 +2500,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=55');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=56');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
