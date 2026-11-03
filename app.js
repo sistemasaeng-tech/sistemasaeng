@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 59; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 60; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -721,7 +721,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=59');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=60');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1720,7 +1720,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=59');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=60');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1751,14 +1751,48 @@ function metaLocal(k, acts){
 }
 function openLocal(k, nome = ''){
   if (S.openId) closeDrawer();
-  S.loc = {k, nome}; S.locEnc = false; S.locView = 'lista';
+  S.loc = {k, nome}; S.locEnc = false; S.locView = 'lista'; S.locSel = null;
   S.lgt = {zoom: S.gt.zoom === 'sem' ? 'qui' : S.gt.zoom, ref: defaultNight(), conc: true, grp: 'local', turno: '', jump: true, auto: true};
   for (const v of ['v-ini','v-noite','v-gantt','v-etq','v-hist','v-cad','v-pend']) $(v).hidden = true;
   $('v-local').hidden = false; window.scrollTo({top:0});
   renderLocal();
   carregarTodas().then(() => { if (S.loc && S.loc.k === k) renderLocal(); });
 }
-function closeLocal(){ S.loc = null; setTab(S.tab); }
+/* ===== troca de dono em lote (admin, na página do local) ===== */
+function syncSelDono(){
+  const v = $('v-local'), on = !!(S.locSel && S.loc && isAdmin());
+  v.classList.toggle('sel-mode', on);
+  for (const c of v.querySelectorAll('.card[data-id]')){ const p = on && S.locSel.has(c.dataset.id); c.classList.toggle('picked', p); c.setAttribute('aria-pressed', on ? String(p) : 'false'); }
+  let bar = $('sel-bar');
+  if (!on){ if (bar) bar.remove(); return; }
+  if (!bar){ bar = document.createElement('div'); bar.id = 'sel-bar'; bar.className = 'sel-bar'; document.body.appendChild(bar); }
+  const n = S.locSel.size, dono = S.locSelDono || S.uid, visiveis = [...v.querySelectorAll('.card[data-id]')].map(c => c.dataset.id);
+  bar.innerHTML = `<div class="sb-l"><b>${n}</b> ${n === 1 ? 'selecionada' : 'selecionadas'}
+      <button type="button" class="link-btn" data-sel-all>${visiveis.length && visiveis.every(id => S.locSel.has(id)) ? 'Limpar' : 'Selecionar todas'}</button><button type="button" class="sb-x" data-loc-sel aria-label="Cancelar seleção" title="Cancelar seleção">×</button></div>
+    <div class="sb-r"><label class="sr-only" for="sel-dono">Novo dono</label><select id="sel-dono">${donosPossiveis(dono).map(id => `<option value="${esc(id)}" ${id === dono ? 'selected' : ''}>${esc(nameOf(id))}</option>`).join('')}</select>
+      <button type="button" class="btn pri" data-sel-apply ${n ? '' : 'disabled'}>Trocar dono</button></div>`;
+  $('sel-dono').onchange = e => { S.locSelDono = e.target.value; };
+}
+async function aplicarDonoLote(){
+  if (!S.locSel || !S.locSel.size || !isAdmin()) return;
+  if (!navigator.onLine) return toast('Sem internet: é preciso estar online.');
+  const novo = $('sel-dono')?.value || S.uid, ids = [...S.locSel], bt = document.querySelector('[data-sel-apply]');
+  let ok = 0, sem = 0, falhas = 0;
+  for (const id of ids){
+    const a = all().get(id) || S.todas?.get(id); if (!a){ falhas++; continue; }
+    if (donoOf(a) === novo){ sem++; continue; }
+    if (bt){ bt.disabled = true; bt.textContent = `Trocando ${ok + falhas + 1} de ${ids.length - sem}…`; }
+    try {
+      const hRef = doc(collection(db, 'historico')), b = writeBatch(db);
+      b.update(doc(db, 'atividades', id), {dono:novo, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:hRef.id});
+      b.set(hRef, evDoc(id, a, {tipo:'editou', mudancas:[{campo:'dono', de:donoOf(a), para:novo}]}));
+      await b.commit(); ok++;
+    } catch (e){ console.warn('trocar dono', id, e); falhas++; }
+  }
+  S.locSel = null; renderLocal();
+  toast(falhas ? `${ok} trocadas, ${falhas} com erro.` : ok ? `Dono trocado para ${shortName(nameOf(novo))} em ${ok} ${ok === 1 ? 'atividade' : 'atividades'}.${sem ? ` ${sem} já ${sem === 1 ? 'era' : 'eram'} dela.` : ''}` : `${shortName(nameOf(novo))} já é o dono ${ids.length === 1 ? 'dessa atividade' : 'dessas atividades'}.`);
+}
+function closeLocal(){ S.loc = null; S.locSel = null; syncSelDono(); setTab(S.tab); }
 function renderLocal(){
   const k = S.loc.k, acts = atividadesDoLocal(k), hoje = defaultNight(), m = metaLocal(k, acts);
   const ab = acts.filter(a => a.aberta && STATUS[a.status]?.aberta).sort((x, y) => (fimOf(x) < hoje ? 0 : 1) - (fimOf(y) < hoje ? 0 : 1) || x.noite.localeCompare(y.noite) || prRank(x.prioridade) - prRank(y.prioridade));
@@ -1782,6 +1816,7 @@ function renderLocal(){
     </div>
     ${acts.length ? `<div class="etq-st"><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div><div class="sum-leg">${leg}</div></div>` : ''}
     <div class="etq-acts">
+      ${isAdmin() && acts.length ? `<button type="button" class="btn${S.locSel ? ' on' : ''}" data-loc-sel>${ICON_PESSOAS}${S.locSel ? 'Cancelar seleção' : 'Trocar dono'}</button>` : ''}
       <button type="button" class="btn pri" data-loc-pdf${acts.length ? '' : ' disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>${m.tp === 'etq' ? 'Relatório da etiqueta' : 'Relatório do local'} (PDF)</button>
       <button type="button" class="btn" data-loc-zip${fotos ? '' : ' disabled'}>${ICON_DL}Baixar fotos (.zip)</button>
       ${m.tp === 'etq' ? `<button type="button" class="btn" id="etq-crono"><span class="exp-ic xls">XLS</span>Cronograma</button>` : ''}
@@ -1795,6 +1830,7 @@ function renderLocal(){
     ${!acts.length && !carregando ? '<div class="empty">Nenhuma atividade neste local.</div>' : ''}`}
   </div>`;
   if (S.locView === 'cal') renderLocalCal(acts, m);
+  syncSelDono();
 }
 // calendário da página do local: mesmas funções do calendário principal, só com as atividades deste local
 function renderLocalCal(acts, m){
@@ -1831,7 +1867,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=59');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=60');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1905,7 +1941,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=59');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=60');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2275,7 +2311,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=59');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=60');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2572,7 +2608,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=59');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=60');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2618,6 +2654,10 @@ document.addEventListener('click', e => {
   if (t.closest('[data-lgt-pdf]')) return exportLocalCalPdf();
   if (t.closest('[data-loc-pdf]')) return openLocalPdf();
   if (t.closest('[data-loc-zip]')) return baixarZipLocal();
+  if (t.closest('[data-loc-sel]')){ if (S.locSel){ S.locSel = null; } else { S.locSel = new Set(); S.locView = 'lista'; S.locSelDono = S.locSelDono || S.uid; } return renderLocal(); }
+  if (t.closest('[data-sel-apply]')) return aplicarDonoLote();
+  if (t.closest('[data-sel-all]')){ const ids = [...$('v-local').querySelectorAll('.card[data-id]')].map(c => c.dataset.id); const tudo = ids.every(id => S.locSel.has(id)); for (const id of ids) tudo ? S.locSel.delete(id) : S.locSel.add(id); return syncSelDono(); }
+  if (S.locSel && S.loc){ const c = t.closest('#v-local .card[data-id]'); if (c){ const id = c.dataset.id; S.locSel.has(id) ? S.locSel.delete(id) : S.locSel.add(id); return syncSelDono(); } }
   if (t.closest('[data-loc-enc]')){ S.locEnc = !S.locEnc; return renderLocal(); }
   if (t.closest('[data-loc-new]')){ const k = S.loc.k, pre = k[0] === 'e' ? {etiquetas:[metaLocal(k, atividadesDoLocal(k)).nome]} : k[0] === 's' ? {tipoLocal:'setor', setor:k.slice(2)} : k[0] === 'p' ? {tipoLocal:'pilar', pilar:k.slice(2)} : {tipoLocal:'shopping', local:k.slice(2)}; return openForm(null, {...pre, noite:defaultNight()}); }
   const gh = t.closest('[data-grp]'); if (gh) return toggleGrp(gh.dataset.grp);
