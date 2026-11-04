@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 61; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 62; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -729,7 +729,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=61');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=62');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -994,12 +994,18 @@ function renderCadList(){
   const all = (S.cad[d.key] || []).map((it, i) => ({i, ...cadItemText(d, it)}));
   const items = all.filter(x => !q || (x.k + ' ' + x.v).toLowerCase().includes(q));
   $('cad-count').textContent = q ? `${items.length} de ${all.length}` : `${all.length} ${all.length === 1 ? 'item' : 'itens'}`;
-  list.innerHTML = items.length ? items.map(x => `<div class="cad-item">
+  const campoEd = (c, l, v) => c === 'setor' ? `<label class="ce-f"><span>Setor</span><select name="${c}" aria-label="${l}"><option value="">Sem setor</option>${S.cad.setores.map(z => `<option value="${esc(z.codigo)}" ${z.codigo === (v || '') ? 'selected' : ''}>Setor ${esc(z.codigo)}</option>`).join('')}</select></label>`
+    : `<label class="ce-f"><span>${esc(l.replace(/\s*\(.*\)\s*$/, ''))}</span><input type="text" name="${c}" value="${esc(v || '')}" placeholder="${esc(l)}" autocomplete="off"></label>`;
+  list.innerHTML = items.length ? items.map(x => admin && S.cadEdit === `${d.key}:${x.i}` ? `<form class="cad-item cad-edit" data-edit="${d.key}:${x.i}">
+      <div class="ce-fs">${d.cols.map(([c, l]) => campoEd(c, l, d.key === 'niveis' ? x.k : x.o[c])).join('')}</div>
+      ${['pilares','fornecedores','setores','locais'].includes(d.key) ? '<p class="ce-nota">As atividades já lançadas continuam com o texto antigo; altere-as se precisar.</p>' : ''}
+      <div class="ce-a"><button type="button" class="btn" data-edit-cancel>Cancelar</button><button type="submit" class="btn pri">Salvar</button></div>
+    </form>` : `<div class="cad-item">
       <div class="ci-tx"><b>${esc(x.k)}</b>${x.v ? `<span>${esc(x.v)}</span>` : ''}</div>
       ${d.key === 'setores' ? (admin ? `<select class="ci-setor ci-coord" data-cad-coord="${x.i}" aria-label="Coordenador do Setor ${esc(x.k)}"><option value="">Sem coordenador</option>${aprovados(x.o.coord).map(id => `<option value="${esc(id)}" ${id === (x.o.coord || '') ? 'selected' : ''}>${esc(shortName(nameOf(id)))}</option>`).join('')}</select>` : (x.o.coord ? `<span class="ci-st">Coord.: ${esc(shortName(nameOf(x.o.coord)))}</span>` : '')) : ''}
       ${d.key === 'pilares' || d.key === 'locais' ? (admin ? `<select class="ci-setor" data-cad-setor="${d.key}:${x.i}" aria-label="Setor de ${esc(x.k)}"><option value="">Sem setor</option>${S.cad.setores.map(z => `<option value="${esc(z.codigo)}" ${z.codigo === (x.o.setor || '') ? 'selected' : ''}>Setor ${esc(z.codigo)}</option>`).join('')}</select>` : (x.o.setor ? `<span class="ci-st">Setor ${esc(x.o.setor)}</span>` : '')) : ''}
       ${admin ? (S.cadDel === `${d.key}:${x.i}` ? `<div class="ci-conf"><span>Remover?</span><button type="button" class="btn danger" data-del="${d.key}:${x.i}">Sim</button><button type="button" class="btn" data-del-cancel>Não</button></div>`
-        : `<button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
+        : `<button type="button" class="x ed" data-edit-ask="${d.key}:${x.i}" aria-label="Editar ${esc(x.k)}" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}" title="Remover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
     </div>`).join('') : `<div class="empty">${S.cadLoaded ? (q ? 'Nada encontrado com essa busca.' : 'Lista vazia.') : 'Carregando…'}</div>`;
 }
 // ações do menu ⋯ de cada pessoa, conforme o papel atual
@@ -1728,7 +1734,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=61');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=62');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1875,7 +1881,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=61');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=62');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1949,7 +1955,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=61');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=62');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2319,7 +2325,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=61');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=62');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2616,7 +2622,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=61');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=62');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2697,13 +2703,36 @@ document.addEventListener('click', e => {
   if (t.closest('.ms-ok')){ msClose(); return; }
   const m = t.closest('[data-mode]'); if (m && $('drawer').contains(m)) return setMode(m.dataset.mode || null);
   const cadRow = t.closest('[data-cad]'); if (cadRow){ S.cadSub = cadRow.dataset.cad; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
-  if (t.closest('[data-cad-back]')){ S.cadSub = null; S.cadDel = null; window.scrollTo({top:0}); return renderAll(); }
+  if (t.closest('[data-cad-back]')){ S.cadSub = null; S.cadDel = null; S.cadEdit = null; window.scrollTo({top:0}); return renderAll(); }
   const ask = t.closest('[data-del-ask]'); if (ask){ S.cadDel = ask.dataset.delAsk; return renderCadList(); }
   if (t.closest('[data-del-cancel]')){ S.cadDel = null; return renderCadList(); }
+  { const ea = t.closest('[data-edit-ask]'); if (ea){ S.cadEdit = ea.dataset.editAsk; S.cadDel = null; renderCadList(); const f = document.querySelector(`form[data-edit="${ea.dataset.editAsk}"] input`); if (f){ f.focus(); f.select(); } return; } }
+  if (t.closest('[data-edit-cancel]')){ S.cadEdit = null; return renderCadList(); }
   const del = t.closest('[data-del]'); if (del){ const [key, i] = del.dataset.del.split(':'); S.cadDel = null; return saveCad({...S.cad, [key]:S.cad[key].filter((_,j) => j !== Number(i))}).then(ok => ok && toast('Item removido.')); }
   const um = t.closest('[data-umenu]'); if (um){ S.uMenu = S.uMenu === um.dataset.umenu ? null : um.dataset.umenu; return renderCadList(); }
   const pp = t.closest('[data-papel]'); if (pp){ S.uMenu = null; renderCadList(); const [uid, papel] = pp.dataset.papel.split(':'); updateDoc(doc(db, 'usuarios', uid), {papel}).then(() => toast('Acesso atualizado.'), handleWriteError); return; }
   if (t.id === 'b-seed') return saveCad(SEED);
+});
+document.addEventListener('submit', e => {
+  const fe = e.target.closest('form[data-edit]'); if (!fe) return;
+  e.preventDefault();
+  if (!isAdmin()) return;
+  const [key, si] = fe.dataset.edit.split(':'), i = Number(si), d = CAD_DEF.find(x => x.key === key), lista = [...(S.cad[key] || [])], atual = lista[i];
+  if (atual === undefined) return toast('Esse item não existe mais. Recarregue a lista.');
+  const vals = Object.fromEntries(d.cols.map(([c]) => [c, (fe.elements[c]?.value || '').trim()]));
+  if (!vals[d.k]) return toast('Preencha o primeiro campo.');
+  if (key === 'pilares' && pilarCode(vals.codigo)) vals.codigo = pilarCode(vals.codigo);
+  const simple = key === 'niveis';
+  const same = key === 'pilares'
+    ? x => (pilarCode(x.codigo) || lc(x.codigo)) === (pilarCode(vals.codigo) || lc(vals.codigo)) && lc(x.referencia) === lc(vals.referencia)
+    : key === 'locais' ? x => lc(locNome(x)) === lc(vals.nome)
+    : x => String(simple ? x : x[d.k]).toLowerCase() === vals[d.k].toLowerCase();
+  if (lista.some((x, j) => j !== i && same(x))) return toast(key === 'pilares' ? 'Esse pilar com essa loja já está na lista.' : 'Já existe outro item igual na lista.');
+  lista[i] = simple ? vals[d.k] : {...(typeof atual === 'string' ? {} : atual), ...vals};
+  if (key === 'fornecedores') lista.sort((a,b) => a.nome.localeCompare(b.nome,'pt'));
+  if (key === 'pilares') lista.sort((a,b) => (parseInt(String(a.codigo).replace(/\D/g,'')) || 0) - (parseInt(String(b.codigo).replace(/\D/g,'')) || 0) || String(a.referencia||'').localeCompare(String(b.referencia||''),'pt'));
+  S.cadEdit = null;
+  saveCad({...S.cad, [key]:lista}).then(ok => { if (ok) toast('Alteração salva.'); else renderCadList(); });
 });
 document.addEventListener('submit', e => {
   const f = e.target.closest('form[data-add]'); if (!f) return;
