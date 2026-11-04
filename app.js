@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 60; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 61; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -390,12 +390,13 @@ function locOptions(tipo){
   }
   return [];
 }
-function matches(a){
+function matches(a, semStatus){
+  semStatus = semStatus === true; // .filter(matches) passa o índice como 2º argumento
   const f = S.f;
   if (f.tipo.length && !f.tipo.includes(a.tipoLocal)) return false;
   if (f.loc.length && !f.loc.some(v => locItemMatch(a, v))) return false;
   if (f.forn.length && !f.forn.includes(a.fornecedor || '__none__')) return false;
-  if (f.status.length && !f.status.includes(a.status)) return false;
+  if (!semStatus && f.status.length && !f.status.includes(a.status)) return false;
   if (f.etq.length && !f.etq.some(t => hasTag(a, t))) return false;
   if (f.autor.length && !f.autor.includes(donoOf(a))) return false;
   if (f.q){ const hay = [a.titulo,a.detalhes,a.fornecedor,a.responsavel,localLine(a),a.ultimaObs,a.motivo,...tagsOf(a)].join(' ').toLowerCase(); if (!hay.includes(f.q.toLowerCase())) return false; }
@@ -437,20 +438,27 @@ function renderNight(){
     canc = acts.filter(a => a.status === 'cancelada' && fimOf(a) >= desde);
   }
   contados = [...pend, ...cur, ...fut];
-  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); contados.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
-  cnt.concluida = concl.length; cnt.cancelada = canc.length;
-  const total = contados.length;
+  // o resumo segue os filtros; os números dos chips de status ignoram o próprio filtro de status (para mostrar quantas há de cada)
+  const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor].filter(x => x.length).length + (S.f.q ? 1 : 0);
+  const fS = a => matches(a), fC = a => matches(a, true);
+  const pendS = pend.filter(fS), futS = fut.filter(fS), sumL = contados.filter(fS);
+  const cnt = {}; ORDER.forEach(k => cnt[k] = 0); sumL.forEach(a => { cnt[a.status] = (cnt[a.status]||0)+1; });
+  cnt.concluida = concl.filter(fS).length; cnt.cancelada = canc.filter(fS).length;
+  const cntC = {}; ORDER.forEach(k => cntC[k] = 0); contados.filter(fC).forEach(a => { cntC[a.status] = (cntC[a.status]||0)+1; });
+  cntC.concluida = concl.filter(fC).length; cntC.cancelada = canc.filter(fC).length;
+  const total = sumL.length;
   const bar = total ? ORDER.filter(k => cnt[k] && k !== 'concluida' && k !== 'cancelada').map(k => `<i style="width:${(cnt[k]/total*100).toFixed(2)}%;background:${cvar(k)}" title="${esc(STATUS[k].label)}: ${cnt[k]}"></i>`).join('') : '';
   const leg = [];
-  if (pend.length) leg.push(`<span class="sum-pend"><i class="dot" style="--c:var(--st-nao)"></i>${pend.length} ${pend.length === 1 ? 'vencida' : 'vencidas'}</span>`);
-  if (fut.length) leg.push(`<span><i class="dot" style="--c:var(--faint)"></i>${fut.length} a iniciar</span>`);
+  if (pendS.length) leg.push(`<span class="sum-pend"><i class="dot" style="--c:var(--st-nao)"></i>${pendS.length} ${pendS.length === 1 ? 'vencida' : 'vencidas'}</span>`);
+  if (futS.length) leg.push(`<span><i class="dot" style="--c:var(--faint)"></i>${futS.length} a iniciar</span>`);
+  if (nf && (cnt.concluida || cnt.cancelada) && (S.f.status.includes('concluida') || S.f.status.includes('cancelada'))) leg.push(...['concluida','cancelada'].filter(k => cnt[k] && S.f.status.includes(k)).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`));
   leg.push(...ORDER.filter(k => k !== 'concluida' && k !== 'cancelada' && cnt[k]).map(k => `<span><i class="dot" style="--c:${cvar(k)}"></i>${cnt[k]} ${esc(stN(k, cnt[k]))}</span>`));
-  $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${total}</b><span>${total === 1 ? 'em aberto' : 'em aberto'}${dia ? (dia === hoje ? ' hoje' : ' no dia') : ''}</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
+  $('summary').innerHTML = `<div class="sum-top"><div class="sum-n"><b>${total}</b><span>${total === 1 ? 'em aberto' : 'em aberto'}${dia ? (dia === hoje ? ' hoje' : ' no dia') : ''}${nf ? '<em class="sum-f">com filtros</em>' : ''}</span></div><div class="bar" role="img" aria-label="Distribuição por status">${bar}</div></div>
     ${leg.length ? `<div class="sum-leg">${leg.join('')}</div>` : ''}`;
   // painel de filtros
-  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cnt[k]}</b></button>`).join('');
-  const nf = [S.f.status, S.f.tipo, S.f.loc, S.f.forn, S.f.etq, S.f.autor].filter(x => x.length).length;
-  $('f-count').hidden = !nf; $('f-count').textContent = nf;
+  $('f-status').innerHTML = ORDER.map(k => `<button type="button" class="chip" data-st="${k}" aria-pressed="${S.f.status.includes(k)}"><span class="dot" style="--c:${cvar(k)}"></span>${esc(STATUS[k].label)} <b>${cntC[k]}</b></button>`).join('');
+  const nfp = nf - (S.f.q ? 1 : 0);
+  $('f-count').hidden = !nfp; $('f-count').textContent = nfp;
   // concluídas e canceladas só aparecem quando o chip correspondente está marcado
   const base = [...pend, ...cur, ...fut, ...(verConc ? concl : []), ...(verCanc ? canc : [])];
   const byFim = (x, y) => String(fimOf(x)).localeCompare(String(fimOf(y)));
@@ -721,7 +729,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=60');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=61');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1720,7 +1728,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=60');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=61');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1867,7 +1875,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=60');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=61');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1941,7 +1949,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=60');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=61');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2311,7 +2319,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=60');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=61');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2608,7 +2616,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=60');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=61');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
