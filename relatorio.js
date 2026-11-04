@@ -196,7 +196,7 @@ export async function gerarRelatorioPDF(ctx){
     const k = data.cell.raw && data.cell.raw.status;
     if (k && ST[k]){ data.cell.styles.fillColor = mix(ST[k].c, .85); data.cell.styles.textColor = ST[k].c.map(v => Math.round(v * .78)); data.cell.styles.fontStyle = 'bold'; }
   };
-  const statusObj = a => ({content: t(ST[a.status]?.label || a.status) + `\n${avOf(a)}% executado`, status: a.status});
+  const statusObj = a => ({content: t(ST[a.status]?.label || a.status), status: a.status});
   const TOP = 22;
   const tblBase = {
     theme:'plain', margin:{left:M, right:M, top:TOP, bottom:15},
@@ -204,7 +204,19 @@ export async function gerarRelatorioPDF(ctx){
     headStyles:{fillColor:C.graf, textColor:C.white, fontStyle:'bold', fontSize:7.6, lineWidth:0},
     alternateRowStyles:{fillColor:[250,250,251]},
   };
-  const COLW = {0:70, 1:32, 2:24, 3:14, 4:30, 5:25, 6:28}; // a última coluna (observação) ocupa o restante
+  // Atividade ocupa o que sobra; as demais têm largura fixa (A4 paisagem)
+  const COLW = {1:30, 2:16, 3:42, 4:28, 5:24}; COLW[0] = CW - Object.values(COLW).reduce((x, y) => x + y, 0);
+  // quebra de linha por trecho ("Pilar P19 (N/12)", "Nív. 97,75"...): só quebra entre trechos, nunca no meio de um
+  const porTrechos = (txt, w) => { const out = []; let cur = '';
+    const cabe = str => { if (doc.getTextWidth(str) <= w) return str; const q = doc.splitTextToSize(str, w); out.push(...q.slice(0, -1)); return q[q.length - 1]; };
+    for (const seg of String(txt).split(' · ').filter(Boolean)){
+      if (!cur){ cur = cabe(seg); continue; }
+      const tent = cur + ' · ' + seg;
+      if (doc.getTextWidth(tent) <= w) cur = tent; else { out.push(cur); cur = cabe(seg); }
+    }
+    if (cur) out.push(cur); return out; };
+  // tira o "Eixo X" repetido quando o pilar já mostra o eixo entre parênteses
+  const semEixoRepetido = txt => { const segs = String(txt).split(' · '); return segs.filter(sg => { const m = sg.match(/^Eixo (.+)$/); return !(m && segs.some(o => o !== sg && o.includes(`(${m[1]})`))); }).join(' · '); };
   const nomeDe = ctx.nomeDe || (() => '-');
   doc.addPage(); y = TOP + 6;
   color(C.ink); font('bold', 14); text('Atividades por setor', M, y);
@@ -230,22 +242,23 @@ export async function gerarRelatorioPDF(ctx){
     y += 13;
     const items = [...g.items].sort((a, b) => prRank(a.prioridade) - prRank(b.prioridade) || ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.noite).localeCompare(String(b.noite)));
     doc.autoTable({...tblBase, startY: y,
-      head:[['Atividade', 'Etiqueta', 'Turno / período', 'Atraso', 'Fornecedor', 'Status', 'Dono', 'Motivo / última observação']],
+      head:[['Atividade', 'Turno / período', {content:'Atraso', styles:{halign:'center'}}, 'Fornecedor', 'Status', {content:'Executado', styles:{halign:'center'}}]],
       body: items.map(a => {
-        const det = [ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · ');
-        const et = Array.isArray(a.etiquetas) && a.etiquetas.length ? a.etiquetas.join('\n') : '-';
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(et), `${ctx.turnoLabelDe(a)}\n${per(a)}`, diasAberto(a) ? `${diasAberto(a)} d` : (a.noite > hoje ? 'futura' : 'no prazo'), t(a.fornecedor || '-'), statusObj(a), t(nomeDe(a.dono || a.criadoPor)) + (a.criadoEm && ctx.fmtTs ? '\n' + ctx.fmtTs(a.criadoEm) : ''), t([a.motivo, a.ultimaObs].filter(Boolean).join(' - ')) || '-'];
+        const det = semEixoRepetido([ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · '));
+        const atraso = diasAberto(a);
+        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, `${ctx.turnoLabelDe(a)}\n${per(a)}`, {content:`${atraso} d`, atraso}, t(a.fornecedor || '-'), statusObj(a), {content:`${avOf(a)}%`, pct:avOf(a)}];
       }),
-      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1], textColor:C.muted}, 2:{cellWidth:COLW[2]}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:COLW[6]}, 7:{cellWidth:'auto'}},
+      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1]}, 2:{cellWidth:COLW[2], halign:'center'}, 3:{cellWidth:COLW[3]}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5], halign:'center'}},
       didParseCell: d => {
         if (d.section !== 'body') return;
-        if (d.column.index === 3 && /\d+ d/.test(String(d.cell.raw))){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; }
-        if (d.column.index === 5) statusCell(d);
+        if (d.column.index === 2){ if (d.cell.raw && d.cell.raw.atraso > 0){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; } else d.cell.styles.textColor = C.muted; }
+        if (d.column.index === 4) statusCell(d);
+        if (d.column.index === 5){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.cellPadding = {top:1.8, bottom:4.2, left:2, right:2}; }
         if (d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){
           // título em negrito e detalhes em cinza: quebra de linha calculada aqui e desenhada em didDrawCell
           const wUtil = COLW[0] - 4;
           font('bold', 7.8); const tl = doc.splitTextToSize(d.cell.raw.titulo, wUtil);
-          font('normal', 7.2); const dl = d.cell.raw.det ? doc.splitTextToSize(d.cell.raw.det, wUtil) : [];
+          font('normal', 7.2); const dl = d.cell.raw.det ? porTrechos(d.cell.raw.det, wUtil) : [];
           d.cell.raw.nTit = tl.length; d.cell.text = [...tl, ...dl];
         }
       },
@@ -253,6 +266,12 @@ export async function gerarRelatorioPDF(ctx){
         if (d.section === 'body' && d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){ d.cell.raw._lines = d.cell.text; d.cell.text = []; }
       },
       didDrawCell: d => {
+        if (d.section === 'body' && d.column.index === 5 && d.cell.raw && typeof d.cell.raw.pct === 'number'){
+          // barrinha de avanço sob o percentual
+          const bw = Math.min(16, d.cell.width - 6), bx = d.cell.x + (d.cell.width - bw) / 2, by = d.cell.y + 7.2;
+          fill(C.line); doc.roundedRect(bx, by, bw, 1.4, .7, .7, 'F');
+          if (d.cell.raw.pct > 0){ fill(d.cell.raw.pct >= 100 ? [70,160,110] : C.laranja); doc.roundedRect(bx, by, Math.max(1.4, bw * Math.min(100, d.cell.raw.pct) / 100), 1.4, .7, .7, 'F'); }
+        }
         if (d.section === 'body' && d.column.index === 0 && d.cell.raw && d.cell.raw._lines){
           const pos = d.cell.getTextPos(), lh = 7.8 * 1.15 * 25.4 / 72;
           d.cell.raw._lines.forEach((ln, i) => {
