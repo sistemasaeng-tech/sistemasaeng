@@ -220,7 +220,7 @@ export async function gerarRelatorioPDF(ctx){
   const nomeDe = ctx.nomeDe || (() => '-');
   doc.addPage(); y = TOP + 6;
   color(C.ink); font('bold', 14); text('Atividades por setor', M, y);
-  color(C.muted); font('normal', 8.5); text('Atividades em aberto agrupadas por setor, ordenadas por prioridade, status e data.', M, y + 5.2);
+  color(C.muted); font('normal', 8.5); text('Atividades em aberto agrupadas por local, em ordem de execução: nível (de baixo para cima), eixo, início e término.', M, y + 5.2);
   y += 11;
   const prRank = p => p === 'critica' ? 0 : p === 'alta' ? 1 : 2;
   for (const g of G){
@@ -240,7 +240,9 @@ export async function gerarRelatorioPDF(ctx){
       color(ST[k].c.map(v => Math.round(v * .78))); text(lab, px + 2.5, y + 6.45); px -= 1.6;
     });
     y += 13;
-    const items = [...g.items].sort((a, b) => prRank(a.prioridade) - prRank(b.prioridade) || ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.noite).localeCompare(String(b.noite)));
+    // ordem de cronograma: nível de baixo para cima, eixo, início e término
+    const nivelNum = a => { const n = parseFloat(String(a.nivel || '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : Infinity; };
+    const items = [...g.items].sort((a, b) => nivelNum(a) - nivelNum(b) || String(a.eixo || '').localeCompare(String(b.eixo || ''), 'pt', {numeric:true}) || String(a.noite).localeCompare(String(b.noite)) || String(fimOf(a)).localeCompare(String(fimOf(b))) || prRank(a.prioridade) - prRank(b.prioridade));
     doc.autoTable({...tblBase, startY: y,
       head:[['Atividade', 'Turno / período', {content:'Atraso', styles:{halign:'center'}}, 'Fornecedor', 'Status', {content:'Executado', styles:{halign:'center'}}]],
       body: items.map(a => {

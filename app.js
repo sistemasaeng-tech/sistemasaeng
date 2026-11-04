@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 63; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 64; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -403,6 +403,9 @@ function matches(a, semStatus){
   return true;
 }
 const prRank = p => p === 'critica' ? 0 : p === 'alta' ? 1 : 2;
+// ordem de cronograma dentro do mesmo local: nível de baixo para cima, depois eixo, depois início e término
+const nivelNum = a => { const n = parseFloat(String(a.nivel || '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : Infinity; };
+const ordCrono = (x, y) => nivelNum(x) - nivelNum(y) || String(x.eixo || '').localeCompare(String(y.eixo || ''), 'pt', {numeric:true}) || String(x.noite).localeCompare(String(y.noite)) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade) || String(x.titulo).localeCompare(String(y.titulo), 'pt');
 const sortActs = list => list.sort((x,y) => prRank(x.prioridade)-prRank(y.prioridade) || ORDER.indexOf(x.status)-ORDER.indexOf(y.status) || toDate(x.criadoEm)-toDate(y.criadoEm));
 
 function concDay(a){
@@ -487,6 +490,7 @@ const CHEV = '<svg class="grp-chev" viewBox="0 0 24 24" fill="none" stroke="curr
 function grouped(list, isPend, scope = ''){
   const groups = new Map();
   for (const a of list){ const g = groupKey(a); if (!groups.has(g.k)) groups.set(g.k, {...g, items:[]}); groups.get(g.k).items.push(a); }
+  for (const g of groups.values()) g.items.sort(ordCrono);
   return [...groups.values()].sort((a,b) => groupRank(a.k)-groupRank(b.k) || a.sub.localeCompare(b.sub))
     .map(g => { const tp = g.k.startsWith('p:') ? 'pilares' : g.k.startsWith('z:') ? 'locais' : 'setores', lab = g.k.startsWith('z:') ? (g.sub || 'Shopping') : g.label, sub = g.k.startsWith('z:') ? 'Shopping' : g.sub;
       const key = (isPend ? 'P' : 'T') + scope + '|' + g.k, col = S.colGrp.has(key);
@@ -710,7 +714,7 @@ function gtData(g = S.gt, fonte = null){
     groups.get(k).items.push(a);
   }
   const G = [...groups.values()].sort((x, y) => x.rank - y.rank || x.label.localeCompare(y.label, 'pt') || x.sub.localeCompare(y.sub, 'pt'));
-  for (const gr of G) gr.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || prRank(x.prioridade) - prRank(y.prioridade));
+  for (const gr of G) gr.items.sort(ordCrono);
   return {ini, n, fim, hoje, ft, acts, G, mesLbl};
 }
 const ZLBL = {sem:'Semana', qui:'Quinzena', mes:'Mês', per:'Período'};
@@ -729,7 +733,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=63');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=64');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1734,7 +1738,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=63');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=64');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1809,7 +1813,7 @@ async function aplicarDonoLote(){
 function closeLocal(){ S.loc = null; S.locSel = null; syncSelDono(); setTab(S.tab); }
 function renderLocal(){
   const k = S.loc.k, acts = atividadesDoLocal(k), hoje = defaultNight(), m = metaLocal(k, acts);
-  const ab = acts.filter(a => a.aberta && STATUS[a.status]?.aberta).sort((x, y) => (fimOf(x) < hoje ? 0 : 1) - (fimOf(y) < hoje ? 0 : 1) || x.noite.localeCompare(y.noite) || prRank(x.prioridade) - prRank(y.prioridade));
+  const ab = acts.filter(a => a.aberta && STATUS[a.status]?.aberta).sort(ordCrono);
   const enc = acts.filter(a => !(a.aberta && STATUS[a.status]?.aberta)).sort((x, y) => fimOf(y).localeCompare(fimOf(x)));
   const cnt = {}; ORDER.forEach(s2 => cnt[s2] = 0); acts.forEach(a => cnt[a.status] = (cnt[a.status] || 0) + 1);
   const venc = ab.filter(a => fimOf(a) < hoje).length, fotos = acts.reduce((s2, a) => s2 + (Number(a.nFotos) || 0), 0);
@@ -1881,7 +1885,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=63');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=64');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1929,7 +1933,7 @@ async function gerarPdfLocal(k, op, prog){
   await carregarTodas();
   const hoje = defaultNight(), todas = atividadesDoLocal(k), m = metaLocal(k, todas);
   const lista = todas.filter(a => op.enc || (a.aberta && STATUS[a.status]?.aberta))
-    .sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || String(x.titulo).localeCompare(String(y.titulo), 'pt'));
+    .sort(ordCrono);
   if (!lista.length) throw new Error('vazio');
   const ids = lista.map(a => a.id);
   prog('Buscando fotos e histórico…');
@@ -1955,7 +1959,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=63');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=64');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2318,14 +2322,14 @@ function openCronograma(opts = {}){
     } else for (const a of list){ const g = groupKey(a); const k = a.tipoLocal === 'shopping' ? 'z' : g.k; if (!groups.has(k)) groups.set(k, {k, label: a.tipoLocal === 'shopping' ? 'Shopping' : g.label, sub: a.tipoLocal === 'shopping' ? 'Lojas, mall, estacionamento e áreas de apoio' : g.sub, items:[]}); groups.get(k).items.push(a); }
     const ordG = grp === 'etq' ? (x, y) => (x.k === 'zz') - (y.k === 'zz') || x.label.localeCompare(y.label, 'pt') : (x, y) => groupRank(x.k) - groupRank(y.k);
     const grupos = [...groups.values()].sort(ordG).map(g => ({label:g.label, sub:g.sub,
-      items: g.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)) || String(x.titulo).localeCompare(String(y.titulo), 'pt')).map(a => ({
+      items: g.items.sort(ordCrono).map(a => ({
         titulo: a.titulo, empresa: a.fornecedor || '', inicio: a.noite, fim: fimOf(a), status: a.status, avanco: avOf(a),
         detalhe: [localLine(a), `turno ${TURNOS[turnoOf(a)].toLowerCase()}`, a.responsavel ? `resp.: ${a.responsavel}` : '', grp === 'local' && tagsOf(a).length ? `etiqueta: ${tagsOf(a).join(', ')}` : ''].filter(Boolean).join(' · '),
       }))}));
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=63');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=64');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2550,7 +2554,7 @@ async function montarExportIA({per, conc, filt}){
   const grupos = new Map();
   for (const a of acts){ const g = groupKey(a); if (!grupos.has(g.k)) grupos.set(g.k, {...g, items:[]}); grupos.get(g.k).items.push(a); }
   const G = [...grupos.values()].sort((x, y) => groupRank(x.k) - groupRank(y.k) || String(x.sub).localeCompare(String(y.sub), 'pt') || x.label.localeCompare(y.label, 'pt'));
-  for (const g of G) g.items.sort((x, y) => x.noite.localeCompare(y.noite) || fimOf(x).localeCompare(fimOf(y)));
+  for (const g of G) g.items.sort(ordCrono);
   const cnt = {}; for (const a of acts) cnt[a.status] = (cnt[a.status] || 0) + 1;
   const venc = acts.filter(a => a.aberta && STATUS[a.status]?.aberta && fimOf(a) < hoje).length, fut = acts.filter(a => a.aberta && a.noite > hoje).length;
   ln('# Programação de Atividades — Obra 4107 · Rooftop Iguatemi SP (SAENG)');
@@ -2622,7 +2626,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=63');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=64');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
