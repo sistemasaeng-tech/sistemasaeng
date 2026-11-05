@@ -205,7 +205,8 @@ export async function gerarRelatorioPDF(ctx){
     alternateRowStyles:{fillColor:[250,250,251]},
   };
   // Atividade ocupa o que sobra; as demais têm largura fixa (A4 paisagem)
-  const COLW = {1:30, 2:16, 3:42, 4:28, 5:24}; COLW[0] = CW - Object.values(COLW).reduce((x, y) => x + y, 0);
+  const COLW = {1:18, 2:19, 3:19, 4:15, 5:38, 6:26, 7:22}; COLW[0] = CW - Object.values(COLW).reduce((x, y) => x + y, 0);
+  const dataCurta = ymd => { const [yy, mm, dd] = String(ymd || '').split('-'); return dd ? `${dd}/${mm}/${yy.slice(2)}` : '-'; };
   // quebra de linha por trecho ("Pilar P19 (N/12)", "Nív. 97,75"...): só quebra entre trechos, nunca no meio de um
   const porTrechos = (txt, w) => { const out = []; let cur = '';
     const cabe = str => { if (doc.getTextWidth(str) <= w) return str; const q = doc.splitTextToSize(str, w); out.push(...q.slice(0, -1)); return q[q.length - 1]; };
@@ -244,18 +245,19 @@ export async function gerarRelatorioPDF(ctx){
     const nivelNum = a => { const n = parseFloat(String(a.nivel || '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : Infinity; };
     const items = [...g.items].sort((a, b) => nivelNum(a) - nivelNum(b) || String(a.eixo || '').localeCompare(String(b.eixo || ''), 'pt', {numeric:true}) || String(a.noite).localeCompare(String(b.noite)) || String(fimOf(a)).localeCompare(String(fimOf(b))) || prRank(a.prioridade) - prRank(b.prioridade));
     doc.autoTable({...tblBase, startY: y,
-      head:[['Atividade', 'Turno / período', {content:'Atraso', styles:{halign:'center'}}, 'Fornecedor', 'Status', {content:'Executado', styles:{halign:'center'}}]],
+      head:[['Atividade', 'Turno', {content:'Início', styles:{halign:'center'}}, {content:'Término', styles:{halign:'center'}}, {content:'Atraso', styles:{halign:'center'}}, 'Fornecedor', 'Status', {content:'Executado', styles:{halign:'center'}}]],
       body: items.map(a => {
         const det = semEixoRepetido([ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · '));
         const atraso = diasAberto(a);
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, `${ctx.turnoLabelDe(a)}\n${per(a)}`, {content:`${atraso} d`, atraso}, t(a.fornecedor || '-'), statusObj(a), {content:`${avOf(a)}%`, pct:avOf(a)}];
+        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(ctx.turnoLabelDe(a)), dataCurta(a.noite), dataCurta(fimOf(a)), {content:`${atraso} d`, atraso}, t(a.fornecedor || '-'), statusObj(a), {content:`${avOf(a)}%`, pct:avOf(a)}];
       }),
-      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1]}, 2:{cellWidth:COLW[2], halign:'center'}, 3:{cellWidth:COLW[3]}, 4:{cellWidth:COLW[4]}, 5:{cellWidth:COLW[5], halign:'center'}},
+      columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1]}, 2:{cellWidth:COLW[2], halign:'center'}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4], halign:'center'}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:COLW[6]}, 7:{cellWidth:COLW[7], halign:'center'}},
       didParseCell: d => {
         if (d.section !== 'body') return;
-        if (d.column.index === 2){ if (d.cell.raw && d.cell.raw.atraso > 0){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; } else d.cell.styles.textColor = C.muted; }
-        if (d.column.index === 4) statusCell(d);
-        if (d.column.index === 5){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.cellPadding = {top:1.8, bottom:4.2, left:2, right:2}; }
+        if (d.column.index === 3 && d.cell.raw && d.cell.raw.atraso > 0) d.cell.styles.textColor = [196,86,44];
+        if (d.column.index === 4){ if (d.cell.raw && d.cell.raw.atraso > 0){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; } else d.cell.styles.textColor = C.muted; }
+        if (d.column.index === 6) statusCell(d);
+        if (d.column.index === 7){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.cellPadding = {top:1.8, bottom:4.2, left:2, right:2}; }
         if (d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){
           // título em negrito e detalhes em cinza: quebra de linha calculada aqui e desenhada em didDrawCell
           const wUtil = COLW[0] - 4;
@@ -268,7 +270,7 @@ export async function gerarRelatorioPDF(ctx){
         if (d.section === 'body' && d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){ d.cell.raw._lines = d.cell.text; d.cell.text = []; }
       },
       didDrawCell: d => {
-        if (d.section === 'body' && d.column.index === 5 && d.cell.raw && typeof d.cell.raw.pct === 'number'){
+        if (d.section === 'body' && d.column.index === 7 && d.cell.raw && typeof d.cell.raw.pct === 'number'){
           // barrinha de avanço sob o percentual
           const bw = Math.min(16, d.cell.width - 6), bx = d.cell.x + (d.cell.width - bw) / 2, by = d.cell.y + 7.2;
           fill(C.line); doc.roundedRect(bx, by, bw, 1.4, .7, .7, 'F');
