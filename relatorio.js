@@ -246,18 +246,25 @@ export async function gerarRelatorioPDF(ctx){
     const items = [...g.items].sort((a, b) => nivelNum(a) - nivelNum(b) || String(a.eixo || '').localeCompare(String(b.eixo || ''), 'pt', {numeric:true}) || String(a.noite).localeCompare(String(b.noite)) || String(fimOf(a)).localeCompare(String(fimOf(b))) || prRank(a.prioridade) - prRank(b.prioridade));
     doc.autoTable({...tblBase, startY: y,
       head:[['Atividade', 'Turno', {content:'Início', styles:{halign:'center'}}, {content:'Término', styles:{halign:'center'}}, {content:'Atraso', styles:{halign:'center'}}, 'Fornecedor', 'Status', {content:'Executado', styles:{halign:'center'}}]],
-      body: items.map(a => {
+      body: items.flatMap(a => {
         const det = semEixoRepetido([ctx.localLine(a), a.prioridade && a.prioridade !== 'normal' ? `Prioridade ${PRIOR[a.prioridade].toLowerCase()}` : '', a.responsavel ? `Resp.: ${a.responsavel}` : ''].filter(Boolean).join(' · '));
         const atraso = diasAberto(a);
-        return [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(ctx.turnoLabelDe(a)), dataCurta(a.noite), dataCurta(fimOf(a)), {content:`${atraso} d`, atraso}, t(a.fornecedor || '-'), statusObj(a), {content:`${avOf(a)}%`, pct:avOf(a)}];
+        const linha = [{content: t(a.titulo) + '\n' + t(det), titulo: t(a.titulo), det: t(det)}, t(ctx.turnoLabelDe(a)), dataCurta(a.noite), dataCurta(fimOf(a)), {content:`${atraso} d`, atraso}, t(a.fornecedor || '-'), statusObj(a), {content:`${avOf(a)}%`, pct:avOf(a)}];
+        // subtarefas logo abaixo, recuadas (como no Project)
+        const subs = Array.isArray(a.subtarefas) ? a.subtarefas : [];
+        return [linha, ...subs.map((sb, i) => { const av = Number(sb.avanco) || 0, k = av >= 100 ? 'concluida' : av > 0 ? 'andamento' : 'programada', fim = sb.fim || sb.noite, at = av < 100 && fim < hoje ? ctx.diasEntre(fim, hoje) : 0;
+          return [{content: `${i + 1}. ${t(sb.titulo)}`, sub:true}, '', {content:dataCurta(sb.noite), sub:true}, {content:dataCurta(fim), sub:true, atraso:at}, {content:`${at} d`, atraso:at, sub:true}, '', {content: t(ST[k].label), status:k, sub:true}, {content:`${av}%`, pct:av, sub:true}]; })];
       }),
       columnStyles:{0:{cellWidth:COLW[0]}, 1:{cellWidth:COLW[1]}, 2:{cellWidth:COLW[2], halign:'center'}, 3:{cellWidth:COLW[3], halign:'center'}, 4:{cellWidth:COLW[4], halign:'center'}, 5:{cellWidth:COLW[5]}, 6:{cellWidth:COLW[6]}, 7:{cellWidth:COLW[7], halign:'center'}},
       didParseCell: d => {
         if (d.section !== 'body') return;
+        const ehSub = d.row.raw && d.row.raw[0] && d.row.raw[0].sub;
+        if (ehSub){ d.cell.styles.fontSize = 7.1; d.cell.styles.fillColor = [255,255,255]; d.cell.styles.cellPadding = {top:1.2, bottom:1.2, left: d.column.index === 0 ? 8 : 2, right:2};
+          if (d.column.index === 0) d.cell.styles.textColor = C.muted; }
         if (d.column.index === 3 && d.cell.raw && d.cell.raw.atraso > 0) d.cell.styles.textColor = [196,86,44];
         if (d.column.index === 4){ if (d.cell.raw && d.cell.raw.atraso > 0){ d.cell.styles.textColor = [196,86,44]; d.cell.styles.fontStyle = 'bold'; } else d.cell.styles.textColor = C.muted; }
-        if (d.column.index === 6) statusCell(d);
-        if (d.column.index === 7){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.cellPadding = {top:1.8, bottom:4.2, left:2, right:2}; }
+        if (d.column.index === 6){ statusCell(d); if (ehSub){ d.cell.styles.fontStyle = 'normal'; d.cell.styles.fillColor = [255,255,255]; } }
+        if (d.column.index === 7){ d.cell.styles.fontStyle = ehSub ? 'normal' : 'bold'; d.cell.styles.cellPadding = ehSub ? {top:1.2, bottom:1.2, left:2, right:2} : {top:1.8, bottom:4.2, left:2, right:2}; }
         if (d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){
           // título em negrito e detalhes em cinza: quebra de linha calculada aqui e desenhada em didDrawCell
           const wUtil = COLW[0] - 4;
@@ -270,7 +277,8 @@ export async function gerarRelatorioPDF(ctx){
         if (d.section === 'body' && d.column.index === 0 && d.cell.raw && d.cell.raw.titulo){ d.cell.raw._lines = d.cell.text; d.cell.text = []; }
       },
       didDrawCell: d => {
-        if (d.section === 'body' && d.column.index === 7 && d.cell.raw && typeof d.cell.raw.pct === 'number'){
+        if (d.section === 'body' && d.column.index === 0 && d.cell.raw && d.cell.raw.sub){ stroke(C.line); doc.setLineWidth(.25); doc.line(d.cell.x + 4.2, d.cell.y, d.cell.x + 4.2, d.cell.y + d.cell.height / 2); doc.line(d.cell.x + 4.2, d.cell.y + d.cell.height / 2, d.cell.x + 6.4, d.cell.y + d.cell.height / 2); }
+        if (d.section === 'body' && d.column.index === 7 && d.cell.raw && typeof d.cell.raw.pct === 'number' && !d.cell.raw.sub){
           // barrinha de avanço sob o percentual
           const bw = Math.min(16, d.cell.width - 6), bx = d.cell.x + (d.cell.width - bw) / 2, by = d.cell.y + 7.2;
           fill(C.line); doc.roundedRect(bx, by, bw, 1.4, .7, .7, 'F');
@@ -554,6 +562,30 @@ function fichaAtividade(doc, ctx, st, opt = {}){
     color(C.ink); font('normal', 9.2); let yy = y + 9.6; for (const l of ls){ doc.text(l, M + 5, yy); yy += 4.6; }
     y += h + 4;
   };
+  // subtarefas: tabela compacta (nº, nome, início, término, dias, status, executado)
+  const subs = ctx.subtarefas || [];
+  if (subs.length){
+    garante(26);
+    secao('Subtarefas', `${subs.filter(x => x.avanco >= 100).length} de ${subs.length} concluídas · avanço calculado pelas subtarefas`);
+    const cw = [8, CW - 8 - 18 - 18 - 12 - 26 - 22, 18, 18, 12, 26, 22], heads = ['#', 'Subtarefa', 'Início', 'Término', 'Dias', 'Status', 'Executado'];
+    const linha = (vals, head) => {
+      font(head ? 'bold' : 'normal', 8.2); const tl = wrap(vals[1], cw[1] - 3), h = Math.max(6.4, 2.6 + tl.length * 3.8);
+      garante(h + 1);
+      if (head){ fill(C.graf); doc.rect(M, y, CW, h, 'F'); color(C.white); }
+      let x = M;
+      vals.forEach((v, i) => { const ali = i >= 2 && i !== 5 ? 'center' : 'left', cx = ali === 'center' ? x + cw[i] / 2 : x + 2;
+        if (i === 1 && !head){ color(C.ink); tl.forEach((l, k) => doc.text(l, cx, y + 4.4 + k * 3.8)); }
+        else if (!head && i === 5){ const sc = STC[v.k] || C.graf; color(sc); font('bold', 7.8); text(v.l, cx, y + 4.4); font('normal', 8.2); }
+        else if (!head && i === 3 && v.venc){ color([196,86,44]); text(v.t, cx, y + 4.4, {align:'center'}); }
+        else { if (!head) color(i === 0 ? C.faint : C.ink); text(typeof v === 'object' ? v.t : String(v), cx, y + 4.4, ali === 'center' ? {align:'center'} : undefined); }
+        x += cw[i]; });
+      if (!head){ stroke(C.line); doc.setLineWidth(.2); doc.line(M, y + h, M + CW, y + h); }
+      y += h;
+    };
+    linha(heads, true);
+    subs.forEach((sb, i) => linha([i + 1, t(sb.titulo), sb.inicio, {t: sb.fim, venc: sb.vencida}, sb.dias, {k: sb.status, l: t(sb.statusLabel)}, `${sb.avanco}%`]));
+    y += 6;
+  }
   bloco('Detalhes / orientações para a equipe', ctx.detalhes);
   bloco('Motivo', ctx.motivo, STC.nao_iniciada);
   bloco('Última observação', ctx.obs);

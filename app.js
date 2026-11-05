@@ -102,7 +102,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 65; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 66; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -505,6 +505,7 @@ function card(a, isPend, ref = S.noite, showDate = false, hideTag = ''){
   if (a.aberta && a.noite > ref && STATUS[a.status]?.aberta) tags.push('<span class="tag fut">a iniciar</span>');
   if (isPend) tags.push(`<span class="tag since">venceu ${fmtShort(fimOf(a))} · ${n} ${n === 1 ? 'dia' : 'dias'}</span>`);
   const et = tagsOf(a).filter(t => !hideTag || tagKey(t) !== tagKey(hideTag)); if (et.length) tags.push(et.slice(0, 2).map(t => tagChip(t, 'sm')).join('') + (et.length > 2 ? `<span class="etq-more">+${et.length - 2}</span>` : '') + (et.length > 1 ? `<span class="etq-more m-only">+${et.length - 1}</span>` : ''));
+  if (subsOf(a).length){ const sb = subsOf(a), ok = sb.filter(x => subSt(x) === 'concluida').length; tags.push(`<span class="tag subs${ok === sb.length ? ' ok' : ''}" title="Subtarefas concluídas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>${ok}/${sb.length}</span>`); }
   const alerta = (a.status === 'impedida' || a.status === 'nao_iniciada') && (a.motivo || a.ultimaObs) ? `<div class="c-alert">${esc(a.motivo || a.ultimaObs)}</div>` : '';
   return `<button type="button" class="card" data-id="${esc(a.id)}" style="--c:${cvar(a.status)}"><span class="stripe"></span>
     <span class="body">
@@ -521,6 +522,12 @@ function evText(ev){
     case 'criou': return `${ev.importado ? 'importou' : 'inseriu'} ${ev.origem ? 'uma cópia' : 'a atividade'} para ${fmtShort(ev.noite || ev.noiteAtv)}${ev.turno || ev.turnoAtv ? ' (' + (TURNOS[ev.turno || ev.turnoAtv] || '').toLowerCase() + ')' : ''}${ev.importado ? ` <span class="ro">— ${esc(ev.importado)}</span>` : ''}`;
     case 'status': return `${ev.auto ? 'mudou automaticamente' : 'mudou'} o status de ${st(ev.de)} para ${st(ev.para)}${ev.pct ? ` (${esc(ev.pct)}% executado)` : ''}`;
     case 'obs': return 'adicionou uma observação';
+    case 'subtarefa': { const n = `“${esc(ev.nome || '')}”`;
+      const base = ev.acao === 'criou' ? `adicionou a subtarefa ${n} (${fmtShort(ev.noite)}${ev.fim && ev.fim !== ev.noite ? ' a ' + fmtShort(ev.fim) : ''}${ev.avanco ? ` · ${ev.avanco}%` : ''})`
+        : ev.acao === 'excluiu' ? `excluiu a subtarefa ${n}`
+        : ev.acao === 'avanco' ? `atualizou a subtarefa ${n} de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>`
+        : `editou a subtarefa ${n}${(ev.alt || []).length ? ': ' + ev.alt.map(m => `${esc(m.campo)} ${esc(m.de)} → <b>${esc(m.para)}</b>`).join('; ') : ''}${ev.para != null ? `; executado ${esc(ev.de ?? 0)}% → <b>${esc(ev.para)}%</b>` : ''}`;
+      return base + (ev.avPara != null ? ` · avanço da atividade: <b>${esc(ev.avPara)}%</b>` : '') + (ev.perPara ? ` · período: ${esc(ev.perPara)}` : '') + (ev.statusPara ? ` · status: ${st(ev.statusDe)} → ${st(ev.statusPara)}` : ''); }
     case 'avanco': return `atualizou o avanço de ${esc(ev.de ?? 0)}% para <b>${esc(ev.para)}%</b>${ev.statusPara ? ` e o status mudou de ${st(ev.statusDe)} para ${st(ev.statusPara)}` : ''}`;
     case 'editou': return ev.mudancas?.length && ev.mudancas.every(m => m.campo === 'etiquetas') ? 'alterou as etiquetas' : 'alterou os dados';
     case 'reprogramou': return `reprogramou de ${fmtShort(ev.de)}${ev.turnoDe ? ' (' + TURNOS[ev.turnoDe].toLowerCase() + ')' : ''} para ${fmtShort(ev.para)}${ev.turnoPara ? ' (' + TURNOS[ev.turnoPara].toLowerCase() + ')' : ''}`;
@@ -733,7 +740,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=65');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=66');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1277,7 +1284,7 @@ function renderInicio(){
 
 /* ================= painel da atividade ================= */
 function openDrawer(id){
-  S.openId = id; S.dwMode = null; S.dwHist = []; S.avEdit = false; S.histOpen = false; S.moreOpen = false;
+  S.openId = id; S.dwMode = null; S.dwHist = []; S.avEdit = false; S.histOpen = false; S.moreOpen = false; S.subEd = null; S.subDel = null;
   $('drawer').hidden = false; $('scrim').hidden = false; $('dw-panel').innerHTML = '';
   document.querySelector('.dw-scroll').scrollTop = 0;
   if (S.unsubDw) S.unsubDw(); if (S.unsubDwHist) S.unsubDwHist();
@@ -1314,10 +1321,12 @@ function renderDrawerHead(){
   const kv = [['Período', d1 ? `${fmtDay(a.noite)} a ${fmtDay(fimOf(a))} · ${d1 + 1} dias` : fmtWhen(a.noite, turnoOf(a))], ['Local', localLine(a)], ['Fornecedor', a.fornecedor || 'Não informado'],
     a.responsavel ? ['Responsável', a.responsavel] : null, a.efetivo ? ['Efetivo previsto', a.efetivo] : null, a.motivo ? ['Motivo', a.motivo] : null, ['Dono', `${nameOf(donoOf(a))}${roleOf(donoOf(a)) ? ' (' + roleOf(donoOf(a)) + ')' : ''}`], ['Inserida por', `${nameOf(a.criadoPor)}${roleOf(a.criadoPor) ? ' (' + roleOf(a.criadoPor) + ')' : ''}${a.criadoEm ? ' · ' + fmtTs(a.criadoEm) : ''}`]].filter(Boolean);
   $('dw-info').innerHTML = `<dl class="kv">${kv.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${a.detalhes ? `<div class="det">${esc(a.detalhes)}</div>` : ''}`;
+  if (!S.subEd) renderSubs();
 }
 // avanço: a própria barra do topo é o controle
 function renderAv(a){
-  const v = avOf(a), w = canWrite();
+  const v = avOf(a), w = canWrite() && !subsOf(a).length;
+  if (subsOf(a).length && !S.avEdit){ $('dw-av').innerHTML = `<div class="av-row"><span class="av-l">Avanço</span>${progBar(v)}<span class="av-ed calc" title="Calculado pelas subtarefas">pelas subtarefas</span></div>`; return; }
   if (!S.avEdit){
     $('dw-av').innerHTML = `<${w ? 'button type="button" id="av-open"' : 'div'} class="av-row${w ? ' edit' : ''}"><span class="av-l">Avanço</span>${progBar(v)}${w ? '<span class="av-ed">Ajustar</span>' : ''}</${w ? 'button' : 'div'}>`;
     if (w) $('av-open').onclick = () => { S.avEdit = true; renderAv(all().get(S.openId) || a); };
@@ -1342,6 +1351,110 @@ function renderAv(a){
     renderAv({...cur, avanco:nv, ...(vira ? {status:'andamento'} : {})});
   };
 }
+/* ================= subtarefas (como no Project: a atividade vira "resumo" das etapas) ================= */
+// Cada subtarefa tem nome, início, término e % executado. Quando existem, o período e o avanço da atividade
+// passam a ser calculados por elas: início = a mais cedo, término = a mais tarde, avanço = média ponderada pela duração.
+const subsOf = a => Array.isArray(a?.subtarefas) ? a.subtarefas : [];
+const subSt = s => (Number(s.avanco) || 0) >= 100 ? 'concluida' : (Number(s.avanco) || 0) > 0 ? 'andamento' : 'programada';
+const subDur = s => Math.max(1, nightsBetween(s.noite, s.fim || s.noite) + 1);
+const subVenc = (s, hoje = defaultNight()) => (Number(s.avanco) || 0) < 100 && (s.fim || s.noite) < hoje;
+function rollupSubs(lista){
+  if (!lista.length) return null;
+  const noite = lista.map(s => s.noite).sort()[0], fim = lista.map(s => s.fim || s.noite).sort().pop();
+  const tot = lista.reduce((x, s) => x + subDur(s), 0), avanco = Math.round(lista.reduce((x, s) => x + (Number(s.avanco) || 0) * subDur(s), 0) / tot);
+  return {noite, fim, avanco};
+}
+S.subEd = null; S.subDel = null;
+function salvarSubs(id, build, msg){
+  const cur = all().get(id);
+  if (!cur) return toast('Esta atividade não está mais disponível.');
+  const r0 = build(cur); if (!r0) return;
+  const {lista, ev} = r0, r = rollupSubs(lista), changes = {subtarefas: lista}, extra = {};
+  if (r){
+    changes.noite = r.noite; changes.fim = r.fim; changes.avanco = r.avanco;
+    if (r.noite !== cur.noite || r.fim !== fimOf(cur)) extra.perPara = fmtPeriodo({...cur, noite:r.noite, fim:r.fim});
+    if (r.avanco !== avOf(cur)) extra.avPara = r.avanco;
+    if (autoAnd(cur.status, r.avanco)){ changes.status = 'andamento'; changes.motivo = ''; extra.statusDe = cur.status; extra.statusPara = 'andamento'; }
+  }
+  const histRef = doc(collection(db, 'historico')), b = writeBatch(db);
+  b.update(doc(db, 'atividades', id), {...changes, atualizadoPor:S.uid, atualizadoEm:serverTimestamp(), ultimoEvento:histRef.id});
+  b.set(histRef, evDoc(id, {...cur, ...changes}, {tipo:'subtarefa', ...ev, ...extra}));
+  S.extra.set(id, {...cur, ...changes});
+  S.subEd = null; S.subDel = null;
+  commit(b, msg + (r && r.avanco === 100 && cur.status !== 'concluida' ? ' Todas as subtarefas estão em 100%: quando finalizar, mude o status para Concluída.' : ''));
+  renderDrawerHead();
+}
+function renderSubs(){
+  const box = $('dw-sub'), a = all().get(S.openId);
+  if (!box) return;
+  if (!a){ box.innerHTML = ''; return; }
+  const subs = subsOf(a), w = canWrite(), hoje = defaultNight();
+  if (!subs.length && !w){ box.innerHTML = ''; return; }
+  const done = subs.filter(s => subSt(s) === 'concluida').length;
+  const ult = subs.length ? subs.map(s => s.fim || s.noite).sort().pop() : a.noite;
+  const ICK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+  const IED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
+  const form = s => `<form class="sub-form" data-sub-form="${esc(s.id || 'novo')}">
+      <input type="text" name="titulo" maxlength="200" placeholder="Nome da subtarefa (ex.: apicoamento da face norte)" value="${esc(s.titulo || '')}" aria-label="Nome da subtarefa" required>
+      <div class="sub-f-row">
+        <label><span>Início</span><input type="date" name="noite" value="${esc(s.noite || '')}" required></label>
+        <label><span>Término</span><input type="date" name="fim" value="${esc(s.fim || s.noite || '')}" required></label>
+        <label><span>Executado</span><span class="sub-pct"><input type="number" name="avanco" min="0" max="100" step="5" inputmode="numeric" value="${Number(s.avanco) || 0}">%</span></label>
+      </div>
+      <div class="sub-f-a">${s.id ? `<button type="button" class="btn ghost sub-del" data-sub-del="${esc(s.id)}">${S.subDel === s.id ? 'Confirmar exclusão' : 'Excluir'}</button>` : ''}<span class="sp"></span>
+        <button type="button" class="btn ghost" data-sub-cancel>Cancelar</button><button type="submit" class="btn pri">${s.id ? 'Salvar' : 'Adicionar'}</button></div>
+    </form>`;
+  const row = (s, i) => { const st = subSt(s), v = subVenc(s, hoje), av = Number(s.avanco) || 0, d = subDur(s);
+    return `<div class="sub-row ${st}${v ? ' venc' : ''}">
+      <span class="sub-i">${i + 1}</span>
+      ${w ? `<button type="button" class="sub-ck" data-sub-ck="${esc(s.id)}" aria-pressed="${st === 'concluida'}" aria-label="${st === 'concluida' ? 'Reabrir' : 'Concluir'} ${esc(s.titulo)}" title="${st === 'concluida' ? 'Reabrir' : 'Marcar como concluída (100%)'}">${ICK}</button>` : `<span class="sub-ck ro" aria-hidden="true">${st === 'concluida' ? ICK : ''}</span>`}
+      <div class="sub-tx"><b>${esc(s.titulo)}</b><span>${fmtShort(s.noite)}${(s.fim || s.noite) !== s.noite ? ' → ' + fmtShort(s.fim) : ''} · ${d} ${d === 1 ? 'dia' : 'dias'}${v ? ' · <em>vencida</em>' : ''}</span></div>
+      <div class="sub-av"><b>${av}%</b><span class="prog"><i style="width:${av}%"></i></span></div>
+      ${w ? `<button type="button" class="sub-ed" data-sub-ed="${esc(s.id)}" aria-label="Editar ${esc(s.titulo)}" title="Editar">${IED}</button>` : ''}
+    </div>`; };
+  box.innerHTML = `<div class="sub-h"><span class="lbl">Subtarefas</span>${subs.length ? `<span class="sub-n">${done} de ${subs.length} ${subs.length === 1 ? 'concluída' : 'concluídas'}</span>` : ''}<span class="sp"></span>${w && S.subEd !== 'novo' ? '<button type="button" class="link-btn" data-sub-add>+ Adicionar</button>' : ''}</div>
+    ${subs.length ? `<div class="sub-list">${subs.map((s, i) => S.subEd === s.id ? form(s) : row(s, i)).join('')}</div>` : (w && S.subEd !== 'novo' ? '<p class="sub-vz">Divida a atividade em etapas, cada uma com início, término e % executado. O período e o avanço da atividade passam a ser calculados pelas subtarefas.</p>' : '')}
+    ${S.subEd === 'novo' ? form({noite: ult, fim: ult}) : ''}
+    ${subs.length ? '<p class="sub-nota">Período e avanço da atividade calculados pelas subtarefas (avanço ponderado pela duração).</p>' : ''}`;
+  const f = box.querySelector('.sub-form input[name=titulo]'); if (f && document.activeElement?.closest?.('#dw-sub') == null && S.subFoco){ S.subFoco = false; f.focus(); }
+}
+document.addEventListener('click', e => {
+  const t = e.target; if (!t.closest || !t.closest('#dw-sub')) return;
+  if (t.closest('[data-sub-add]')){ S.subEd = 'novo'; S.subDel = null; S.subFoco = true; return renderSubs(); }
+  { const x = t.closest('[data-sub-ed]'); if (x){ S.subEd = x.dataset.subEd; S.subDel = null; S.subFoco = true; return renderSubs(); } }
+  if (t.closest('[data-sub-cancel]')){ S.subEd = null; S.subDel = null; return renderSubs(); }
+  { const x = t.closest('[data-sub-del]'); if (x){ const sid = x.dataset.subDel;
+      if (S.subDel !== sid){ S.subDel = sid; return renderSubs(); }
+      return salvarSubs(S.openId, cur => { const s = subsOf(cur).find(z => z.id === sid); if (!s) return null; return {lista: subsOf(cur).filter(z => z.id !== sid), ev:{acao:'excluiu', nome:s.titulo}}; }, 'Subtarefa excluída.'); } }
+  { const x = t.closest('[data-sub-ck]'); if (x){ const sid = x.dataset.subCk;
+      return salvarSubs(S.openId, cur => { const lista = subsOf(cur).map(z => ({...z})), s = lista.find(z => z.id === sid); if (!s) return null;
+        const de = Number(s.avanco) || 0, para = de >= 100 ? (Number(s.avAnt) || 0) : 100;
+        if (para === 100) s.avAnt = de; else delete s.avAnt; s.avanco = para;
+        return {lista, ev:{acao:'avanco', nome:s.titulo, de, para}}; }, 'Subtarefa atualizada.'); } }
+});
+document.addEventListener('submit', e => {
+  const f = e.target.closest && e.target.closest('form[data-sub-form]'); if (!f) return;
+  e.preventDefault();
+  const sid = f.dataset.subForm, titulo = f.elements.titulo.value.trim().slice(0, 200), noite = f.elements.noite.value, fim = f.elements.fim.value || noite;
+  const avanco = Math.max(0, Math.min(100, Math.round(Number(f.elements.avanco.value) || 0)));
+  if (!titulo) return toast('Dê um nome à subtarefa.');
+  if (!noite) return toast('Informe o início da subtarefa.');
+  if (fim < noite) return toast('O término não pode ser antes do início.');
+  if (sid === 'novo')
+    return salvarSubs(S.openId, cur => ({lista: [...subsOf(cur), {id: Math.random().toString(36).slice(2, 10), titulo, noite, fim, avanco}], ev:{acao:'criou', nome:titulo, noite, fim, avanco}}), 'Subtarefa adicionada.');
+  salvarSubs(S.openId, cur => {
+    const lista = subsOf(cur).map(z => ({...z})), s = lista.find(z => z.id === sid); if (!s) return null;
+    const alt = [];
+    if (s.titulo !== titulo) alt.push({campo:'nome', de:s.titulo, para:titulo});
+    if (s.noite !== noite) alt.push({campo:'início', de:fmtShort(s.noite), para:fmtShort(noite)});
+    if ((s.fim || s.noite) !== fim) alt.push({campo:'término', de:fmtShort(s.fim || s.noite), para:fmtShort(fim)});
+    const deAv = Number(s.avanco) || 0;
+    if (!alt.length && deAv === avanco){ S.subEd = null; renderSubs(); toast('Nada mudou.'); return null; }
+    const nomeAnt = s.titulo; Object.assign(s, {titulo, noite, fim, avanco}); delete s.avAnt;
+    return {lista, ev: alt.length ? {acao:'editou', nome:nomeAnt, alt, ...(deAv !== avanco ? {de:deAv, para:avanco} : {})} : {acao:'avanco', nome:titulo, de:deAv, para:avanco}};
+  }, 'Subtarefa salva.');
+});
+
 function renderDrawerActions(){
   const a = all().get(S.openId); if (!a){ $('dw-actions').innerHTML = ''; return; }
   if (!canWrite()){ $('dw-actions').innerHTML = '<p class="readonly">Acesso de visualização: você consulta a atividade e o histórico, sem alterar.</p>'; return; }
@@ -1729,7 +1842,8 @@ async function fichaCtx(a, fs, hs, max = 1600, onFoto = () => {}){
     a.atualizadoPor ? ['Última alteração', `${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}`] : null,
   ].filter(Boolean);
   return {titulo: a.titulo || '', status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), info,
-    detalhes: a.detalhes || '', motivo: a.motivo ? `${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}` : '', obs: a.ultimaObs || '', fotos, hist};
+    detalhes: a.detalhes || '', motivo: a.motivo ? `${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}` : '', obs: a.ultimaObs || '', fotos, hist,
+    subtarefas: subsOf(a).map(sb => ({titulo: sb.titulo, inicio: fmtShort(sb.noite), fim: fmtShort(sb.fim || sb.noite), dias: subDur(sb), avanco: Number(sb.avanco) || 0, status: subSt(sb), statusLabel: STATUS[subSt(sb)].label, vencida: subVenc(sb)}))};
 }
 async function exportAtividadePdf(){
   const a = all().get(S.openId); if (!a || gerandoAtv) return;
@@ -1738,7 +1852,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=65');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=66');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -1885,7 +1999,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=65');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=66');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -1959,7 +2073,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=65');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=66');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2069,8 +2183,8 @@ function openForm(id, preset = {}){
   ${pdOrig ? `<div class="af-from"><b>Do lembrete:</b> ${esc(pdOrig.texto)}<br>Descreva o <b>serviço que será executado em campo</b> (ex.: “Instalação da iluminação provisória – Setor D1”), com o fornecedor e a data em que acontece. Ao inserir, o lembrete fica como feito.</div>` : ''}
   <form id="af" novalidate>
     <div class="frow">
-      <div class="f"><label for="af-noite">Início <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"></div>
-      <div class="f"><label for="af-fim">Término <span class="req">*</span></label><input id="af-fim" type="date" value="${esc(a ? fimOf(a) : v.noite)}"></div>
+      <div class="f"><label for="af-noite">Início <span class="req">*</span></label><input id="af-noite" type="date" value="${esc(v.noite)}"${subsOf(a).length ? ' readonly title="Calculado pelas subtarefas"' : ''}></div>
+      <div class="f"><label for="af-fim">Término <span class="req">*</span></label><input id="af-fim" type="date" value="${esc(a ? fimOf(a) : v.noite)}"${subsOf(a).length ? ' readonly title="Calculado pelas subtarefas"' : ''}>${subsOf(a).length ? '<span class="f-hint">Calculados pelas subtarefas.</span>' : ''}</div>
     </div>
     <div class="frow">
       <div class="f"><label>Turno <span class="req">*</span></label><div class="seg seg-turno" id="af-turno">${['diurno','noturno'].map(t => `<button type="button" data-t="${t}" aria-pressed="${v.turno === t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</button>`).join('')}</div></div>
@@ -2085,7 +2199,7 @@ function openForm(id, preset = {}){
       <div class="f"><label for="af-nivel">Nível</label><input id="af-nivel" list="dl-nivel" value="${esc(v.nivel||'')}" placeholder="ex.: 114,30" autocomplete="off"></div>
       <div class="f"><label for="af-eixo" id="af-eixo-l">Eixo</label><input id="af-eixo" value="${esc(v.eixo||'')}" placeholder="ex.: 8 / E-H" autocomplete="off"></div>
     </div>
-    <div class="f"><label for="af-av">Avanço</label><div class="av-form"><input type="range" id="af-av" class="range" min="0" max="100" step="5" value="${a ? avOf(a) : 0}"><b id="af-av-n">${a ? avOf(a) : 0}%</b></div></div>
+    <div class="f"><label for="af-av">Avanço</label><div class="av-form"><input type="range" id="af-av" class="range" min="0" max="100" step="5" value="${a ? avOf(a) : 0}"${subsOf(a).length ? ' disabled' : ''}><b id="af-av-n">${a ? avOf(a) : 0}%</b></div>${subsOf(a).length ? '<span class="f-hint">Calculado pelas subtarefas.</span>' : ''}</div>
     <div class="f"><label for="af-titulo">Atividade <span class="req">*</span></label><input id="af-titulo" maxlength="300" value="${esc(v.titulo||'')}" placeholder="ex.: Demolição da parede do eixo 8, trecho E–F" autocomplete="off"></div>
     <div class="f"><label>Etiquetas <span class="lbl-h">serviço macro que liga atividades</span></label><div id="af-etq"></div></div>
     <div class="f"><label for="af-det">Detalhes / orientações para a equipe</label><textarea id="af-det" placeholder="Sequência, cuidados, liberações necessárias, contato no shopping…">${esc(v.detalhes||'')}</textarea></div>
@@ -2329,7 +2443,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=65');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=66');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2587,6 +2701,7 @@ async function montarExportIA({per, conc, filt}){
       if (a.motivo) ln(`- Motivo atual: ${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}`);
       if (a.ultimaObs) ln(`- Última observação: ${String(a.ultimaObs).replace(/\s*\n\s*/g, ' / ')}`);
       ln(`- Dono: ${nameOf(donoOf(a))}`);
+      if (subsOf(a).length){ ln(`- Subtarefas (${subsOf(a).filter(x => subSt(x) === 'concluida').length}/${subsOf(a).length} concluídas):`); subsOf(a).forEach((sb, i) => ln(`  ${i + 1}. ${sb.titulo} — ${fmtShort(sb.noite)} a ${fmtShort(sb.fim || sb.noite)} — ${Number(sb.avanco) || 0}%`)); }
       ln(`- Inserida por ${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}${a.atualizadoPor ? ` · última alteração por ${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}` : ''}`);
       if (hs.length){ ln('- Histórico:'); for (const ev of hs) ln(`  - ${fmtTs(ev.t)} — ${autorEv(ev)}: ${evTxt(ev)}`); }
     }
@@ -2626,7 +2741,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=65');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=66');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
