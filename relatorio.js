@@ -38,6 +38,8 @@ const ST = {
   parcial:{label:'Parcial', c:[201,160,30]},
   nao_iniciada:{label:'Não iniciada', c:[196,86,44]},
   impedida:{label:'Impedida', c:[184,50,76]},
+  concluida:{label:'Concluída', c:[46,150,96]}, // usado nas subtarefas em 100% (não entra no resumo, que é só de abertas)
+  cancelada:{label:'Cancelada', c:[122,133,151]},
 };
 const ORDER = ['programada','andamento','parcial','nao_iniciada','impedida'];
 const PRIOR = {critica:'Crítica', alta:'Alta', normal:'Normal'};
