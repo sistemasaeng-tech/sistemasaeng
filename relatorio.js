@@ -1,17 +1,27 @@
 // Relatório PDF de atividades em aberto (não inclui concluídas nem canceladas).
 // Gerado no próprio aparelho com jsPDF + autotable, carregados sob demanda.
-const LIBS = [
-  'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
-  'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js',
-];
-function loadScript(src){
-  return new Promise((ok, fail) => {
-    if ([...document.scripts].some(s => s.src === src)) return ok();
-    const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('Não foi possível carregar ' + src));
-    document.head.appendChild(s);
-  });
+// carrega uma biblioteca externa tentando outros servidores se o primeiro falhar; nunca reaproveita um carregamento que falhou
+async function carregarLib(urls, pronto){
+  if (pronto()) return;
+  let erro = null;
+  for (const src of urls){
+    [...document.scripts].filter(s => s.src === src).forEach(s => s.remove());
+    try {
+      await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous'; s.async = true;
+        s.onload = ok; s.onerror = () => { s.remove(); fail(new Error('falha ao baixar a biblioteca de ' + new URL(src).hostname)); }; document.head.appendChild(s); });
+      if (pronto()) return;
+      erro = new Error('biblioteca incompleta em ' + new URL(src).hostname);
+    } catch (e){ erro = e; }
+  }
+  throw erro || new Error('biblioteca indisponível');
 }
-async function loadLibs(){ for (const u of LIBS) await loadScript(u); return window.jspdf.jsPDF; }
+const JSPDF = ['https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js', 'https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js'];
+const AUTOTABLE = ['https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js', 'https://unpkg.com/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js'];
+async function loadLibs(){
+  await carregarLib(JSPDF, () => !!(window.jspdf && window.jspdf.jsPDF));
+  await carregarLib(AUTOTABLE, () => !!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && typeof window.jspdf.jsPDF.API.autoTable === 'function'));
+  return window.jspdf.jsPDF;
+}
 async function toDataURL(url){
   const b = await (await fetch(url)).blob();
   return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });

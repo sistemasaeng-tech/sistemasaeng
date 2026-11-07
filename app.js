@@ -79,6 +79,7 @@ const SEED = {
 };
 
 /* ================= datas ================= */
+const errTxt = e => { const m = String((e && (e.message || e.code)) || e || '').replace(/\s+/g, ' ').trim(); return m ? ` (${m.slice(0, 90)})` : ''; };
 const pad = n => String(n).padStart(2,'0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const parseYmd = s => { const [y,m,d] = String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
@@ -102,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 66; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 67; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -740,13 +741,13 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=66');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=67');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo: `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, qtd: D.acts.length, periodo: `${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)} · ${Z[S.gt.zoom].toLowerCase()} · ${D.ft ? 'turno ' + TURNOS[D.ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
-  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  } catch (e) { console.warn(e); toast(navigator.onLine ? `Não foi possível gerar o PDF${errTxt(e)}. Tente de novo.` : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoGt = false; }
 }
 function renderGantt(){
@@ -1785,9 +1786,23 @@ async function blobFoto(f){
   try { const src = f.url || await fotoGrande(f); return {blob: await (await comPrazo(fetch(src), 30000)).blob()}; }
   catch (e) { console.warn('zip: usando miniatura', e); return {blob: await (await fetch(f.thumb)).blob(), mini: true}; }
 }
+// carrega uma biblioteca externa tentando outros servidores se o primeiro falhar; nunca reaproveita um carregamento que falhou
+async function carregarLib(urls, pronto){
+  if (pronto()) return;
+  let erro = null;
+  for (const src of urls){
+    [...document.scripts].filter(s => s.src === src).forEach(s => s.remove());
+    try {
+      await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous'; s.async = true;
+        s.onload = ok; s.onerror = () => { s.remove(); fail(new Error('falha ao baixar a biblioteca de ' + new URL(src).hostname)); }; document.head.appendChild(s); });
+      if (pronto()) return;
+      erro = new Error('biblioteca incompleta em ' + new URL(src).hostname);
+    } catch (e){ erro = e; }
+  }
+  throw erro || new Error('biblioteca indisponível');
+}
 async function carregarJSZip(){
-  if (window.JSZip) return window.JSZip;
-  await new Promise((ok, fail) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'; sc.onload = ok; sc.onerror = () => fail(new Error('JSZip')); document.head.appendChild(sc); });
+  await carregarLib(['https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js', 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'], () => !!window.JSZip);
   return window.JSZip;
 }
 const slugArq = (v, n = 40) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w -]+/g, '').trim().slice(0, n).replace(/\s+/g, '_');
@@ -1815,7 +1830,7 @@ async function baixarZipFotos(){
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     toast(mini ? `Pasta gerada. ${mini} ${mini === 1 ? 'foto saiu' : 'fotos saíram'} em tamanho reduzido (o Storage ainda não libera o download direto).` : `Pasta com ${fs.length} ${fs.length === 1 ? 'foto' : 'fotos'} gerada.`);
     logExport('fotos', {arquivo, qtd: fs.length, periodo: (a.titulo || '').slice(0, 150)});
-  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar a pasta. Tente de novo.' : 'Sem internet: é preciso estar online para baixar as fotos.'); }
+  } catch (e) { console.warn(e); toast(navigator.onLine ? `Não foi possível gerar a pasta${errTxt(e)}. Tente de novo.` : 'Sem internet: é preciso estar online para baixar as fotos.'); }
   finally { zipando = false; const b2 = document.querySelector('[data-fx-zip]'); if (b2) b2.disabled = false; }
 }
 // ---------- PDF da atividade (dados + fotos + histórico) ----------
@@ -1852,12 +1867,12 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=66');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=67');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
     logExport('atividade', {arquivo, qtd: ficha.fotos.length, periodo: (a.titulo || '').slice(0, 150)});
-  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  } catch (e) { console.warn(e); toast(navigator.onLine ? `Não foi possível gerar o PDF${errTxt(e)}. Tente de novo.` : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoAtv = false; bt.disabled = false; }
 }
 
@@ -1999,11 +2014,11 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=66');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=67');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
-  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o PDF. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  } catch (e) { console.warn(e); toast(navigator.onLine ? `Não foi possível gerar o PDF${errTxt(e)}. Tente de novo.` : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoGt = false; }
 }
 // dados de várias atividades de uma vez (consultas "in" de 30 em 30)
@@ -2039,7 +2054,7 @@ function openLocalPdf(){
     e.preventDefault();
     const bt = $('lpf').querySelector('button[type=submit]'); bt.disabled = true; bt.textContent = 'Gerando…';
     try { await gerarPdfLocal(k, {enc: $('lp-enc').checked, fotos: $('lp-fotos').checked, hist: $('lp-hist').checked, cal: $('lp-cal').checked ? calp : ''}, msg => { $('lp-prev').textContent = msg; }); closeModal(); }
-    catch (err) { console.warn(err); bt.disabled = false; bt.textContent = 'Gerar PDF'; $('lp-prev').textContent = navigator.onLine ? 'Não foi possível gerar. Tente de novo.' : 'Sem internet: é preciso estar online para buscar fotos e histórico.'; }
+    catch (err) { console.warn(err); bt.disabled = false; bt.textContent = 'Gerar PDF'; $('lp-prev').textContent = navigator.onLine ? `Não foi possível gerar${errTxt(err)}. Tente de novo.` : 'Sem internet: é preciso estar online para buscar fotos e histórico.'; }
   };
   showModal();
 }
@@ -2073,7 +2088,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=66');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=67');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2116,7 +2131,7 @@ async function baixarZipLocal(){
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     toast(mini ? `Pasta gerada. ${mini} ${mini === 1 ? 'foto saiu' : 'fotos saíram'} em tamanho reduzido (o Storage ainda não libera o download direto).` : `Pasta com ${total} fotos de ${ia} ${ia === 1 ? 'atividade' : 'atividades'} gerada.`);
     logExport('fotos', {arquivo, qtd: total, periodo: `${m.tipo} ${m.nome}`.slice(0, 150)});
-  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar a pasta. Tente de novo.' : 'Sem internet: é preciso estar online para baixar as fotos.'); }
+  } catch (e) { console.warn(e); toast(navigator.onLine ? `Não foi possível gerar a pasta${errTxt(e)}. Tente de novo.` : 'Sem internet: é preciso estar online para baixar as fotos.'); }
   finally { zipando = false; }
 }
 
@@ -2443,7 +2458,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=66');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=67');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2454,7 +2469,7 @@ function openCronograma(opts = {}){
       });
       closeModal(); toast(`Cronograma gerado com ${r.linhas} ${r.linhas === 1 ? 'atividade' : 'atividades'}.`);
       logExport('cronograma', {arquivo: `4107_ROOFTOP_IGSP_ATIVIDADES_CRONOGRAMA_REV${rev}_${ini}${turno ? '_' + turno.toUpperCase() : ''}.xlsx`, qtd: r.linhas, periodo: `${fmtShort(ini)} a ${fmtShort(fimP)}/${fimP.slice(0, 4)} · rev. ${rev} · ${turno ? 'turno ' + TURNOS[turno].toLowerCase() : 'turnos diurno e noturno'}${$('cf-conc').checked ? '' : ' · sem concluídas'}`, filtros: et ? `etiqueta ${et}` : ''});
-    } catch (err) { console.warn(err); btn.disabled = false; btn.textContent = 'Gerar Excel'; toast(navigator.onLine ? 'Não foi possível gerar o cronograma. Tente de novo.' : 'Para gerar o Excel pela primeira vez é preciso internet.'); }
+    } catch (err) { console.warn(err); btn.disabled = false; btn.textContent = 'Gerar Excel'; toast(navigator.onLine ? `Não foi possível gerar o cronograma${errTxt(err)}. Tente de novo.` : 'Para gerar o Excel pela primeira vez é preciso internet.'); }
   };
   showModal();
 }
@@ -2741,7 +2756,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=66');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=67');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2757,7 +2772,7 @@ async function exportPdf(){
     });
     toast('Relatório gerado.');
     logExport('relatorio', {arquivo: `Relatorio_Atividades_em_Aberto_${hoje}${ft ? '_' + ft : ''}.pdf`, qtd: acts.length, periodo: `em aberto em ${fmtShort(hoje)}/${hoje.slice(0, 4)} · ${ft ? 'turno ' + TURNOS[ft].toLowerCase() : 'turnos diurno e noturno'}`, filtros: filtrosTxt()});
-  } catch (e) { console.warn(e); toast(navigator.onLine ? 'Não foi possível gerar o relatório. Tente de novo.' : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
+  } catch (e) { console.warn(e); toast(navigator.onLine ? `Não foi possível gerar o relatório${errTxt(e)}. Tente de novo.` : 'Para gerar o PDF pela primeira vez é preciso internet.'); }
   finally { gerandoPdf = false; }
 }
 

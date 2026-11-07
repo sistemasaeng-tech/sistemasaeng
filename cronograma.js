@@ -2,14 +2,22 @@
 // (4107_ROOFTOP_IGSP_FORRO_ZARA_HOME_CRONOGRAMA_REV00): cabeçalho com título e faixa laranja,
 // colunas ITEM / DISCIPLINA / ATIVIDADE / INÍCIO / TÉRMINO / STATUS, semanas mescladas em grafite,
 // dias com fim de semana sombreado e barras do Gantt por formatação condicional (INÍCIO/TÉRMINO ou "X").
-const LIB = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
-function loadScript(src){
-  return new Promise((ok, fail) => {
-    if (window.ExcelJS) return ok();
-    const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('Não foi possível carregar o gerador de Excel'));
-    document.head.appendChild(s);
-  });
+// carrega uma biblioteca externa tentando outros servidores se o primeiro falhar; nunca reaproveita um carregamento que falhou
+async function carregarLib(urls, pronto){
+  if (pronto()) return;
+  let erro = null;
+  for (const src of urls){
+    [...document.scripts].filter(s => s.src === src).forEach(s => s.remove());
+    try {
+      await new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous'; s.async = true;
+        s.onload = ok; s.onerror = () => { s.remove(); fail(new Error('falha ao baixar a biblioteca de ' + new URL(src).hostname)); }; document.head.appendChild(s); });
+      if (pronto()) return;
+      erro = new Error('biblioteca incompleta em ' + new URL(src).hostname);
+    } catch (e){ erro = e; }
+  }
+  throw erro || new Error('biblioteca indisponível');
 }
+const LIB = ['https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js', 'https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'];
 async function toBase64(url){
   const b = await (await fetch(url)).blob();
   return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); });
@@ -28,7 +36,7 @@ const BORDER = {top:THIN, left:THIN, bottom:THIN, right:THIN};
 const solid = argb => ({type:'pattern', pattern:'solid', fgColor:{argb}});
 
 export async function gerarCronogramaXLSX(ctx){
-  await loadScript(LIB);
+  await carregarLib(LIB, () => !!window.ExcelJS);
   const ExcelJS = window.ExcelJS;
   const wb = new ExcelJS.Workbook();
   wb.creator = ctx.emitidoPor || 'SAENG'; wb.created = new Date();
