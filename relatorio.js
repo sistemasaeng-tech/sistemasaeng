@@ -372,7 +372,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
   const we = d => { const x = ctx.parseYmd(d).getDay(); return x === 0 || x === 6; };
   const DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
   const labelW = 80, gx = M + labelW, gw = W - M - gx, cw = gw / n;
-  const headH = 10, rowH = 7.4, grpH = 6.4, bottom = H - 17;
+  const headH = 10, rowH = 7.4, grpH = 6.4, subH = 5.2, bottom = H - 17;
 
   // linhas do gráfico, já paginadas
   const rows = [];
@@ -380,15 +380,25 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
   for (const gr of G){
     if (gr.parent && gr.parent !== lastP){ const kids = G.filter(x => x.parent === gr.parent); rows.push({k:'p', name:gr.parent, kids}); }
     lastP = gr.parent || '';
-    rows.push({k:'g', gr}); for (const a of gr.items) rows.push({k:'a', a, gr});
+    rows.push({k:'g', gr});
+    for (const a of gr.items){
+      rows.push({k:'a', a, gr});
+      const subs = Array.isArray(a.subtarefas) ? a.subtarefas : [];
+      if (n <= 7 && subs.length){
+        const fimJan = ctx.addDays(ini, n - 1);
+        subs.forEach((sb, k) => { const sf = sb.fim || sb.noite; if (sf >= ini && sb.noite <= fimJan) rows.push({k:'s', sb, idx:k + 1, a, gr}); });
+        const fora = subs.filter(sb => (sb.fim || sb.noite) < ini || sb.noite > fimJan).length;
+        if (fora) rows.push({k:'f', fora, todas: fora === subs.length, a, gr});
+      }
+    }
   }
   const pages = []; let cur = null, y = 0;
   const topOf = p => p === 0 ? (ctx.filtros ? 40 : 34) : 20;
   rows.forEach(r => {
-    const h = r.k === 'a' ? rowH : grpH;
+    const h = r.k === 'a' ? rowH : r.k === 's' ? subH : r.k === 'f' ? 4.2 : grpH;
     if (!cur || y + h > bottom || (r.k !== 'a' && y + grpH * (r.k === 'p' ? 2 : 1) + rowH > bottom)){ cur = {rows:[], top: topOf(pages.length)}; pages.push(cur); y = cur.top + headH; }
     // grupo que continua na página seguinte repete o título
-    if (r.k === 'a' && cur.rows.length === 0){ cur.rows.push({k:'g', gr:r.gr, cont:true, y}); y += grpH; }
+    if ((r.k === 'a' || r.k === 's' || r.k === 'f') && cur.rows.length === 0){ cur.rows.push({k:'g', gr:r.gr, cont:true, y}); y += grpH; }
     cur.rows.push({...r, y}); y += h; cur.end = y;
   });
 
@@ -431,6 +441,21 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     // linhas
     const spanOf = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => Math.max(di(ctx.fimOf(a)), a.aberta && ctx.fimOf(a) < hoje ? ti : -1))))];
     pg.rows.forEach(r => {
+      if (r.k === 's' || r.k === 'f'){
+        const ix = (r.gr && r.gr.parent ? 4 : 0) + 5, hh = r.k === 's' ? subH : 4.2;
+        stroke([232,234,238]); doc.setLineWidth(.1); doc.line(M + ix, r.y + hh, W - M, r.y + hh);
+        stroke([190,195,203]); doc.setLineWidth(.2); doc.line(M + ix - 2.4, r.y, M + ix - 2.4, r.y + hh / 2); doc.line(M + ix - 2.4, r.y + hh / 2, M + ix - 1, r.y + hh / 2);
+        if (r.k === 'f'){ color(C.faint); font('italic', 5.4); text(`${r.todas ? '' : '+ '}${r.fora} ${r.fora === 1 ? 'subtarefa' : 'subtarefas'} fora destes dias`, M + ix, r.y + 2.9); return; }
+        const sb = r.sb, sav = Number(sb.avanco) || 0, sf = sb.fim || sb.noite, k = sav >= 100 ? 'concluida' : sav > 0 ? 'andamento' : 'programada', venc = sav < 100 && sf < hoje, sc = venc ? NAO : COR[k];
+        color(C.faint); font('bold', 5.2); text(String(r.idx), M + ix, r.y + 3.4);
+        color(venc ? NAO.map(v => Math.round(v * .85)) : C.muted); font('normal', 6); text(fit(sb.titulo, gx - M - ix - 6), M + ix + 3, r.y + 3.4);
+        const j0 = di(sb.noite), j1 = di(sf), a0 = Math.max(0, j0), a1 = Math.min(n - 1, j1);
+        if (a1 >= a0){ const x0 = gx + a0 * cw + .6, w = (a1 - a0 + 1) * cw - 1.2, bh2 = 2.8, by2 = r.y + (subH - bh2) / 2;
+          fill(mix(sc, .72)); doc.roundedRect(x0, by2, w, bh2, .7, .7, 'F');
+          if (sav > 0){ fill(sc); doc.roundedRect(x0, by2, Math.max(1, w * sav / 100), bh2, .7, .7, 'F'); }
+          if (w > 10){ font('bold', 4.8); color(sav >= 45 ? C.white : sc.map(v => Math.round(v * .55))); text(`${sav}%`, x0 + 1.2, by2 + bh2 / 2 + .8); } }
+        return;
+      }
       if (r.k === 'p'){
         const all_ = r.kids.flatMap(x => x.items), [ps, pe] = spanOf(all_);
         fill([222,225,230]); doc.rect(M, r.y, W - 2 * M, grpH, 'F');
