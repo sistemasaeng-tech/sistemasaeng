@@ -384,7 +384,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     for (const a of gr.items){
       rows.push({k:'a', a, gr});
       const subs = Array.isArray(a.subtarefas) ? a.subtarefas : [];
-      if (n <= 7 && subs.length){
+      if (n <= 15 && subs.length){
         const fimJan = ctx.addDays(ini, n - 1);
         subs.forEach((sb, k) => { const sf = sb.fim || sb.noite; if (sf >= ini && sb.noite <= fimJan) rows.push({k:'s', sb, idx:k + 1, a, gr}); });
         const fora = subs.filter(sb => (sb.fim || sb.noite) < ini || sb.noite > fimJan).length;
