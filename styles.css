@@ -1562,3 +1562,8 @@ button.pd-c{cursor:pointer}
 .gt-bar.sub em{font-size:10.5px}
 .gt-r.gt-sub.venc .gt-n b .gt-tt{color:var(--st-nao)}
 @media (max-width:760px){ .gt-r.gt-sub .gt-n{padding-left:24px} .gt-r.gt-sub .gt-n b::before{margin-left:-10px} }
+
+.gt-sub-fora .gt-n b .gt-tt{font-style:italic;color:var(--faint)}
+.gt-sub-fora .gt-n b::before{opacity:.5}
+.gt-subn{flex:none;margin-left:2px;min-width:18px;height:16px;padding:0 5px;border-radius:8px;border:1px solid var(--line-2);color:var(--muted);font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.gt-subn::before{content:"";width:7px;height:7px;margin-right:3px;border-left:1.5px solid currentColor;border-bottom:1.5px solid currentColor;border-bottom-left-radius:2px;transform:translateY(-1px)}
