@@ -1550,3 +1550,15 @@ button.pd-c{cursor:pointer}
   .sub-f-row label:last-child{grid-column:1/-1}
   .sub-form input{font-size:16px}
 }
+
+/* v69: subtarefas no calendário (visões de até 7 dias) */
+.gt-r.gt-sub{border-top:1px dashed color-mix(in srgb,var(--line) 45%,transparent)}
+.gt-r.gt-sub .gt-n{min-height:32px;padding:4px 14px 4px 30px;background:color-mix(in srgb,var(--surface-2) 45%,var(--surface))}
+.gt-r.gt-sub.in-child .gt-n{padding-left:44px}
+.gt-r.gt-sub .gt-n b{font-size:12px;font-weight:500;color:var(--muted)}
+.gt-sk{flex:none;min-width:16px;height:16px;padding:0 4px;border-radius:5px;background:var(--surface-2);color:var(--faint);font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.gt-r.gt-sub .gt-n b::before{content:"";flex:none;width:9px;height:9px;margin-left:-14px;border-left:1.5px solid var(--line-2);border-bottom:1.5px solid var(--line-2);border-bottom-left-radius:3px;transform:translateY(-3px)}
+.gt-bar.sub{height:16px;margin-top:-8px;border-radius:6px}
+.gt-bar.sub em{font-size:10.5px}
+.gt-r.gt-sub.venc .gt-n b .gt-tt{color:var(--st-nao)}
+@media (max-width:760px){ .gt-r.gt-sub .gt-n{padding-left:24px} .gt-r.gt-sub .gt-n b::before{margin-left:-10px} }
