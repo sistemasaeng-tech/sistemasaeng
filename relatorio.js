@@ -535,7 +535,6 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     // legenda
     let lx = M; const ly = H - 12.5; font('normal', 6.4);
     fill(AZ); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); color(C.muted); text('Período planejado', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Período planejado') + 3;
-    fill(AZF); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); text('Executado', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Executado') + 3;
     fill(VD); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); text('Executado da subtarefa', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Executado da subtarefa') + 3;
     fill(AZF); doc.rect(lx, ly - .9, 5, 1, 'F'); doc.rect(lx, ly - 1.7, .5, 1.8, 'F'); doc.rect(lx + 4.5, ly - 1.7, .5, 1.8, 'F'); text(t('Resumo das subtarefas'), lx + 6.2, ly); lx += 8 + doc.getTextWidth(t('Resumo das subtarefas')) + 3;
     fill(mix(NAO, .78)); doc.rect(lx, ly - 2, 5, 2.4, 'F'); stroke(NAO); doc.setLineWidth(.2); doc.setLineDashPattern([.8, .6], 0); doc.rect(lx, ly - 2, 5, 2.4, 'S'); doc.setLineDashPattern([], 0);
