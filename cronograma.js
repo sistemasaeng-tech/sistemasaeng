@@ -115,7 +115,7 @@ export async function gerarCronogramaXLSX(ctx){
       row.getCell(4).value = xlDate(a.inicio);
       row.getCell(5).value = xlDate(a.fim);
       row.getCell(6).value = STATUS_XL[a.status] || 'A INICIAR';
-      row.getCell(7).value = (Number(a.avanco) || 0) / 100;
+      row.getCell(7).value = (Number(a.avanco) || 0) ? (Number(a.avanco) || 0) / 100 : null; // 0% fica em branco
       for (let c = 1; c <= CN; c++){
         const x = row.getCell(c);
         x.border = BORDER;

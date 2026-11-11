@@ -1,8 +1,8 @@
 // Service worker: deixa o app abrir rápido e funcionar sem sinal.
 // Arquivos do site: busca na rede primeiro (atualizações chegam na hora) e usa a cópia guardada se estiver offline.
 // Os dados (Firestore) não passam por aqui: o próprio Firebase guarda e sincroniza.
-const CACHE = 'atividades-v76';
-const SHELL = ['./', './index.html', './app.js?v=76', './styles.css?v=76', './firebase-config.js', './manifest.webmanifest', './logo-saeng.png', './icon-192.png', './favicon.png', './relatorio.js?v=76', './cronograma.js?v=76', './logo-saeng-cinza.png'];
+const CACHE = 'atividades-v77';
+const SHELL = ['./', './index.html', './app.js?v=77', './styles.css?v=77', './firebase-config.js', './manifest.webmanifest', './logo-saeng.png', './icon-192.png', './favicon.png', './relatorio.js?v=77', './cronograma.js?v=77', './logo-saeng-cinza.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

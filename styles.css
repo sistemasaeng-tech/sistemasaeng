@@ -1586,3 +1586,15 @@ button.pd-c{cursor:pointer}
 .gt-bar.resumo.cl.cr{background:none}
 .gt-bar.resumo em{color:var(--fg);text-shadow:none;font-size:11px;padding:0 2px;margin-top:-1px}
 .gt-bar.resumo.atr em{color:var(--st-nao)}
+
+/* v77: barras do calendário em azul claro; executado em azul mais forte */
+:root{--gt-az:#a8d3f3;--gt-az-f:#2f86cf}
+.gt-bar.az{background:var(--gt-az);border-color:color-mix(in srgb,var(--gt-az-f) 55%,var(--gt-az))}
+.gt-bar.az i{background:var(--gt-az-f);opacity:1}
+.gt-bar.az em{color:#0f2c45;text-shadow:none}
+.gt-bar.az i[style*="width:0%"]+em,.gt-bar.az em{font-weight:700}
+.gt-bar.az.ok i{background:var(--gt-az-f)}
+.gt-leg .sw.az{background:var(--gt-az)}
+.gt-leg .sw.azf{background:var(--gt-az-f)}
+.gt-leg .sw.rs{height:4px;background:var(--gt-az-f);border-radius:1px}
+.gt-bar.az.hi em{color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}

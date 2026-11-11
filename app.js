@@ -37,7 +37,7 @@ const fimOf = a => (a.fim && a.fim >= a.noite) ? a.fim : a.noite;          // t�
 // avanço > 0 em atividade Programada ou Não iniciada passa automaticamente para Em andamento
 const autoAnd = (st, av) => Number(av) > 0 && (st === 'programada' || st === 'nao_iniciada');
 const avOf = a => a.status === 'concluida' ? 100 : Math.max(0, Math.min(100, Number(a.avanco) || (a.status === 'parcial' ? Number(a.pct) || 0 : 0)));
-const progBar = p => `<span class="prog" role="img" aria-label="Avanço ${p}%"><i style="width:${p}%"></i></span><b class="prog-n">${p}%</b>`;
+const progBar = p => `<span class="prog" role="img" aria-label="Avanço ${p}%"><i style="width:${p}%"></i></span><b class="prog-n">${p ? p + '%' : ''}</b>`;
 const ICON_SOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const ICON_LUA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
 const turnoTag = t => `<span class="turno ${t}">${t === 'diurno' ? ICON_SOL : ICON_LUA}${TURNOS[t]}</span>`;
@@ -103,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 76; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 77; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -753,7 +753,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=76');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=77');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -786,8 +786,8 @@ function renderGantt(){
   else { wrap.scrollLeft = sl; wrap.scrollTop = st; }
   $('gt-leg').innerHTML = ganttLegenda('Toque numa atividade para abrir, ou num dia para ver só as atividades dele.');
 }
-const ganttLegenda = dica => ['programada','andamento','parcial','nao_iniciada','impedida','concluida'].map(k => `<span><i class="sw" style="--c:${cvar(k)}"></i>${esc(STATUS[k].label)}</span>`).join('')
-  + `<span><i class="sw tail"></i>Atraso</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">A parte mais forte da barra é o avanço. ${dica}</span>`;
+const ganttLegenda = dica => `<span><i class="sw az"></i>Período planejado</span><span><i class="sw azf"></i>Executado</span><span><i class="sw rs"></i>Resumo das subtarefas</span>`
+  + `<span><i class="sw tail"></i>Atraso</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">O status aparece no texto da barra. ${dica}</span>`;
 // monta o gráfico (usado no calendário principal e no da página do local)
 function ganttHTML(D, g, wrap, opt = {}){
   const {ini, n, hoje} = D, G = D.G, mesLbl = D.mesLbl;
@@ -821,14 +821,15 @@ function ganttHTML(D, g, wrap, opt = {}){
       let bar = '';
       if (e0 >= s0){
         const w = (e0 - s0 + 1) * cw - 6;
-        const lab = w >= 150 ? `${esc(st.label)} · ${av}%` : w >= 42 ? `${av}%` : '';
+        const pc = av ? ` · ${av}%` : '';
+        const lab = w >= 150 ? `${esc(st.label)}${pc}` : w >= 42 && av ? `${av}%` : '';
         if (subsOf(a).length){
           // atividade com subtarefas = barra-resumo (como no Project): o andamento real está nas subtarefas, então a barra não compara o % com o "hoje"
           const atr = subsOf(a).filter(sb => subVenc(sb, hoje)).length;
-          const labR = w >= 150 ? `${esc(st.label)} · ${av}%${atr ? ` · ${atr} ${atr === 1 ? 'subtarefa atrasada' : 'subtarefas atrasadas'}` : ''}` : w >= 42 ? `${av}%` : '';
-          bar = `<span class="gt-bar resumo${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${atr ? ' atr' : ''}" style="left:${s0 * cw + 3}px;width:${w}px;--c:${atr ? 'var(--st-nao)' : cvar(a.status)}"><em>${labR}</em></span>`;
+          const labR = w >= 150 ? `${esc(st.label)}${pc}${atr ? ` · ${atr} ${atr === 1 ? 'subtarefa atrasada' : 'subtarefas atrasadas'}` : ''}` : w >= 42 && av ? `${av}%` : '';
+          bar = `<span class="gt-bar resumo${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${atr ? ' atr' : ''}" style="left:${s0 * cw + 3}px;width:${w}px;--c:${atr ? 'var(--st-nao)' : 'var(--gt-az-f)'}"><em>${labR}</em></span>`;
         } else
-        bar = `<span class="gt-bar${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${a.status === 'concluida' ? ' ok' : ''}" style="left:${s0 * cw + 3}px;width:${w}px;--c:${cvar(a.status)}"><i style="width:${av}%"></i><em>${lab}</em></span>`;
+        bar = `<span class="gt-bar az${av >= 45 ? ' hi' : ''}${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${a.status === 'concluida' ? ' ok' : ''}" style="left:${s0 * cw + 3}px;width:${w}px"><i style="width:${av}%"></i><em>${lab}</em></span>`;
       }
       let tail = '';
       if (a.aberta && fimOf(a) < hoje){
@@ -845,10 +846,10 @@ function ganttHTML(D, g, wrap, opt = {}){
         subsOf(a).forEach((sb, k) => {
           const sf = sb.fim || sb.noite; if (sf < ini || sb.noite > fimJan) return;
           const ss = subSt(sb), sav = Number(sb.avanco) || 0, j0 = di(sb.noite), j1 = di(sf), a0 = Math.max(0, j0), a1 = Math.min(n - 1, j1), w = (a1 - a0 + 1) * cw - 6, venc = subVenc(sb, hoje);
-          const lab = w >= 70 ? `${sav}%` : '';
+          const lab = w >= 34 && sav ? `${sav}%` : '';
           h += `<div class="gt-r gt-sub${gr.parent ? ' in-child' : ''}${venc ? ' venc' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(sb.titulo)} · ${fmtShort(sb.noite)}${sf !== sb.noite ? ' a ' + fmtShort(sf) : ''} · ${esc(STATUS[ss].label)} ${sav}% (subtarefa de ${esc(a.titulo)})">
             <div class="gt-n"><b><span class="gt-sk">${k + 1}</span><span class="gt-tt">${esc(sb.titulo)}</span></b></div>
-            <div class="gt-t"><span class="gt-bar sub${j0 < 0 ? ' cl' : ''}${j1 > n - 1 ? ' cr' : ''}${ss === 'concluida' ? ' ok' : ''}" style="left:${a0 * cw + 3}px;width:${w}px;--c:${venc ? 'var(--st-nao)' : cvar(ss)}"><i style="width:${sav}%"></i><em>${lab}</em></span></div></div>`;
+            <div class="gt-t"><span class="gt-bar sub${venc ? '' : ' az'}${sav >= 45 ? ' hi' : ''}${j0 < 0 ? ' cl' : ''}${j1 > n - 1 ? ' cr' : ''}${ss === 'concluida' ? ' ok' : ''}" style="left:${a0 * cw + 3}px;width:${w}px;--c:${venc ? 'var(--st-nao)' : 'var(--gt-az-f)'}"><i style="width:${sav}%"></i><em>${lab}</em></span></div></div>`;
         });
         if (fora) h += `<div class="gt-r gt-sub gt-sub-fora${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0"><div class="gt-n"><b><span class="gt-tt">${fora === subsOf(a).length ? (fora === 1 ? '1 subtarefa' : `${fora} subtarefas`) : `+ ${fora} ${fora === 1 ? 'subtarefa' : 'subtarefas'}`} fora destes dias</span></b></div><div class="gt-t"></div></div>`;
       }
@@ -1441,7 +1442,7 @@ function renderSubs(){
       <span class="sub-i">${i + 1}</span>
       ${w ? `<button type="button" class="sub-ck" data-sub-ck="${esc(s.id)}" aria-pressed="${st === 'concluida'}" aria-label="${st === 'concluida' ? 'Reabrir' : 'Concluir'} ${esc(s.titulo)}" title="${st === 'concluida' ? 'Reabrir' : 'Marcar como concluída (100%)'}">${ICK}</button>` : `<span class="sub-ck ro" aria-hidden="true">${st === 'concluida' ? ICK : ''}</span>`}
       <div class="sub-tx"><b>${esc(s.titulo)}</b><span>${fmtShort(s.noite)}${(s.fim || s.noite) !== s.noite ? ' → ' + fmtShort(s.fim) : ''} · ${d} ${d === 1 ? 'dia' : 'dias'}${v ? ' · <em>vencida</em>' : ''}</span></div>
-      <div class="sub-av"><b>${av}%</b><span class="prog"><i style="width:${av}%"></i></span></div>
+      <div class="sub-av"><b>${av ? av + '%' : ''}</b><span class="prog"><i style="width:${av}%"></i></span></div>
       ${w ? `<button type="button" class="sub-ed" data-sub-ed="${esc(s.id)}" aria-label="Editar ${esc(s.titulo)}" title="Editar">${IED}</button>` : ''}
     </div>`; };
   box.innerHTML = `<div class="sub-h"><span class="lbl">Subtarefas</span>${subs.length ? `<span class="sub-n">${done} de ${subs.length} ${subs.length === 1 ? 'concluída' : 'concluídas'}</span>` : ''}<span class="sp"></span>${w && S.subEd !== 'novo' ? '<button type="button" class="link-btn" data-sub-add>+ Adicionar</button>' : ''}</div>
@@ -1898,7 +1899,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=76');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=77');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -2045,7 +2046,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=76');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=77');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -2119,7 +2120,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=76');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=77');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2492,7 +2493,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=76');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=77');
       const tipoC = nDias === 15 ? 'CRONOGRAMA QUINZENAL' : nDias === 7 ? 'CRONOGRAMA SEMANAL' : 'CRONOGRAMA';
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2790,7 +2791,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=76');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=77');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
