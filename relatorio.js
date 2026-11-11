@@ -371,7 +371,10 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
   const di = s => ctx.nightsBetween(ini, s), ti = di(hoje);
   const we = d => { const x = ctx.parseYmd(d).getDay(); return x === 0 || x === 6; };
   const DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
-  const labelW = 80, gx = M + labelW, gw = W - M - gx, cw = gw / n;
+  // colunas à esquerda: atividade | início | término (como no Project); o gráfico ocupa o resto
+  const nameW = 80, dW = 13.5, labelW = nameW + 2 * dW, cIni = M + nameW, cFim = cIni + dW, gx = M + labelW, gw = W - M - gx, cw = gw / n;
+  const dataC = d => { const [yy, mm, dd] = String(d || '').split('-'); return dd ? `${dd}/${mm}/${yy.slice(2)}` : ''; };
+  const datas = (y, h, i, f, cor) => { color(cor || C.ink); font('normal', 5.8); text(dataC(i), cIni + dW / 2, y + h / 2 + 1, {align:'center'}); text(dataC(f), cFim + dW / 2, y + h / 2 + 1, {align:'center'}); };
   const headH = 10, rowH = 7.4, grpH = 6.4, subH = 5.2, bottom = H - 17;
 
   // linhas do gráfico, já paginadas
@@ -430,6 +433,8 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     color(C.laranjaTx); font('bold', 7.4);
     const m1 = ctx.parseYmd(ini);
     text(ctx.mesLbl.toUpperCase(), M + 1, top + 6.6);
+    color(C.muted); font('bold', 5.8); text('Início', cIni + dW / 2, top + 6.6, {align:'center'}); text('Término', cFim + dW / 2, top + 6.6, {align:'center'});
+    stroke(C.line); doc.setLineWidth(.12); doc.line(cIni, top, cIni, end); doc.line(cFim, top, cFim, end);
     days.forEach((d, i) => {
       const dt = ctx.parseYmd(d), cx = gx + i * cw + cw / 2;
       if (d === hoje){ fill(LAR); doc.circle(cx, top + 7.1, Math.min(2.2, cw / 2 - .3), 'F'); }
@@ -445,10 +450,11 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
         const ix = (r.gr && r.gr.parent ? 4 : 0) + 5, hh = r.k === 's' ? subH : 4.2;
         stroke([232,234,238]); doc.setLineWidth(.1); doc.line(M + ix, r.y + hh, W - M, r.y + hh);
         stroke([190,195,203]); doc.setLineWidth(.2); doc.line(M + ix - 2.4, r.y, M + ix - 2.4, r.y + hh / 2); doc.line(M + ix - 2.4, r.y + hh / 2, M + ix - 1, r.y + hh / 2);
-        if (r.k === 'f'){ color(C.faint); font('italic', 5.4); text(`${r.todas ? '' : '+ '}${r.fora} ${r.fora === 1 ? 'subtarefa' : 'subtarefas'} fora destes dias`, M + ix, r.y + 2.9); return; }
+        if (r.k === 'f'){ color(C.faint); font('italic', 5.4); text(fit(`${r.todas ? '' : '+ '}${r.fora} ${r.fora === 1 ? 'subtarefa' : 'subtarefas'} fora destes dias`, cIni - M - ix - 2), M + ix, r.y + 2.9); return; }
         const sb = r.sb, sav = Number(sb.avanco) || 0, sf = sb.fim || sb.noite, k = sav >= 100 ? 'concluida' : sav > 0 ? 'andamento' : 'programada', venc = sav < 100 && sf < hoje, sc = venc ? NAO : COR[k];
         color(C.faint); font('bold', 5.2); text(String(r.idx), M + ix, r.y + 3.4);
-        color(venc ? NAO.map(v => Math.round(v * .85)) : C.muted); font('normal', 6); text(fit(sb.titulo, gx - M - ix - 6), M + ix + 3, r.y + 3.4);
+        color(venc ? NAO.map(v => Math.round(v * .85)) : C.muted); font('normal', 6); text(fit(sb.titulo, cIni - M - ix - 6), M + ix + 3, r.y + 3.4);
+        datas(r.y, subH, sb.noite, sf, venc ? NAO.map(v => Math.round(v * .85)) : C.muted);
         const j0 = di(sb.noite), j1 = di(sf), a0 = Math.max(0, j0), a1 = Math.min(n - 1, j1);
         if (a1 >= a0){ const x0 = gx + a0 * cw + .6, w = (a1 - a0 + 1) * cw - 1.2, bh2 = 2.8, by2 = r.y + (subH - bh2) / 2;
           fill(mix(sc, .72)); doc.roundedRect(x0, by2, w, bh2, .7, .7, 'F');
@@ -462,7 +468,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
         color(C.ink); font('bold', 7.6); text(r.name.toUpperCase(), M + 2, r.y + 4.4);
         const lw = doc.getTextWidth(t(r.name.toUpperCase()));
         color(C.muted); font('normal', 6); text(`${r.kids.length} ${r.kids.length === 1 ? 'pilar' : 'pilares'}`, M + 4 + lw, r.y + 4.4);
-        color(C.muted); font('bold', 6.4); text(`${all_.filter(a => a.status === 'concluida').length}/${all_.length}`, gx - 2, r.y + 4.4, {align:'right'});
+        color(C.muted); font('bold', 6.4); text(`${all_.filter(a => a.status === 'concluida').length}/${all_.length}`, cIni - 2, r.y + 4.4, {align:'right'});
         if (pe >= ps){ const x0 = gx + ps * cw + .8, x1 = gx + (pe + 1) * cw - .8, yy = r.y + grpH / 2; fill([110,116,126]); doc.rect(x0, yy - .8, x1 - x0, 1.6, 'F'); }
         return;
       }
@@ -471,12 +477,12 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
         fill([238,240,243]); doc.rect(M, r.y, W - 2 * M, grpH, 'F');
         if (isE){ fill(hex(ctx.tagCor(gr.label))); doc.circle(M + 2.6, r.y + grpH / 2, 1.1, 'F'); }
         color(C.ink); font('bold', 7.2);
-        const lab = fit((isE ? gr.label : gr.label.toUpperCase()) + (r.cont ? ' (continuação)' : ''), labelW - 18 - (isE ? 4 : 0));
+        const lab = fit((isE ? gr.label : gr.label.toUpperCase()) + (r.cont ? ' (continuação)' : ''), nameW - 18 - (isE ? 4 : 0));
         const ind = (isE ? 5 : 2) + (gr.parent ? 4 : 0);
         text(lab, M + ind, r.y + 4.3);
-        if (gr.sub && !r.cont){ const lw = doc.getTextWidth(lab); color(C.faint); font('normal', 6); text(fit(gr.sub, labelW - 18 - lw - ind), M + ind + lw + 2, r.y + 4.3); }
+        if (gr.sub && !r.cont){ const lw = doc.getTextWidth(lab); color(C.faint); font('normal', 6); text(fit(gr.sub, nameW - 18 - lw - ind), M + ind + lw + 2, r.y + 4.3); }
         const done = gr.items.filter(a => a.status === 'concluida').length;
-        color(C.muted); font('bold', 6.4); text(`${done}/${gr.items.length}`, gx - 2, r.y + 4.3, {align:'right'});
+        color(C.muted); font('bold', 6.4); text(`${done}/${gr.items.length}`, cIni - 2, r.y + 4.3, {align:'right'});
         // barra-resumo do grupo
         const gs = Math.max(0, Math.min(...gr.items.map(a => di(a.noite))));
         const ge = Math.min(n - 1, Math.max(...gr.items.map(a => Math.max(di(ctx.fimOf(a)), a.aberta && ctx.fimOf(a) < hoje ? ti : -1))));
@@ -489,9 +495,10 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       const ix = r.gr && r.gr.parent ? 4 : 0;
       let lx = M + 2 + ix;
       if (a.prioridade === 'critica' || a.prioridade === 'alta'){ fill(a.prioridade === 'critica' ? ST.impedida.c : ST.parcial.c); doc.circle(lx + .8, r.y + 2.7, .8, 'F'); lx += 2.6; }
-      color(C.ink); font('bold', 6.6); text(fit(a.titulo, gx - lx - 2), lx, r.y + 3.3);
+      color(C.ink); font('bold', 6.6); text(fit(a.titulo, cIni - lx - 2), lx, r.y + 3.3);
       const meta = [ctx.lojaDe ? ctx.lojaDe(a) : '', ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.dono || a.criadoPor)].filter(Boolean).join(' · ');
-      color(C.faint); font('normal', 5.4); text(fit(meta, gx - M - 4 - ix), M + 2 + ix, r.y + 6.2);
+      color(C.faint); font('normal', 5.4); text(fit(meta, cIni - M - 4 - ix), M + 2 + ix, r.y + 6.2);
+      datas(r.y, rowH, a.noite, ctx.fimOf(a), a.aberta && ctx.fimOf(a) < hoje ? NAO.map(v => Math.round(v * .85)) : C.ink);
       const bh = 4.4, by = r.y + (rowH - bh) / 2;
       // atraso: faixa até hoje
       if (a.aberta && ctx.fimOf(a) < hoje){
@@ -504,6 +511,17 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
           if (w > 8){ color(NAO.map(v => Math.round(v * .8))); font('bold', 5.2); text(`+${d}d`, x0 + w - 1, by + bh / 2 + .9, {align:'right'}); }
         }
       }
+      const subsA = Array.isArray(a.subtarefas) ? a.subtarefas : [];
+      if (subsA.length && e0 >= s0){
+        // atividade com subtarefas = barra-resumo (como no Project): o andamento real está nas subtarefas
+        const atr = subsA.filter(sb => (Number(sb.avanco) || 0) < 100 && (sb.fim || sb.noite) < hoje).length, rc = atr ? NAO : c;
+        const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2, yb = by + bh - 1.6;
+        fill(rc); doc.rect(x0, yb, w, 1.3, 'F');
+        if (i0 >= 0) doc.rect(x0, yb - .9, .7, 2.6, 'F');
+        if (i1 <= n - 1) doc.rect(x0 + w - .7, yb - .9, .7, 2.6, 'F');
+        const labR = `${ctx.statusLabel(a.status)} · ${av}%${atr ? ` · ${atr} ${atr === 1 ? 'subtarefa atrasada' : 'subtarefas atrasadas'}` : ''}`;
+        font('bold', 5.4); color(atr ? NAO.map(v => Math.round(v * .8)) : C.ink); text(fit(labR, Math.max(w, 30)), x0 + .4, by + 1.9);
+      } else
       // barra planejada com o avanço
       if (e0 >= s0){
         const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2;
@@ -525,7 +543,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     fill(mix(NAO, .78)); doc.rect(lx, ly - 2, 5, 2.4, 'F'); stroke(NAO); doc.setLineWidth(.2); doc.setLineDashPattern([.8, .6], 0); doc.rect(lx, ly - 2, 5, 2.4, 'S'); doc.setLineDashPattern([], 0);
     color(C.muted); text('Atraso (até hoje)', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Atraso (até hoje)') + 3;
     fill(LAR); doc.rect(lx + 2, ly - 2.6, .6, 3.4, 'F'); text('Hoje', lx + 4, ly); lx += 14;
-    color(C.faint); text('Parte escura da barra = avanço executado.', lx, ly);
+    color(C.faint); text('Parte escura da barra = avanço executado. Barra fina = resumo das subtarefas.', lx, ly);
   });
   return usadas;
 }

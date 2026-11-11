@@ -1575,3 +1575,14 @@ button.pd-c{cursor:pointer}
 /* v75: Padrão SAENG ao lado do PDF no calendário */
 .gt-saeng svg{color:#2e9a62}
 @media (max-width:760px){ .gt-saeng span{display:none} .gt-saeng{padding:0 10px} }
+
+/* v76: atividade com subtarefas = barra-resumo */
+.gt-bar.resumo{background:none;border:0;overflow:visible;border-radius:0;align-items:flex-start}
+.gt-bar.resumo::before{content:"";position:absolute;left:0;right:0;bottom:3px;height:6px;background:var(--c);border-radius:2px}
+.gt-bar.resumo:not(.cl)::after,.gt-bar.resumo:not(.cr)>em::after{content:none}
+.gt-bar.resumo{--cap:7px;background:linear-gradient(var(--c),var(--c)) left bottom/3px 11px no-repeat,linear-gradient(var(--c),var(--c)) right bottom/3px 11px no-repeat}
+.gt-bar.resumo.cl{background:linear-gradient(var(--c),var(--c)) right bottom/3px 11px no-repeat}
+.gt-bar.resumo.cr{background:linear-gradient(var(--c),var(--c)) left bottom/3px 11px no-repeat}
+.gt-bar.resumo.cl.cr{background:none}
+.gt-bar.resumo em{color:var(--fg);text-shadow:none;font-size:11px;padding:0 2px;margin-top:-1px}
+.gt-bar.resumo.atr em{color:var(--st-nao)}
