@@ -103,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 81; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 82; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -759,7 +759,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=81');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=82');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, lugarTxt());
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt(), lugarTxt())});
@@ -835,7 +835,7 @@ function ganttHTML(D, g, wrap, opt = {}){
           const labR = w >= 150 ? `${esc(st.label)}${pc}${atr ? ` · ${atr} ${atr === 1 ? 'subtarefa atrasada' : 'subtarefas atrasadas'}` : ''}` : w >= 42 && av ? `${av}%` : '';
           bar = `<span class="gt-bar resumo${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${atr ? ' atr' : ''}" style="left:${s0 * cw + 3}px;width:${w}px;--c:${atr ? 'var(--st-nao)' : 'var(--gt-az-f)'}"><em>${labR}</em></span>`;
         } else
-        bar = `<span class="gt-bar az ctr${av >= 75 ? ' hi' : ''}${w < 42 ? ' nr' : ''}${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${a.status === 'concluida' ? ' ok' : ''}" style="left:${s0 * cw + 3}px;width:${w}px"><i style="width:${av}%"></i><em>${lab}</em></span>`;
+        bar = `<span class="gt-bar az ctr${w < 42 ? ' nr' : ''}${i0 < 0 ? ' cl' : ''}${i1 > n - 1 ? ' cr' : ''}${a.status === 'concluida' ? ' ok' : ''}" style="left:${s0 * cw + 3}px;width:${w}px"><em>${lab}</em></span>`; // sem preenchimento azul do executado: só o % escrito
       }
       let tail = '';
       if (a.aberta && fimOf(a) < hoje){
@@ -1905,7 +1905,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=81');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=82');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -2052,7 +2052,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=81');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=82');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, 'Calendário de atividades', '', arquivo, m.nome), partes: ganttPartes(S.lgt, acts, 'Calendário de atividades', '', m.nome)});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -2126,7 +2126,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=81');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=82');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2499,7 +2499,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=81');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=82');
       const tipoC = nDias === 15 ? 'CRONOGRAMA QUINZENAL' : nDias === 7 ? 'CRONOGRAMA SEMANAL' : 'CRONOGRAMA';
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2797,7 +2797,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=81');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=82');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),

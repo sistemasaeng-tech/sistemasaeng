@@ -525,9 +525,8 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       if (e0 >= s0){
         const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2;
         fill(AZ); doc.roundedRect(x0, by, w, bh, 1, 1, 'F');
-        if (av > 0){ fill(AZF); doc.roundedRect(x0, by, Math.max(1.2, w * av / 100), bh, 1, 1, 'F'); }
         const lab = w > 34 ? `${ctx.statusLabel(a.status)}${av ? ` · ${av}%` : ''}` : av ? `${av}%` : '';
-        if (lab) txtBarra(lab, x0, w, by + bh / 2, 5.6, av < 75);
+        if (lab) txtBarra(lab, x0, w, by + bh / 2, 5.6, true);
       }
     });
     // hoje
