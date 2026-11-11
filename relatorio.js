@@ -349,7 +349,6 @@ function rodapeGantt(doc, ctx, so = null){
     doc.setPage(i);
     doc.setDrawColor(C.line[0], C.line[1], C.line[2]); doc.setLineWidth(.2); doc.line(M, H - 8.5, W - M, H - 8.5);
     doc.setTextColor(C.faint[0], C.faint[1], C.faint[2]); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8);
-    doc.text(t(`SAENG Engenharia · Programação de Atividades · Obra 4107 Rooftop Iguatemi SP · emitido em ${ctx.emitidoEm} por ${ctx.emitidoPor}`), M, H - 4.8);
     doc.text(t(`Página ${i} de ${N}`), W - M, H - 4.8, {align:'right'});
   }
 }
@@ -399,7 +398,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     }
   }
   const pages = []; let cur = null, y = 0;
-  const topOf = p => p === 0 ? (ctx.filtros ? 40 : 34) : 20;
+  const topOf = p => p === 0 ? 34 : 20;
   rows.forEach(r => {
     const h = r.k === 'a' ? rowH : r.k === 's' ? subH : r.k === 'f' ? 4.2 : grpH;
     if (!cur || y + h > bottom || (r.k !== 'a' && y + grpH * (r.k === 'p' ? 2 : 1) + rowH > bottom)){ cur = {rows:[], top: topOf(pages.length)}; pages.push(cur); y = cur.top + headH; }
@@ -416,16 +415,13 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       fill(C.graf); doc.rect(0, 0, W, 24, 'F'); fill(LAR); doc.rect(0, 24, W, 1.2, 'F');
       if (logo) doc.addImage(logo, 'PNG', M, 7, 38, 38 * 83 / 306);
       color(C.white); font('bold', 14); text(ctx.titulo, W - M, 11, {align:'right'});
-      color([169,173,180]); font('normal', 8.5); text(`${ctx.sub}  ·  ${ctx.acts.length} ${ctx.acts.length === 1 ? 'atividade' : 'atividades'}`, W - M, 17, {align:'right'});
-      if (ctx.filtros){
-        font('bold', 7.6); const fl = t('Filtro: ' + ctx.filtros), fw = doc.getTextWidth(fl) + 6;
-        fill(mix(LAR, .85)); doc.roundedRect(M, 28.5, fw, 6, 1.5, 1.5, 'F'); color(C.laranjaTx); text(fl, M + 3, 32.6);
-      }
+      // abaixo do título: só o lugar e o período
+      color([200,203,209]); font('normal', 9); text(ctx.cab || ctx.sub, W - M, 17.5, {align:'right'});
     } else {
       fill(C.graf); doc.rect(0, 0, W, 13, 'F'); fill(LAR); doc.rect(0, 13, W, .8, 'F');
       if (logo) doc.addImage(logo, 'PNG', M, 3.6, 22, 22 * 83 / 306);
       color(C.white); font('bold', 8.6); text(ctx.titulo, W - M, 6.2, {align:'right'});
-      color([169,173,180]); font('normal', 7); text(ctx.sub, W - M, 10.2, {align:'right'});
+      color([169,173,180]); font('normal', 7); text(ctx.cab || ctx.sub, W - M, 10.2, {align:'right'});
     }
     const top = pg.top, gy = top + headH, end = pg.end;
     // fundo: fins de semana e linhas dos dias
