@@ -1571,3 +1571,7 @@ button.pd-c{cursor:pointer}
 /* v73: pilar por loja no filtro */
 .ms-opt.ind{padding-left:30px;font-size:13.5px}
 .ms-opt.ind .ms-ol{color:var(--muted)}
+
+/* v75: Padrão SAENG ao lado do PDF no calendário */
+.gt-saeng svg{color:#2e9a62}
+@media (max-width:760px){ .gt-saeng span{display:none} .gt-saeng{padding:0 10px} }

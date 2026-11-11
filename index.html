@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=74">
+<link rel="stylesheet" href="styles.css?v=75">
 </head>
 <body>
 
@@ -97,7 +97,7 @@
       <div class="menu" id="tools-wrap">
         <button class="ibtn tool" id="b-tools" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Cronograma e exportação"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></button>
         <div class="menu-pop tools-pop" id="tools-pop" hidden>
-          <button type="button" id="exp-crono"><span class="exp-ic xls">XLS</span><span class="exp-tx"><b>Cronograma quinzenal</b><span>Excel no padrão SAENG</span></span></button>
+          <button type="button" id="exp-crono"><span class="exp-ic xls">XLS</span><span class="exp-tx"><b>Cronograma padrão SAENG</b><span>Excel, no período que escolher</span></span></button>
           <button type="button" id="exp-pdf"><span class="exp-ic pdf">PDF</span><span class="exp-tx"><b>Relatório PDF</b><span>Atividades em aberto por setor</span></span></button>
           <button type="button" id="exp-csv"><span class="exp-ic csv">CSV</span><span class="exp-tx"><b>Planilha CSV</b><span>Lista atual, com histórico</span></span></button>
           <button type="button" id="exp-ia"><span class="exp-ic ia">IA</span><span class="exp-tx"><b>Exportar para o Claude</b><span>Tudo por atividade, para perguntar à IA</span></span></button>
@@ -142,6 +142,7 @@
         <button class="gt-hoje" id="gt-hoje" type="button">Hoje</button>
         <button class="ibtn" id="gt-next" type="button" aria-label="Próximo período">›</button>
         <button class="gt-pdf" id="gt-pdf" type="button" aria-label="Exportar o calendário em PDF" title="Exportar o calendário em PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>PDF</span></button>
+        <button class="gt-pdf gt-saeng" id="gt-saeng" type="button" aria-label="Exportar este período no padrão SAENG (Excel)" title="Exportar este período no padrão SAENG (Excel)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8l4 5m0-5-4 5M14 8h2M14 12h2M8 17h8"/></svg><span>Padrão SAENG</span></button>
       </div>
     </div>
     <div class="gt-ctl">
@@ -227,6 +228,6 @@
 <div id="toast" class="toast" hidden></div>
 <div id="offline" class="offline" hidden>Sem conexão. O que você salvar fica no aparelho e é enviado quando a internet voltar.</div>
 
-<script type="module" src="app.js?v=74"></script>
+<script type="module" src="app.js?v=75"></script>
 </body>
 </html>
