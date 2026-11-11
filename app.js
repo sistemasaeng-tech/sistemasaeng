@@ -103,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 72; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 73; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -349,6 +349,7 @@ function locItemMatch(a, v){
   const t = v[0], val = v.slice(2);
   if (t === 's') return setorOf(a) === val;
   if (t === 'p') return a.tipoLocal === 'pilar' && pilarCodeOf(a) === val;
+  if (t === 'q'){ const [c, loja] = val.split('|'); return a.tipoLocal === 'pilar' && pilarCodeOf(a) === c && lc(pilarLojaOf(a)) === lc(loja); } // pilar numa loja específica
   if (t === 'z') return a.tipoLocal === 'shopping' && lc(a.local) === lc(val);
   return true;
 }
@@ -360,7 +361,18 @@ function locItems(){
     const inc = [nl ? `${nl} ${nl === 1 ? 'loja' : 'lojas'}` : '', np ? `${np} ${np === 1 ? 'pilar' : 'pilares'}` : ''].filter(Boolean).join(' e ');
     out.push({v:'s:' + v, l, sub: inc ? 'inclui ' + inc : '', g:'Setores'});
   }
-  if (tipos.includes('pilar')) for (const [v, l] of locOptions('pilar')) out.push({v:'p:' + v, l, g:'Pilares'});
+  if (tipos.includes('pilar')){
+    // cada pilar com a opção "todas as lojas" e, logo abaixo, uma opção por loja/ambiente por onde ele passa
+    const lojasDe = new Map();
+    const addL = (c, l) => { if (!c || !String(l || '').trim()) return; if (!lojasDe.has(c)) lojasDe.set(c, new Map()); const m = lojasDe.get(c); if (!m.has(lc(l))) m.set(lc(l), String(l).trim()); };
+    for (const x of S.cad.pilares) addL(pilarCode(x.codigo) || x.codigo, x.referencia);
+    for (const a of all().values()) if (a.tipoLocal === 'pilar') addL(pilarCodeOf(a), pilarLojaOf(a));
+    for (const [v, l] of locOptions('pilar')){
+      const lojas = [...(lojasDe.get(v)?.values() || [])].sort((x, y) => x.localeCompare(y, 'pt'));
+      out.push({v:'p:' + v, l: l.split(' · ')[0], sub: lojas.length > 1 ? 'todas as lojas' : lojas[0] || '', g:'Pilares'});
+      if (lojas.length > 1) for (const lj of lojas) out.push({v:`q:${v}|${lj}`, l:`${v} · ${lj}`, g:'Pilares', ind:true});
+    }
+  }
   if (tipos.includes('shopping')) for (const [v, l] of locOptions('shopping')){ const x = S.cad.locais.find(y => lc(locNome(y)) === lc(v)); out.push({v:'z:' + v, l, sub: x && locSetor(x) ? 'Setor ' + locSetor(x) : '', g:'Shopping'}); }
   return out;
 }
@@ -741,7 +753,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=72');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=73');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`);
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt())});
@@ -1077,7 +1089,7 @@ function msRender(id){
   let g = null, h = '';
   for (const o of opts){
     if (o.g && o.g !== g){ g = o.g; h += `<div class="ms-g">${esc(g)}</div>`; }
-    h += `<label class="ms-opt"><input type="checkbox" value="${esc(o.v)}" ${sel.has(o.v) ? 'checked' : ''}><span class="ms-ol">${esc(o.l)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</span></label>`;
+    h += `<label class="ms-opt${o.ind ? ' ind' : ''}"><input type="checkbox" value="${esc(o.v)}" ${sel.has(o.v) ? 'checked' : ''}><span class="ms-ol">${esc(o.l)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</span></label>`;
   }
   el.querySelector('.ms-list').innerHTML = h || '<div class="ms-empty">Nada encontrado.</div>';
 }
@@ -1880,7 +1892,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=72');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=73');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -2027,7 +2039,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=72');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=73');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, `Calendário · ${m.nome}`, '', arquivo), partes: ganttPartes(S.lgt, acts, `Calendário · ${m.nome}`, '')});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -2101,7 +2113,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=72');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=73');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2471,7 +2483,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=72');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=73');
       const fimP = addDays(ini, 14);
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias: 15, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2756,7 +2768,7 @@ function filtrosTxt(){
   if (f.autor.length) p.push(`dono: ${L(f.autor, nameOf)}`);
   if (f.status.length) p.push(`status ${L(f.status, k => STATUS[k].label.toLowerCase())}`);
   if (f.tipo.length) p.push(L(f.tipo, t => ({setor:'setores', pilar:'pilares', shopping:'shopping'})[t]));
-  if (f.loc.length) p.push(L(f.loc, v => v[0] === 's' ? 'setor ' + v.slice(2) : v[0] === 'p' ? 'pilar ' + v.slice(2) : v.slice(2)));
+  if (f.loc.length) p.push(L(f.loc, v => v[0] === 's' ? 'setor ' + v.slice(2) : v[0] === 'p' ? 'pilar ' + v.slice(2) : v[0] === 'q' ? 'pilar ' + v.slice(2).replace('|', ' — ') : v.slice(2)));
   if (f.forn.length) p.push(`fornecedor ${L(f.forn, x => x === '__none__' ? 'não informado' : x)}`);
   if (f.etq.length) p.push(`etiqueta ${L(f.etq, x => x)}`);
   if (f.q) p.push(`busca "${f.q}"`);
@@ -2769,7 +2781,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=72');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=73');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
