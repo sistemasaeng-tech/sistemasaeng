@@ -1599,12 +1599,11 @@ button.pd-c{cursor:pointer}
 .gt-leg .sw.rs{height:4px;background:var(--gt-az-f);border-radius:1px}
 .gt-bar.az.hi em{color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
 
-/* v78: executado / com andamento em verde; % ao lado da barra quando não cabe */
+/* v79: só a subtarefa com andamento fica verde; % dentro da barra, centralizado */
 :root{--gt-vd:#2fa65a}
-.gt-bar.az i{background:var(--gt-vd)}
-.gt-bar.az.ok i{background:var(--gt-vd)}
-.gt-bar.sub.az i{background:var(--gt-vd)}
+.gt-bar.sub.vd i{background:var(--gt-vd)}
 .gt-leg .sw.vd{background:var(--gt-vd)}
-.gt-pct{position:absolute;top:50%;transform:translateY(-50%);font-size:11px;font-weight:700;color:#2fa65a;white-space:nowrap;pointer-events:none;z-index:1}
-.gt-sub .gt-pct{font-size:10px}
-.prog i{background:linear-gradient(90deg,#2a9a53,#3fbf6c)}
+.gt-bar.ctr{justify-content:center}
+.gt-bar.ctr em{flex:0 1 auto;text-align:center}
+.gt-bar.nr em{padding:0;font-size:9px;text-overflow:clip;letter-spacing:-.2px}
+.gt-bar.sub.nr em{font-size:8.5px}
