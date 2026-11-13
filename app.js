@@ -103,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 82; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 83; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -150,7 +150,17 @@ const roleOf = u => S.usuarios[u]?.funcao || '';
 // Dono: quem responde pela atividade (o administrador escolhe; nas antigas, é quem inseriu)
 const donoOf = a => a?.dono || a?.criadoPor || '';
 const coordSetor = cod => (S.cad.setores.find(x => x.codigo === cod) || {}).coord || '';
-const setoresDe = u => S.cad.setores.filter(x => x.coord && x.coord === u).map(x => x.codigo);
+// setores que cada pessoa acompanha no Início: os que coordena (Cadastros → Setores) + os marcados em Cadastros → Usuários.
+// '*' = todos os setores (vê tudo, inclusive pilares e locais sem setor) — ex.: orçamentista, coordenador master
+const acessoDe = u => { const v = (S.cad.acesso || {})[u]; return Array.isArray(v) ? v : []; };
+const veTudo = u => acessoDe(u).includes('*');
+const setoresDe = u => {
+  const cods = S.cad.setores.map(x => x.codigo);
+  if (veTudo(u)) return cods;
+  const marc = new Set(acessoDe(u));
+  return S.cad.setores.filter(x => (x.coord && x.coord === u) || marc.has(x.codigo)).map(x => x.codigo);
+};
+const setoresTxt = u => veTudo(u) ? 'Todos os setores' : setoresDe(u).map(c => 'Setor ' + c).join(', ');
 const listaPt = arr => arr.length <= 1 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' e ' + arr[arr.length - 1];
 const aprovados = (atual = '') => { const ids = Object.entries(S.usuarios).filter(([, u]) => ['usuario','admin'].includes(u.papel)).map(([id]) => id); if (atual && !ids.includes(atual)) ids.push(atual); return ids.sort((x, y) => nameOf(x).localeCompare(nameOf(y), 'pt')); };
 // dono da atividade: só residentes (mais o dono atual, se for outra pessoa, para não perder a informação)
@@ -296,7 +306,7 @@ function startApp(){
   }, fail('usuarios')));
   S.unsubs.push(onSnapshot(doc(db, 'config', 'cadastros'), s => {
     const v = s.exists() ? s.data(SNAP) : {};
-    S.cad = {fornecedores:v.fornecedores||[], setores:v.setores||[], niveis:v.niveis||[], pilares:v.pilares||[], locais:v.locais||[]};
+    S.cad = {fornecedores:v.fornecedores||[], setores:v.setores||[], niveis:v.niveis||[], pilares:v.pilares||[], locais:v.locais||[], acesso:v.acesso||{}};
     S.cadLoaded = true; fillFilterOptions(); renderAll();
   }, fail('cadastros')));
   subscribeWindow();
@@ -759,7 +769,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=82');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=83');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, lugarTxt());
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt(), lugarTxt())});
@@ -1032,12 +1042,12 @@ function renderCadList(){
     $('cad-count').textContent = `${us.length} ${us.length === 1 ? 'pessoa' : 'pessoas'} · ${nMail} ${nMail === 1 ? 'recebe' : 'recebem'} o e-mail diário`;
     list.innerHTML = us.length ? us.map(([id,u]) => `<div class="cad-item user ${esc(u.papel)}">
       <span class="av sm">${esc(initials(u.nome))}</span>
-      <div class="ci-tx"><b>${esc(u.nome)}${id === S.uid ? ' <span class="ro">(você)</span>' : ''}</b><span>${esc([u.funcao, u.email].filter(Boolean).join(' · '))}</span>${setoresDe(id).length ? `<span class="u-set">Coordena: ${esc(setoresDe(id).map(c => 'Setor ' + c).join(', '))}</span>` : ''}</div>
+      <div class="ci-tx"><b>${esc(u.nome)}${id === S.uid ? ' <span class="ro">(você)</span>' : ''}</b><span>${esc([u.funcao, u.email].filter(Boolean).join(' · '))}</span>${admin && u.papel !== 'pendente' && u.papel !== 'bloqueado' ? `<button type="button" class="u-set ed" data-uset="${id}" aria-expanded="${S.uSet === id}" title="Escolher os setores que ${esc(primeiroNome(u.nome))} acompanha no Início">${setoresDe(id).length ? 'Setores: ' + esc(setoresTxt(id)) : 'Definir setores'}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>` : setoresDe(id).length ? `<span class="u-set">Setores: ${esc(setoresTxt(id))}</span>` : ''}</div>
       <span class="badge ${u.papel}">${esc(u.papel === 'pendente' ? 'Pendente' : PAPEIS[u.papel] || u.papel)}</span>
       ${admin && ['usuario','admin','visualizador'].includes(u.papel) && !/\+robo@/i.test(u.email || '') ? `<button type="button" class="u-mail" data-umail="${id}" role="checkbox" aria-checked="${u.resumoEmail !== false}" aria-pressed="${u.resumoEmail !== false}" aria-label="Receber o e-mail diário de atualizações" title="${u.resumoEmail !== false ? 'Recebe' : 'Não recebe'} o e-mail diário com as atualizações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.6 7 8.4 6.2L20.4 7"/></svg><span class="u-ck"></span></button>` : ''}
       ${id === S.uid ? '<span class="u-sp"></span>' : `<div class="menu u-menu"><button type="button" class="ibtn u-more" data-umenu="${id}" aria-haspopup="true" aria-expanded="${S.uMenu === id}" aria-label="Ações para ${esc(u.nome)}"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
         <div class="menu-pop u-pop"${S.uMenu === id ? '' : ' hidden'}>${userActions(id, u.papel)}</div></div>`}
-    </div>`).join('') : '<div class="empty">Ninguém encontrado.</div>';
+    </div>${admin && S.uSet === id ? userSetoresForm(id, u) : ''}`).join('') : '<div class="empty">Ninguém encontrado.</div>';
     return;
   }
   const d = CAD_DEF.find(x => x.key === S.cadSub); if (!d) return;
@@ -1069,6 +1079,24 @@ function userActions(id, papel){
     bloqueado: [it('usuario','Reativar como usuário'), it('visualizador','Reativar como visualizador')],
   };
   return `<span class="ro">${esc(nameOf(id))} · ${esc(PAPEIS[papel] || papel)}</span>` + (L[papel] || L.bloqueado).join('');
+}
+function userSetoresForm(id, u){
+  const tudo = veTudo(id), sel = new Set(setoresDe(id));
+  return `<form class="u-setedit${tudo ? ' tudo' : ''}" data-usetform="${id}">
+    <div class="use-h"><b>Setores de ${esc(primeiroNome(u.nome) || u.nome)}</b><span>As atividades desses setores aparecem no Início dele(a).</span></div>
+    <label class="use-all"><input type="checkbox" name="tudo" ${tudo ? 'checked' : ''}><span><b>Todos os setores</b><small>Vê tudo, inclusive pilares e locais sem setor (ex.: orçamentista, coordenador master)</small></span></label>
+    <div class="use-chips">${S.cad.setores.map(z => `<label class="use-chip"><input type="checkbox" name="s" value="${esc(z.codigo)}" ${sel.has(z.codigo) ? 'checked' : ''} ${tudo ? 'disabled' : ''}><span>Setor ${esc(z.codigo)}${z.coord && z.coord !== id ? `<small>coord. ${esc(shortName(nameOf(z.coord)))}</small>` : z.coord === id ? '<small>coordenador</small>' : ''}</span></label>`).join('') || '<span class="ro">Cadastre os setores primeiro.</span>'}</div>
+    <p class="ce-nota">Desmarcar um setor em que a pessoa é coordenadora tira ela da coordenação desse setor.</p>
+    <div class="ce-a"><button type="button" class="btn" data-uset-cancel>Cancelar</button><button type="submit" class="btn pri">Salvar</button></div>
+  </form>`;
+}
+async function salvarSetoresDe(id, form){
+  const tudo = form.elements.tudo.checked, marc = [...form.querySelectorAll('input[name=s]:checked')].map(i => i.value);
+  const acesso = {...(S.cad.acesso || {})};
+  if (tudo) acesso[id] = ['*']; else if (marc.length) acesso[id] = marc; else delete acesso[id];
+  const setores = S.cad.setores.map(z => !tudo && z.coord === id && !marc.includes(z.codigo) ? {...z, coord:''} : z);
+  const ok = await saveCad({...S.cad, setores, acesso});
+  if (ok){ S.uSet = null; renderCadList(); toast(tudo ? `${shortName(nameOf(id))} agora vê todos os setores.` : marc.length ? `${shortName(nameOf(id))}: ${listaPt(marc.map(c => 'Setor ' + c))}.` : `${shortName(nameOf(id))} ficou sem setor.`); }
 }
 async function saveCad(next){
   try { await setDoc(doc(db, 'config', 'cadastros'), {...next, atualizadoPor:S.uid, atualizadoEm:serverTimestamp()}); return true; }
@@ -1271,7 +1299,7 @@ const primeiroNome = n => String(n || '').trim().split(/\s+/)[0] || '';
 const abertaAtv = a => a.aberta && STATUS[a.status]?.aberta;
 function panoramaDe(u, hoje = defaultNight()){
   const em7 = addDays(hoje, 7), sem7 = addDays(hoje, -7);
-  const meus = new Set(setoresDe(u)), noEscopo = a => donoOf(a) === u || (meus.size && meus.has(setorOf(a)));
+  const meus = new Set(setoresDe(u)), tudo = veTudo(u), noEscopo = a => tudo || donoOf(a) === u || (meus.size && meus.has(setorOf(a)));
   const base = new Map(all()); for (const [id, a] of S.iniConc.lista) if (!base.has(id)) base.set(id, a);
   const mine = [...base.values()].filter(noEscopo), ab = mine.filter(abertaAtv);
   const venc = ab.filter(a => fimOf(a) < hoje);
@@ -1295,7 +1323,7 @@ function renderInicio(){
   const sec = (tit, lista, opt = {}) => { const aberto = opt.k && S.iniMais.has(opt.k), lim = opt.max; if (aberto) opt.max = 0; return lista.length ? `<div class="sec ini-sec${opt.cls ? ' ' + opt.cls : ''}"><div class="sec-h"><h2>${tit}</h2><span>${lista.length}</span>${opt.btn || ''}</div><div class="cards">${(opt.max ? lista.slice(0, opt.max) : lista).map(a => card(a, fimOf(a) < hoje && abertaAtv(a), hoje, true)).join('')}</div>${opt.max && lista.length > opt.max ? `<button type="button" class="link-btn ini-mais" data-ini-mais="${opt.k}">Ver mais ${lista.length - opt.max}</button>` : aberto && lim && lista.length > lim ? `<button type="button" class="link-btn ini-mais" data-ini-menos="${opt.k}">Ver menos</button>` : ''}</div>` : ''; };
   $('v-ini').innerHTML = `<div class="ini">
     <div class="ini-head">
-      ${eu ? `<div class="eyebrow">${esc(dataLonga)}</div><h1>${saudacao()}, ${esc(primeiroNome(nome) || 'bem-vindo')}</h1><div class="sub">${setoresDe(u).length ? `Boas-vindas! Estas são as atividades ${setoresDe(u).length === 1 ? 'do seu setor, o' : 'dos seus setores:'} <b>${setoresDe(u).length === 1 ? 'Setor' : 'Setores'} ${esc(listaPt(setoresDe(u)))}</b>.` : 'Essas são as atividades dos seus setores.'}</div>`
+      ${eu ? `<div class="eyebrow">${esc(dataLonga)}</div><h1>${saudacao()}, ${esc(primeiroNome(nome) || 'bem-vindo')}</h1><div class="sub">${veTudo(u) ? 'Boas-vindas! Estas são as atividades de <b>todos os setores</b>.' : setoresDe(u).length ? `Boas-vindas! Estas são as atividades ${setoresDe(u).length === 1 ? 'do seu setor, o' : 'dos seus setores:'} <b>${setoresDe(u).length === 1 ? 'Setor' : 'Setores'} ${esc(listaPt(setoresDe(u)))}</b>.` : 'Essas são as atividades dos seus setores.'}</div>`
         : `<button type="button" class="back" data-ini-u="${esc(S.uid)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 6-6 6 6 6"/></svg>Voltar para o meu panorama</button><div class="eyebrow">${esc(dataLonga)}</div><h1>${esc(nome)}</h1><div class="sub">${roleOf(u) ? esc(roleOf(u)) + ' · ' : ''}atividades em que é o dono</div>`}
     </div>
     <div class="etq-kpis ini-kpis">
@@ -1905,7 +1933,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=82');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=83');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -2052,7 +2080,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=82');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=83');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, 'Calendário de atividades', '', arquivo, m.nome), partes: ganttPartes(S.lgt, acts, 'Calendário de atividades', '', m.nome)});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -2126,7 +2154,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=82');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=83');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2499,7 +2527,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=82');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=83');
       const tipoC = nDias === 15 ? 'CRONOGRAMA QUINZENAL' : nDias === 7 ? 'CRONOGRAMA SEMANAL' : 'CRONOGRAMA';
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2797,7 +2825,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=82');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=83');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2885,6 +2913,8 @@ document.addEventListener('click', e => {
   { const ea = t.closest('[data-edit-ask]'); if (ea){ S.cadEdit = ea.dataset.editAsk; S.cadDel = null; renderCadList(); const f = document.querySelector(`form[data-edit="${ea.dataset.editAsk}"] input`); if (f){ f.focus(); f.select(); } return; } }
   if (t.closest('[data-edit-cancel]')){ S.cadEdit = null; return renderCadList(); }
   const del = t.closest('[data-del]'); if (del){ const [key, i] = del.dataset.del.split(':'); S.cadDel = null; return saveCad({...S.cad, [key]:S.cad[key].filter((_,j) => j !== Number(i))}).then(ok => ok && toast('Item removido.')); }
+  { const us = t.closest('[data-uset]'); if (us){ S.uSet = S.uSet === us.dataset.uset ? null : us.dataset.uset; return renderCadList(); } }
+  if (t.closest('[data-uset-cancel]')){ S.uSet = null; return renderCadList(); }
   const um = t.closest('[data-umenu]'); if (um){ S.uMenu = S.uMenu === um.dataset.umenu ? null : um.dataset.umenu; return renderCadList(); }
   const pp = t.closest('[data-papel]'); if (pp){ S.uMenu = null; renderCadList(); const [uid, papel] = pp.dataset.papel.split(':'); updateDoc(doc(db, 'usuarios', uid), {papel}).then(() => toast('Acesso atualizado.'), handleWriteError); return; }
   if (t.id === 'b-seed') return saveCad(SEED);
@@ -2951,7 +2981,12 @@ $('gt-filt').onclick = e => { if (e.target.closest('#gt-fclear')) $('f-clear').c
 $('gt-wrap').addEventListener('keydown', e => { const r = e.target.closest('.gt-r[data-id]'); if (r && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openDrawer(r.dataset.id); } });
 { let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (S.loc && S.locView === 'cal') renderLocal(); else if (S.tab === 'gantt') renderGantt(); }, 150); }); }
 $('etq-q').oninput = () => renderAll();
+document.addEventListener('submit', e => {
+  const f = e.target.closest('[data-usetform]'); if (!f) return;
+  e.preventDefault(); if (isAdmin()) salvarSetoresDe(f.dataset.usetform, f);
+});
 document.addEventListener('change', e => {
+  { const ta = e.target.closest('.u-setedit input[name=tudo]'); if (ta){ const f = ta.form; f.classList.toggle('tudo', ta.checked); f.querySelectorAll('input[name=s]').forEach(i => { i.disabled = ta.checked; }); return; } }
   const cc = e.target.closest('[data-cad-coord]');
   if (cc){
     if (!isAdmin()) return;

@@ -1607,3 +1607,22 @@ button.pd-c{cursor:pointer}
 .gt-bar.ctr em{flex:0 1 auto;text-align:center}
 .gt-bar.nr em{padding:0;font-size:9px;text-overflow:clip;letter-spacing:-.2px}
 .gt-bar.sub.nr em{font-size:8.5px}
+
+/* v83: setores por pessoa (Cadastros → Usuários) */
+button.u-set{background:none;border:0;padding:0;cursor:pointer;display:inline-flex;align-items:center;gap:5px;text-align:left;font:inherit;font-size:12px;font-weight:600;color:var(--brand-text)}
+button.u-set svg{width:12px;height:12px;flex:none;opacity:.7}
+button.u-set:hover{text-decoration:underline}
+.u-setedit{margin:-4px 0 10px;padding:14px;border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;background:var(--surface-2,var(--bg));display:grid;gap:12px}
+.use-h{display:grid;gap:2px}.use-h span{font-size:12.5px;color:var(--muted)}
+.use-all{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--surface,transparent)}
+.use-all input{margin-top:3px;accent-color:var(--brand)}
+.use-all span{display:grid;gap:2px}.use-all small{font-size:12px;color:var(--muted)}
+.u-setedit.tudo .use-all{border-color:var(--brand)}
+.use-chips{display:flex;flex-wrap:wrap;gap:8px}
+.use-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;cursor:pointer;font-size:13px;font-weight:600;background:var(--surface,transparent)}
+.use-chip input{accent-color:var(--brand);margin:0}
+.use-chip span{display:grid;line-height:1.15}.use-chip small{font-size:10.5px;font-weight:500;color:var(--muted)}
+.use-chip:has(input:checked){border-color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,transparent)}
+.u-setedit.tudo .use-chips{opacity:.45;pointer-events:none}
+.u-setedit .ce-nota{margin:0}
+.u-setedit .ce-a{display:flex;justify-content:flex-end;gap:8px}
