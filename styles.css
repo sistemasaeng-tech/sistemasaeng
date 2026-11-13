@@ -1630,3 +1630,16 @@ button.u-set:hover{text-decoration:underline}
 .gt-bar.az.vm{background:var(--gt-vm);border-color:#eeb4b4}
 .gt-bar.az.vm em{color:#5c2a2a}
 .gt-leg .sw.vm{background:var(--gt-vm);border:1px solid #eeb4b4}
+
+/* v87: nova previsão da subtarefa — planejado fino em cima + previsão pontilhada com o progresso */
+.gt-r.gt-sub.has-prev .gt-n{min-height:36px}
+.gt-bar.sub.base{height:7px;margin-top:-12px;border-radius:4px;box-shadow:none}
+.gt-bar.sub.prev{height:15px;margin-top:-2px;border-radius:5px;background:color-mix(in srgb,var(--gt-az) 12%,var(--surface));border:1.5px dashed #5aa6e6;box-shadow:none}
+.gt-bar.sub.prev i{background:var(--gt-vd);opacity:1}
+.gt-bar.sub.prev em{color:var(--fg);text-shadow:none;font-size:10px}
+.gt-bar.sub.prev.hi em{color:#fff}
+.gt-leg .sw.prev{background:transparent;border:1.5px dashed var(--gt-az-f)}
+.sub-prev-f{display:grid;gap:8px;padding:10px 12px;border:1.5px dashed color-mix(in srgb,var(--gt-az-f) 60%,var(--line));border-radius:10px}
+.sub-prev-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.sub-prev-h b{font-size:13px}.sub-prev-h span{font-size:12px;color:var(--muted);flex:1}
+.sub-prev-tx{display:block;font-size:12px;font-weight:600;color:#6fb3ea}

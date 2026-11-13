@@ -103,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 86; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 87; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -768,7 +768,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=86');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=87');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, lugarTxt());
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt(), lugarTxt())});
@@ -802,7 +802,7 @@ function renderGantt(){
   $('gt-leg').innerHTML = ganttLegenda('Toque numa atividade para abrir, ou num dia para ver só as atividades dele.');
 }
 const ganttLegenda = dica => `<span><i class="sw az"></i>Período planejado</span><span><i class="sw vd"></i>Executado da subtarefa</span><span><i class="sw rs"></i>Resumo das subtarefas</span>`
-  + `<span><i class="sw vm"></i>Subtarefa com prazo ultrapassado</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">O status aparece no texto da barra. ${dica}</span>`;
+  + `<span><i class="sw vm"></i>Subtarefa com prazo ultrapassado</span><span><i class="sw prev"></i>Nova previsão</span><span><i class="sw now"></i>Hoje</span><span class="gt-leg-tx">O status aparece no texto da barra. ${dica}</span>`;
 // monta o gráfico (usado no calendário principal e no da página do local)
 function ganttHTML(D, g, wrap, opt = {}){
   const {ini, n, hoje} = D, G = D.G, mesLbl = D.mesLbl;
@@ -853,14 +853,16 @@ function ganttHTML(D, g, wrap, opt = {}){
         <div class="gt-t">${tail}${bar}</div></div>`;
       // subtarefas: sempre logo abaixo da atividade, em qualquer período
       if (subsOf(a).length){
-        const fimJan = addDays(ini, n - 1), fora = subsOf(a).filter(sb => (sb.fim || sb.noite) < ini || sb.noite > fimJan).length;
+        const fimJan = addDays(ini, n - 1), fora = subsOf(a).filter(sb => !subNaJanela(sb, ini, fimJan)).length;
         subsOf(a).forEach((sb, k) => {
-          const sf = sb.fim || sb.noite; if (sf < ini || sb.noite > fimJan) return;
+          const sf = sb.fim || sb.noite; if (!subNaJanela(sb, ini, fimJan)) return;
           const ss = subSt(sb), sav = Number(sb.avanco) || 0, j0 = di(sb.noite), j1 = di(sf), a0 = Math.max(0, j0), a1 = Math.min(n - 1, j1), w = (a1 - a0 + 1) * cw - 6, venc = subVenc(sb, hoje);
           const lab = sav ? `${sav}%` : ''; // % sempre dentro da barra, centralizado
-          h += `<div class="gt-r gt-sub${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(sb.titulo)} · ${fmtShort(sb.noite)}${sf !== sb.noite ? ' a ' + fmtShort(sf) : ''} · ${esc(STATUS[ss].label)} ${sav}% (subtarefa de ${esc(a.titulo)})">
+          const pv = subPrev(sb), k0 = pv ? di(pv.ini) : 0, k1 = pv ? di(pv.fim) : -1, p0 = Math.max(0, k0), p1 = Math.min(n - 1, k1), pw = (p1 - p0 + 1) * cw - 6;
+          h += `<div class="gt-r gt-sub${pv ? ' has-prev' : ''}${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0" title="${esc(sb.titulo)} · ${fmtShort(sb.noite)}${sf !== sb.noite ? ' a ' + fmtShort(sf) : ''} · ${esc(STATUS[ss].label)} ${sav}%${pv ? ` · nova previsão ${fmtShort(pv.ini)} a ${fmtShort(pv.fim)}` : ''} (subtarefa de ${esc(a.titulo)})">
             <div class="gt-n"><b><span class="gt-sk">${k + 1}</span><span class="gt-tt">${esc(sb.titulo)}</span></b></div>
-            <div class="gt-t"><span class="gt-bar sub ctr az vd${venc ? ' vm' : ''}${sav >= 75 ? ' hi' : ''}${w < 34 ? ' nr' : ''}${j0 < 0 ? ' cl' : ''}${j1 > n - 1 ? ' cr' : ''}${ss === 'concluida' ? ' ok' : ''}" style="left:${a0 * cw + 3}px;width:${w}px;--c:var(--gt-az-f)"><i style="width:${sav}%"></i><em>${lab}</em></span></div></div>`;
+            <div class="gt-t">${pv ? `${a1 >= a0 ? `<span class="gt-bar sub base az${venc ? ' vm' : ''}${j0 < 0 ? ' cl' : ''}${j1 > n - 1 ? ' cr' : ''}" style="left:${a0 * cw + 3}px;width:${w}px" title="Planejado: ${fmtShort(sb.noite)} a ${fmtShort(sf)}"></span>` : ''}${p1 >= p0 ? `<span class="gt-bar sub prev ctr vd${sav >= 75 ? ' hi' : ''}${pw < 34 ? ' nr' : ''}${k0 < 0 ? ' cl' : ''}${k1 > n - 1 ? ' cr' : ''}" style="left:${p0 * cw + 3}px;width:${pw}px" title="Nova previsão: ${fmtShort(pv.ini)} a ${fmtShort(pv.fim)}"><i style="width:${sav}%"></i><em>${lab}</em></span>` : ''}`
+              : `<span class="gt-bar sub ctr az vd${venc ? ' vm' : ''}${sav >= 75 ? ' hi' : ''}${w < 34 ? ' nr' : ''}${j0 < 0 ? ' cl' : ''}${j1 > n - 1 ? ' cr' : ''}${ss === 'concluida' ? ' ok' : ''}" style="left:${a0 * cw + 3}px;width:${w}px;--c:var(--gt-az-f)"><i style="width:${sav}%"></i><em>${lab}</em></span>`}</div></div>`;
         });
         if (fora) h += `<div class="gt-r gt-sub gt-sub-fora${gr.parent ? ' in-child' : ''}" data-id="${esc(a.id)}" role="button" tabindex="0"><div class="gt-n"><b><span class="gt-tt">${fora === subsOf(a).length ? (fora === 1 ? '1 subtarefa' : `${fora} subtarefas`) : `+ ${fora} ${fora === 1 ? 'subtarefa' : 'subtarefas'}`} fora destes dias</span></b></div><div class="gt-t"></div></div>`;
       }
@@ -1427,6 +1429,9 @@ const subsOf = a => Array.isArray(a?.subtarefas) ? a.subtarefas : [];
 const subSt = s => (Number(s.avanco) || 0) >= 100 ? 'concluida' : (Number(s.avanco) || 0) > 0 ? 'andamento' : 'programada';
 const subDur = s => Math.max(1, nightsBetween(s.noite, s.fim || s.noite) + 1);
 const subVenc = (s, hoje = defaultNight()) => (Number(s.avanco) || 0) < 100 && (s.fim || s.noite) < hoje;
+// nova previsão (reprogramação) da subtarefa: novas datas de início e término; o planejado original continua registrado
+const subPrev = s => s && s.prevIni && s.prevFim ? {ini:s.prevIni, fim:s.prevFim} : null;
+const subNaJanela = (s, ini, fimJan) => { const p = subPrev(s); return ((s.fim || s.noite) >= ini && s.noite <= fimJan) || !!(p && p.fim >= ini && p.ini <= fimJan); };
 function rollupSubs(lista){
   if (!lista.length) return null;
   const noite = lista.map(s => s.noite).sort()[0], fim = lista.map(s => s.fim || s.noite).sort().pop();
@@ -1470,6 +1475,13 @@ function renderSubs(){
         <label><span>Término</span><input type="date" name="fim" value="${esc(s.fim || s.noite || '')}" required></label>
         <label><span>Executado</span><span class="sub-pct"><input type="number" name="avanco" min="0" max="100" step="5" inputmode="numeric" value="${Number(s.avanco) || 0}">%</span></label>
       </div>
+      <div class="sub-prev-f${s.prevIni ? ' on' : ''}">
+        <div class="sub-prev-h"><b>Nova previsão</b><span>opcional · reprograma a subtarefa sem apagar o planejado</span>${s.prevIni ? '<button type="button" class="link-btn" data-sub-prev-clear>Remover</button>' : ''}</div>
+        <div class="sub-f-row">
+          <label><span>Novo início</span><input type="date" name="prevIni" value="${esc(s.prevIni || '')}"></label>
+          <label><span>Novo término</span><input type="date" name="prevFim" value="${esc(s.prevFim || '')}"></label>
+        </div>
+      </div>
       <div class="sub-f-a">${s.id ? `<button type="button" class="btn ghost sub-del" data-sub-del="${esc(s.id)}">${S.subDel === s.id ? 'Confirmar exclusão' : 'Excluir'}</button>` : ''}<span class="sp"></span>
         <button type="button" class="btn ghost" data-sub-cancel>Cancelar</button><button type="submit" class="btn pri">${s.id ? 'Salvar' : 'Adicionar'}</button></div>
     </form>`;
@@ -1477,7 +1489,7 @@ function renderSubs(){
     return `<div class="sub-row ${st}${v ? ' venc' : ''}">
       <span class="sub-i">${i + 1}</span>
       ${w ? `<button type="button" class="sub-ck" data-sub-ck="${esc(s.id)}" aria-pressed="${st === 'concluida'}" aria-label="${st === 'concluida' ? 'Reabrir' : 'Concluir'} ${esc(s.titulo)}" title="${st === 'concluida' ? 'Reabrir' : 'Marcar como concluída (100%)'}">${ICK}</button>` : `<span class="sub-ck ro" aria-hidden="true">${st === 'concluida' ? ICK : ''}</span>`}
-      <div class="sub-tx"><b>${esc(s.titulo)}</b><span>${fmtShort(s.noite)}${(s.fim || s.noite) !== s.noite ? ' → ' + fmtShort(s.fim) : ''} · ${d} ${d === 1 ? 'dia' : 'dias'}${v ? ' · <em>vencida</em>' : ''}</span></div>
+      <div class="sub-tx"><b>${esc(s.titulo)}</b><span>${fmtShort(s.noite)}${(s.fim || s.noite) !== s.noite ? ' → ' + fmtShort(s.fim) : ''} · ${d} ${d === 1 ? 'dia' : 'dias'}${v ? ' · <em>vencida</em>' : ''}</span>${subPrev(s) ? `<span class="sub-prev-tx">Nova previsão: ${fmtShort(s.prevIni)}${s.prevFim !== s.prevIni ? ' → ' + fmtShort(s.prevFim) : ''}</span>` : ''}</div>
       <div class="sub-av"><b>${av ? av + '%' : ''}</b><span class="prog"><i style="width:${av}%"></i></span></div>
       ${w ? `<button type="button" class="sub-ed" data-sub-ed="${esc(s.id)}" aria-label="Editar ${esc(s.titulo)}" title="Editar">${IED}</button>` : ''}
     </div>`; };
@@ -1492,6 +1504,7 @@ document.addEventListener('click', e => {
   if (t.closest('[data-sub-add]')){ S.subEd = 'novo'; S.subDel = null; S.subFoco = true; return renderSubs(); }
   { const x = t.closest('[data-sub-ed]'); if (x){ S.subEd = x.dataset.subEd; S.subDel = null; S.subFoco = true; return renderSubs(); } }
   if (t.closest('[data-sub-cancel]')){ S.subEd = null; S.subDel = null; return renderSubs(); }
+  { const x = t.closest('[data-sub-prev-clear]'); if (x){ const f = x.closest('form'); f.elements.prevIni.value = ''; f.elements.prevFim.value = ''; x.remove(); return; } }
   { const x = t.closest('[data-sub-del]'); if (x){ const sid = x.dataset.subDel;
       if (S.subDel !== sid){ S.subDel = sid; return renderSubs(); }
       return salvarSubs(S.openId, cur => { const s = subsOf(cur).find(z => z.id === sid); if (!s) return null; return {lista: subsOf(cur).filter(z => z.id !== sid), ev:{acao:'excluiu', nome:s.titulo}}; }, 'Subtarefa excluída.'); } }
@@ -1506,20 +1519,27 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const sid = f.dataset.subForm, titulo = f.elements.titulo.value.trim().slice(0, 200), noite = f.elements.noite.value, fim = f.elements.fim.value || noite;
   const avanco = Math.max(0, Math.min(100, Math.round(Number(f.elements.avanco.value) || 0)));
+  let prevIni = f.elements.prevIni.value, prevFim = f.elements.prevFim.value;
+  if (prevIni && !prevFim) prevFim = prevIni;
+  if (!prevIni && prevFim) return toast('Informe o novo início da nova previsão.');
+  if (prevFim < prevIni) return toast('Na nova previsão, o término não pode ser antes do início.');
   if (!titulo) return toast('Dê um nome à subtarefa.');
   if (!noite) return toast('Informe o início da subtarefa.');
   if (fim < noite) return toast('O término não pode ser antes do início.');
   if (sid === 'novo')
-    return salvarSubs(S.openId, cur => ({lista: [...subsOf(cur), {id: Math.random().toString(36).slice(2, 10), titulo, noite, fim, avanco}], ev:{acao:'criou', nome:titulo, noite, fim, avanco}}), 'Subtarefa adicionada.');
+    return salvarSubs(S.openId, cur => ({lista: [...subsOf(cur), {id: Math.random().toString(36).slice(2, 10), titulo, noite, fim, avanco, ...(prevIni ? {prevIni, prevFim} : {})}], ev:{acao:'criou', nome:titulo, noite, fim, avanco}}), 'Subtarefa adicionada.');
   salvarSubs(S.openId, cur => {
     const lista = subsOf(cur).map(z => ({...z})), s = lista.find(z => z.id === sid); if (!s) return null;
     const alt = [];
     if (s.titulo !== titulo) alt.push({campo:'nome', de:s.titulo, para:titulo});
     if (s.noite !== noite) alt.push({campo:'início', de:fmtShort(s.noite), para:fmtShort(noite)});
     if ((s.fim || s.noite) !== fim) alt.push({campo:'término', de:fmtShort(s.fim || s.noite), para:fmtShort(fim)});
+    const prevTx = (i, f2) => i ? `${fmtShort(i)}${f2 && f2 !== i ? ' a ' + fmtShort(f2) : ''}` : 'sem previsão';
+    if ((s.prevIni || '') !== prevIni || (s.prevFim || '') !== (prevIni ? prevFim : '')) alt.push({campo:'nova previsão', de:prevTx(s.prevIni, s.prevFim), para:prevTx(prevIni, prevFim)});
     const deAv = Number(s.avanco) || 0;
     if (!alt.length && deAv === avanco){ S.subEd = null; renderSubs(); toast('Nada mudou.'); return null; }
     const nomeAnt = s.titulo; Object.assign(s, {titulo, noite, fim, avanco}); delete s.avAnt;
+    if (prevIni) Object.assign(s, {prevIni, prevFim}); else { delete s.prevIni; delete s.prevFim; }
     return {lista, ev: alt.length ? {acao:'editou', nome:nomeAnt, alt, ...(deAv !== avanco ? {de:deAv, para:avanco} : {})} : {acao:'avanco', nome:titulo, de:deAv, para:avanco}};
   }, 'Subtarefa salva.');
 });
@@ -1926,7 +1946,7 @@ async function fichaCtx(a, fs, hs, max = 1600, onFoto = () => {}){
   ].filter(Boolean);
   return {titulo: a.titulo || '', status: a.status, statusLabel: STATUS[a.status]?.label || a.status, avanco: avOf(a), info,
     detalhes: a.detalhes || '', motivo: a.motivo ? `${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}` : '', obs: a.ultimaObs || '', fotos, hist,
-    subtarefas: subsOf(a).map(sb => ({titulo: sb.titulo, inicio: fmtShort(sb.noite), fim: fmtShort(sb.fim || sb.noite), dias: subDur(sb), avanco: Number(sb.avanco) || 0, status: subSt(sb), statusLabel: STATUS[subSt(sb)].label, vencida: subVenc(sb)}))};
+    subtarefas: subsOf(a).map(sb => ({titulo: sb.titulo, inicio: fmtShort(sb.noite), fim: fmtShort(sb.fim || sb.noite), dias: subDur(sb), prev: subPrev(sb) ? `${fmtShort(sb.prevIni)} a ${fmtShort(sb.prevFim)}` : '', avanco: Number(sb.avanco) || 0, status: subSt(sb), statusLabel: STATUS[subSt(sb)].label, vencida: subVenc(sb)}))};
 }
 async function exportAtividadePdf(){
   const a = all().get(S.openId); if (!a || gerandoAtv) return;
@@ -1935,7 +1955,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=86');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=87');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -2082,7 +2102,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=86');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=87');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, 'Calendário de atividades', '', arquivo, m.nome), partes: ganttPartes(S.lgt, acts, 'Calendário de atividades', '', m.nome)});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -2156,7 +2176,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=86');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=87');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2529,7 +2549,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=86');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=87');
       const tipoC = nDias === 15 ? 'CRONOGRAMA QUINZENAL' : nDias === 7 ? 'CRONOGRAMA SEMANAL' : 'CRONOGRAMA';
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2787,7 +2807,7 @@ async function montarExportIA({per, conc, filt}){
       if (a.motivo) ln(`- Motivo atual: ${a.motivo}${a.pct ? ` · ${a.pct}% executado` : ''}`);
       if (a.ultimaObs) ln(`- Última observação: ${String(a.ultimaObs).replace(/\s*\n\s*/g, ' / ')}`);
       ln(`- Dono: ${nameOf(donoOf(a))}`);
-      if (subsOf(a).length){ ln(`- Subtarefas (${subsOf(a).filter(x => subSt(x) === 'concluida').length}/${subsOf(a).length} concluídas):`); subsOf(a).forEach((sb, i) => ln(`  ${i + 1}. ${sb.titulo} — ${fmtShort(sb.noite)} a ${fmtShort(sb.fim || sb.noite)} — ${Number(sb.avanco) || 0}%`)); }
+      if (subsOf(a).length){ ln(`- Subtarefas (${subsOf(a).filter(x => subSt(x) === 'concluida').length}/${subsOf(a).length} concluídas):`); subsOf(a).forEach((sb, i) => ln(`  ${i + 1}. ${sb.titulo} — ${fmtShort(sb.noite)} a ${fmtShort(sb.fim || sb.noite)}${subPrev(sb) ? ` (nova previsão: ${fmtShort(sb.prevIni)} a ${fmtShort(sb.prevFim)})` : ''} — ${Number(sb.avanco) || 0}%`)); }
       ln(`- Inserida por ${nameOf(a.criadoPor)}${a.criadoEm ? ' em ' + fmtTs(a.criadoEm) : ''}${a.atualizadoPor ? ` · última alteração por ${nameOf(a.atualizadoPor)}${a.atualizadoEm ? ' em ' + fmtTs(a.atualizadoEm) : ''}` : ''}`);
       if (hs.length){ ln('- Histórico:'); for (const ev of hs) ln(`  - ${fmtTs(ev.t)} — ${autorEv(ev)}: ${evTxt(ev)}`); }
     }
@@ -2827,7 +2847,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=86');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=87');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
