@@ -497,13 +497,12 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       color(C.ink); font('bold', 6.6); text(fit(a.titulo, cIni - lx - 2), lx, r.y + 3.3);
       const meta = [ctx.lojaDe ? ctx.lojaDe(a) : '', ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.dono || a.criadoPor)].filter(Boolean).join(' · ');
       color(C.faint); font('normal', 5.4); text(fit(meta, cIni - M - 4 - ix), M + 2 + ix, r.y + 6.2);
-      const atrasada = a.aberta && ctx.fimOf(a) < hoje; // o status não muda: só a cor da barra
       datas(r.y, rowH, a.noite, ctx.fimOf(a), C.ink);
       const bh = 4.4, by = r.y + (rowH - bh) / 2;
       const subsA = Array.isArray(a.subtarefas) ? a.subtarefas : [];
       if (subsA.length && e0 >= s0){
         // atividade com subtarefas = barra-resumo (como no Project): o andamento real está nas subtarefas
-        const atr = subsA.filter(sb => (Number(sb.avanco) || 0) < 100 && (sb.fim || sb.noite) < hoje).length, rc = atr || atrasada ? VMF : AZF;
+        const atr = subsA.filter(sb => (Number(sb.avanco) || 0) < 100 && (sb.fim || sb.noite) < hoje).length, rc = AZF;
         const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2, yb = by + bh - 1.6;
         fill(rc); doc.rect(x0, yb, w, 1.3, 'F');
         if (i0 >= 0) doc.rect(x0, yb - .9, .7, 2.6, 'F');
@@ -514,7 +513,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       // barra planejada com o avanço
       if (e0 >= s0){
         const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2;
-        fill(atrasada ? VM : AZ); doc.roundedRect(x0, by, w, bh, 1, 1, 'F');
+        fill(AZ); doc.roundedRect(x0, by, w, bh, 1, 1, 'F'); // atividade fica sempre azul; só a subtarefa atrasada fica vermelho clarinho
         const lab = w > 34 ? `${ctx.statusLabel(a.status)}${av ? ` · ${av}%` : ''}` : av ? `${av}%` : '';
         if (lab) txtBarra(lab, x0, w, by + bh / 2, 5.6, true);
       }
@@ -527,7 +526,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     fill(VD); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); text('Executado da subtarefa', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Executado da subtarefa') + 3;
     fill(AZF); doc.rect(lx, ly - .9, 5, 1, 'F'); doc.rect(lx, ly - 1.7, .5, 1.8, 'F'); doc.rect(lx + 4.5, ly - 1.7, .5, 1.8, 'F'); text(t('Resumo das subtarefas'), lx + 6.2, ly); lx += 8 + doc.getTextWidth(t('Resumo das subtarefas')) + 3;
     fill(VM); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F');
-    color(C.muted); text(t('Prazo ultrapassado'), lx + 6.2, ly); lx += 8 + doc.getTextWidth(t('Prazo ultrapassado')) + 3;
+    color(C.muted); text(t('Subtarefa com prazo ultrapassado'), lx + 6.2, ly); lx += 8 + doc.getTextWidth(t('Subtarefa com prazo ultrapassado')) + 3;
     fill(LAR); doc.rect(lx + 2, ly - 2.6, .6, 3.4, 'F'); text('Hoje', lx + 4, ly); lx += 14;
     color(C.faint); text('O status aparece no texto da barra.', lx, ly);
   });
