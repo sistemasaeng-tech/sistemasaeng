@@ -103,7 +103,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&l
 const cvar = k => `var(${STATUS[k]?.c || '--faint'})`;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 4000); }
 const SNAP = {serverTimestamps:'estimate'};
-const APP_VER = 83; // aparece no menu do usuário para conferir a atualização
+const APP_VER = 84; // aparece no menu do usuário para conferir a atualização
 
 /* ================= firebase ================= */
 const configOk = firebaseConfig && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('COLE');
@@ -149,8 +149,7 @@ const nameOf = u => !u ? 'Sem identificação' : (S.usuarios[u]?.nome || (u === 
 const roleOf = u => S.usuarios[u]?.funcao || '';
 // Dono: quem responde pela atividade (o administrador escolhe; nas antigas, é quem inseriu)
 const donoOf = a => a?.dono || a?.criadoPor || '';
-const coordSetor = cod => (S.cad.setores.find(x => x.codigo === cod) || {}).coord || '';
-// setores que cada pessoa acompanha no Início: os que coordena (Cadastros → Setores) + os marcados em Cadastros → Usuários.
+// setores que cada pessoa acompanha no Início: os marcados em Cadastros → Usuários (+ coord antigo, até a migração)
 // '*' = todos os setores (vê tudo, inclusive pilares e locais sem setor) — ex.: orçamentista, coordenador master
 const acessoDe = u => { const v = (S.cad.acesso || {})[u]; return Array.isArray(v) ? v : []; };
 const veTudo = u => acessoDe(u).includes('*');
@@ -307,7 +306,7 @@ function startApp(){
   S.unsubs.push(onSnapshot(doc(db, 'config', 'cadastros'), s => {
     const v = s.exists() ? s.data(SNAP) : {};
     S.cad = {fornecedores:v.fornecedores||[], setores:v.setores||[], niveis:v.niveis||[], pilares:v.pilares||[], locais:v.locais||[], acesso:v.acesso||{}};
-    S.cadLoaded = true; fillFilterOptions(); renderAll();
+    S.cadLoaded = true; fillFilterOptions(); renderAll(); migrarCoordenadores();
   }, fail('cadastros')));
   subscribeWindow();
   S.unsubs.push(onSnapshot(query(collection(db, 'atividades'), where('temEtiqueta', '==', true), limit(3000)), s => {
@@ -769,7 +768,7 @@ async function exportGanttPdf(){
   if (!D.acts.length){ toast('Nenhuma atividade no calendário deste período.'); return; }
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
-    const { gerarGanttPDF } = await import('./relatorio.js?v=83');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=84');
     const Z = {sem:'Semana', qui:'Quinzena', mes:'Mês'};
     const base = ganttCtx(D, S.gt, 'Calendário de atividades', filtrosTxt(), `Calendario_Atividades_${D.ini}_a_${D.fim}${D.ft ? '_' + D.ft : ''}.pdf`, lugarTxt());
     await gerarGanttPDF({...base, partes: ganttPartes(S.gt, null, 'Calendário de atividades', filtrosTxt(), lugarTxt())});
@@ -986,7 +985,7 @@ const ICONS = {
 const ico = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>`;
 const CAD_DEF = [
   {key:'fornecedores', title:'Fornecedores', hint:'Empresas que atuam na obra.', cols:[['nome','Nome da empresa'],['disciplina','Disciplina (opcional)']], k:'nome', v:'disciplina'},
-  {key:'setores', title:'Setores', hint:'Código, frentes principais e o coordenador responsável. O coordenador vê no Início todas as atividades dos setores dele.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
+  {key:'setores', title:'Setores', hint:'Código e frentes principais de cada setor. Quem acompanha cada setor no Início é definido em Cadastros → Usuários.', cols:[['codigo','Código (ex.: D1)'],['descricao','Descrição']], k:'codigo', v:'descricao'},
   {key:'niveis', title:'Níveis', hint:'Cotas de nível usadas nos relatos (m).', cols:[['valor','Nível (ex.: 114,30)']], k:'valor'},
   {key:'pilares', title:'Pilares', hint:'Cadastre o mesmo pilar uma vez para cada loja ou ambiente que ele atravessa (ex.: P34 · Loja Lenny e P34 · Loja Corello).', cols:[['codigo','Pilar (ex.: P34)'],['eixo','Eixo (ex.: M/11)'],['referencia','Loja / ambiente'],['setor','Setor']], k:'codigo', v:'referencia', v2:'eixo'},
   {key:'locais', title:'Locais do shopping', hint:'Lojas, mall, estacionamento e áreas de apoio. Informe o setor da obra a que cada local pertence: ao filtrar o setor, os trabalhos do local também aparecem.', cols:[['nome','Nome do local'],['setor','Setor']], k:'nome'},
@@ -1062,7 +1061,6 @@ function renderCadList(){
       <div class="ce-a"><button type="button" class="btn" data-edit-cancel>Cancelar</button><button type="submit" class="btn pri">Salvar</button></div>
     </form>` : `<div class="cad-item">
       <div class="ci-tx"><b>${esc(x.k)}</b>${x.v ? `<span>${esc(x.v)}</span>` : ''}</div>
-      ${d.key === 'setores' ? (admin ? `<select class="ci-setor ci-coord" data-cad-coord="${x.i}" aria-label="Coordenador do Setor ${esc(x.k)}"><option value="">Sem coordenador</option>${aprovados(x.o.coord).map(id => `<option value="${esc(id)}" ${id === (x.o.coord || '') ? 'selected' : ''}>${esc(shortName(nameOf(id)))}</option>`).join('')}</select>` : (x.o.coord ? `<span class="ci-st">Coord.: ${esc(shortName(nameOf(x.o.coord)))}</span>` : '')) : ''}
       ${d.key === 'pilares' || d.key === 'locais' ? (admin ? `<select class="ci-setor" data-cad-setor="${d.key}:${x.i}" aria-label="Setor de ${esc(x.k)}"><option value="">Sem setor</option>${S.cad.setores.map(z => `<option value="${esc(z.codigo)}" ${z.codigo === (x.o.setor || '') ? 'selected' : ''}>Setor ${esc(z.codigo)}</option>`).join('')}</select>` : (x.o.setor ? `<span class="ci-st">Setor ${esc(x.o.setor)}</span>` : '')) : ''}
       ${admin ? (S.cadDel === `${d.key}:${x.i}` ? `<div class="ci-conf"><span>Remover?</span><button type="button" class="btn danger" data-del="${d.key}:${x.i}">Sim</button><button type="button" class="btn" data-del-cancel>Não</button></div>`
         : `<button type="button" class="x ed" data-edit-ask="${d.key}:${x.i}" aria-label="Editar ${esc(x.k)}" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></button><button type="button" class="x" data-del-ask="${d.key}:${x.i}" aria-label="Remover ${esc(x.k)}" title="Remover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`) : ''}
@@ -1080,13 +1078,21 @@ function userActions(id, papel){
   };
   return `<span class="ro">${esc(nameOf(id))} · ${esc(PAPEIS[papel] || papel)}</span>` + (L[papel] || L.bloqueado).join('');
 }
+// v84: o coordenador por setor (Cadastros → Setores) saiu; passa uma vez para os setores da pessoa (Cadastros → Usuários)
+function migrarCoordenadores(){
+  if (!isAdmin() || S.migrandoCoord || !S.cad.setores.some(z => z && z.coord)) return;
+  S.migrandoCoord = true;
+  const acesso = {...(S.cad.acesso || {})};
+  for (const z of S.cad.setores){ if (!z || !z.coord) continue; const v = Array.isArray(acesso[z.coord]) ? acesso[z.coord] : []; if (!v.includes('*') && !v.includes(z.codigo)) acesso[z.coord] = [...v, z.codigo]; }
+  const setores = S.cad.setores.map(z => z && z.coord ? (({coord, ...r}) => r)(z) : z);
+  saveCad({...S.cad, setores, acesso}).finally(() => { S.migrandoCoord = false; });
+}
 function userSetoresForm(id, u){
   const tudo = veTudo(id), sel = new Set(setoresDe(id));
   return `<form class="u-setedit${tudo ? ' tudo' : ''}" data-usetform="${id}">
     <div class="use-h"><b>Setores de ${esc(primeiroNome(u.nome) || u.nome)}</b><span>As atividades desses setores aparecem no Início dele(a).</span></div>
     <label class="use-all"><input type="checkbox" name="tudo" ${tudo ? 'checked' : ''}><span><b>Todos os setores</b><small>Vê tudo, inclusive pilares e locais sem setor (ex.: orçamentista, coordenador master)</small></span></label>
-    <div class="use-chips">${S.cad.setores.map(z => `<label class="use-chip"><input type="checkbox" name="s" value="${esc(z.codigo)}" ${sel.has(z.codigo) ? 'checked' : ''} ${tudo ? 'disabled' : ''}><span>Setor ${esc(z.codigo)}${z.coord && z.coord !== id ? `<small>coord. ${esc(shortName(nameOf(z.coord)))}</small>` : z.coord === id ? '<small>coordenador</small>' : ''}</span></label>`).join('') || '<span class="ro">Cadastre os setores primeiro.</span>'}</div>
-    <p class="ce-nota">Desmarcar um setor em que a pessoa é coordenadora tira ela da coordenação desse setor.</p>
+    <div class="use-chips">${S.cad.setores.map(z => `<label class="use-chip"><input type="checkbox" name="s" value="${esc(z.codigo)}" ${sel.has(z.codigo) ? 'checked' : ''} ${tudo ? 'disabled' : ''}><span>Setor ${esc(z.codigo)}${z.descricao ? `<small>${esc(z.descricao)}</small>` : ''}</span></label>`).join('') || '<span class="ro">Cadastre os setores primeiro.</span>'}</div>
     <div class="ce-a"><button type="button" class="btn" data-uset-cancel>Cancelar</button><button type="submit" class="btn pri">Salvar</button></div>
   </form>`;
 }
@@ -1339,7 +1345,7 @@ function renderInicio(){
       <section class="gf"><header><h3>Concluídas</h3><span>últimos 14 dias</span></header>${grafColunas(P.diasConc, 'var(--st-ok)', ['concluída', 'concluídas'], hoje)}</section>
       <section class="gf"><header><h3>Programação</h3><span>em curso nos próximos 14 dias</span></header>${grafColunas(P.diasProg, 'var(--st-and)', ['atividade em curso', 'atividades em curso'], hoje, (n => `${n} ${n === 1 ? 'atividade programada' : 'atividades programadas'} no período (sem as vencidas)`)(P.ab.filter(a => a.noite <= addDays(hoje, 13) && fimOf(a) >= hoje).length))}</section>
     </div>` : ''}
-    ${!P.mine.length ? `<div class="empty ini-empty"><b>${eu ? (setoresDe(u).length ? 'Nenhuma atividade nos seus setores.' : 'Você ainda não tem setor nem atividades.') : 'Nenhuma atividade.'}</b><span>${eu && !setoresDe(u).length ? (isAdmin() ? 'Defina os coordenadores em Cadastros → Setores.' : 'O administrador define o seu setor em Cadastros. Enquanto isso, veja todas na aba Atividades.') : ''}</span>${eu ? '<button type="button" class="btn" data-ini-tab="noite">Ver todas as atividades</button>' : ''}</div>` : ''}
+    ${!P.mine.length ? `<div class="empty ini-empty"><b>${eu ? (setoresDe(u).length ? 'Nenhuma atividade nos seus setores.' : 'Você ainda não tem setor nem atividades.') : 'Nenhuma atividade.'}</b><span>${eu && !setoresDe(u).length ? (isAdmin() ? 'Defina os setores de cada pessoa em Cadastros → Usuários.' : 'O administrador define o seu setor em Cadastros. Enquanto isso, veja todas na aba Atividades.') : ''}</span>${eu ? '<button type="button" class="btn" data-ini-tab="noite">Ver todas as atividades</button>' : ''}</div>` : ''}
     ${P.mine.length && !P.ab.length ? '<div class="empty ini-empty"><b>Tudo em dia.</b><span>Nenhuma atividade em aberto.</span></div>' : ''}
     ${sec('Precisam de atenção', P.atencao, {cls:'ini-at', max:6, k:'at'})}
     ${sec('Hoje', P.hojeL)}
@@ -1933,7 +1939,7 @@ async function exportAtividadePdf(){
     const fs = [...(S.dwFotos || [])].sort(ordFotos);
     const ficha = await fichaCtx(a, fs, [...S.dwHist], 1600);
     const now = new Date(), hoje = defaultNight(), arquivo = `Atividade_${slugArq(a.titulo, 50) || 'atividade'}_${hoje}.pdf`;
-    const { gerarAtividadePDF } = await import('./relatorio.js?v=83');
+    const { gerarAtividadePDF } = await import('./relatorio.js?v=84');
     await gerarAtividadePDF({...ficha, logoUrl: 'logo-saeng.png', arquivo,
       emitidoEm: `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} às ${pad(now.getHours())}:${pad(now.getMinutes())}`, emitidoPor: S.perfil?.nome || 'Usuário'});
     toast('PDF da atividade gerado.');
@@ -2080,7 +2086,7 @@ async function exportLocalCalPdf(){
   gerandoGt = true; toast('Gerando o PDF do calendário…');
   try {
     const arquivo = `Calendario_${slugArq(m.nome, 50) || 'local'}_${D.ini}_a_${D.fim}.pdf`;
-    const { gerarGanttPDF } = await import('./relatorio.js?v=83');
+    const { gerarGanttPDF } = await import('./relatorio.js?v=84');
     await gerarGanttPDF({...ganttCtx(D, S.lgt, 'Calendário de atividades', '', arquivo, m.nome), partes: ganttPartes(S.lgt, acts, 'Calendário de atividades', '', m.nome)});
     toast('PDF do calendário gerado.');
     logExport('calendario', {arquivo, qtd: D.acts.length, periodo: `${m.tipo} ${m.nome} · ${fmtShort(D.ini)} a ${fmtShort(D.fim)}/${D.fim.slice(0, 4)}`.slice(0, 200)});
@@ -2154,7 +2160,7 @@ async function gerarPdfLocal(k, op, prog){
     }
   }
   prog('Montando o PDF…');
-  const { gerarLocalPDF } = await import('./relatorio.js?v=83');
+  const { gerarLocalPDF } = await import('./relatorio.js?v=84');
   await gerarLocalPDF({
     tipo: m.tipo, nome: m.nome, sub: m.sub, tituloCapa: k[0] === 'e' ? 'Relatório da etiqueta' : 'Relatório do local',
     escopo: `${lista.length} ${lista.length === 1 ? 'atividade' : 'atividades'} · ${op.enc ? 'em aberto, concluídas e canceladas' : 'somente em aberto'} · situação em ${fmtShort(hoje)}/${hoje.slice(0, 4)}`,
@@ -2527,7 +2533,7 @@ function openCronograma(opts = {}){
     const now = new Date(), hojeBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
     const btn = $('cf').querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Gerando…';
     try {
-      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=83');
+      const { gerarCronogramaXLSX } = await import('./cronograma.js?v=84');
       const tipoC = nDias === 15 ? 'CRONOGRAMA QUINZENAL' : nDias === 7 ? 'CRONOGRAMA SEMANAL' : 'CRONOGRAMA';
       const r = await gerarCronogramaXLSX({
         inicio: ini, nDias, grupos, emitidoPor: S.perfil?.nome || '',
@@ -2825,7 +2831,7 @@ async function exportPdf(){
   if (!acts.length){ toast(filtrosTxt() ? 'Nenhuma atividade em aberto com esses filtros.' : 'Não há atividades em aberto para o relatório.'); return; }
   gerandoPdf = true; toast('Gerando o relatório…');
   try {
-    const { gerarRelatorioPDF } = await import('./relatorio.js?v=83');
+    const { gerarRelatorioPDF } = await import('./relatorio.js?v=84');
     const now = new Date(), hoje = defaultNight();
     await gerarRelatorioPDF({
       acts, hoje, hojeLabel: fmtShort(hoje) + '/' + hoje.slice(0,4),
@@ -2987,14 +2993,6 @@ document.addEventListener('submit', e => {
 });
 document.addEventListener('change', e => {
   { const ta = e.target.closest('.u-setedit input[name=tudo]'); if (ta){ const f = ta.form; f.classList.toggle('tudo', ta.checked); f.querySelectorAll('input[name=s]').forEach(i => { i.disabled = ta.checked; }); return; } }
-  const cc = e.target.closest('[data-cad-coord]');
-  if (cc){
-    if (!isAdmin()) return;
-    const i = Number(cc.dataset.cadCoord), arr = [...(S.cad.setores || [])], it = arr[i]; if (!it) return;
-    arr[i] = {...(typeof it === 'string' ? {codigo:it} : it), coord:cc.value};
-    saveCad({...S.cad, setores:arr}).then(ok => ok && toast(cc.value ? `${shortName(nameOf(cc.value))} agora coordena o Setor ${arr[i].codigo}.` : `Setor ${arr[i].codigo} sem coordenador.`));
-    return;
-  }
   const cs = e.target.closest('[data-cad-setor]');
   if (cs){
     const [key, i] = cs.dataset.cadSetor.split(':'), arr = [...(S.cad[key] || [])], it = arr[Number(i)];

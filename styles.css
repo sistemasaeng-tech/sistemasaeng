@@ -1383,9 +1383,7 @@ button.pd-c{cursor:pointer}
 }
 
 /* v51: coordenador do setor */
-.ci-coord{max-width:160px}
 .u-set{display:block;font-size:12px;color:var(--brand-text);font-weight:600;margin-top:1px}
-@media (max-width:760px){ .ci-coord{max-width:120px} }
 
 /* v55: desfazer importação */
 .imp-ja{border:1px solid color-mix(in srgb,var(--st-nao) 45%,var(--line));background:color-mix(in srgb,var(--st-nao) 8%,transparent);border-radius:12px;padding:12px 14px;margin:0 0 14px;font-size:13.5px}
