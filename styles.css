@@ -1624,3 +1624,9 @@ button.u-set:hover{text-decoration:underline}
 .u-setedit.tudo .use-chips{opacity:.45;pointer-events:none}
 .u-setedit .ce-nota{margin:0}
 .u-setedit .ce-a{display:flex;justify-content:flex-end;gap:8px}
+
+/* v85: atrasada = barra vermelho clarinho, discreta (o status não muda) */
+:root{--gt-vm:#f8cdcd;--gt-vm-f:#de8c8c}
+.gt-bar.az.vm{background:var(--gt-vm);border-color:#eeb4b4}
+.gt-bar.az.vm em{color:#5c2a2a}
+.gt-leg .sw.vm{background:var(--gt-vm);border:1px solid #eeb4b4}

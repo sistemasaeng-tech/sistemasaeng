@@ -365,7 +365,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
   const hex = h => { const m = String(h).replace('#', ''); return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)]; };
   const COR = {...Object.fromEntries(Object.entries(ST).map(([k, v]) => [k, v.c])), concluida:[46,160,100], cancelada:[122,133,151]};
   const NAO = ST.nao_iniciada.c, LAR = C.laranja;
-  const AZ = [168,211,243], AZF = [47,134,207], VD = [47,166,90]; // barras em azul claro; executado em azul mais forte
+  const AZ = [168,211,243], AZF = [47,134,207], VD = [47,166,90], VM = [248,205,205], VMF = [222,140,140]; // VM: vermelho clarinho = atrasada (discreto) // barras em azul claro; executado em azul mais forte
   const {ini, n, hoje, G} = ctx;
   const days = Array.from({length:n}, (_, i) => ctx.addDays(ini, i));
   const di = s => ctx.nightsBetween(ini, s), ti = di(hoje);
@@ -443,20 +443,20 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     });
     stroke(C.line); doc.setLineWidth(.3); doc.line(M, gy, W - M, gy);
     // linhas
-    const spanOf = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => Math.max(di(ctx.fimOf(a)), a.aberta && ctx.fimOf(a) < hoje ? ti : -1))))];
+    const spanOf = items => [Math.max(0, Math.min(...items.map(a => di(a.noite)))), Math.min(n - 1, Math.max(...items.map(a => di(ctx.fimOf(a)))))];
     pg.rows.forEach(r => {
       if (r.k === 's' || r.k === 'f'){
         const ix = (r.gr && r.gr.parent ? 4 : 0) + 5, hh = r.k === 's' ? subH : 4.2;
         stroke([232,234,238]); doc.setLineWidth(.1); doc.line(M + ix, r.y + hh, W - M, r.y + hh);
         stroke([190,195,203]); doc.setLineWidth(.2); doc.line(M + ix - 2.4, r.y, M + ix - 2.4, r.y + hh / 2); doc.line(M + ix - 2.4, r.y + hh / 2, M + ix - 1, r.y + hh / 2);
         if (r.k === 'f'){ color(C.faint); font('italic', 5.4); text(fit(`${r.todas ? '' : '+ '}${r.fora} ${r.fora === 1 ? 'subtarefa' : 'subtarefas'} fora destes dias`, cIni - M - ix - 2), M + ix, r.y + 2.9); return; }
-        const sb = r.sb, sav = Number(sb.avanco) || 0, sf = sb.fim || sb.noite, venc = sav < 100 && sf < hoje, sc = venc ? NAO : VD; // subtarefa com andamento em verde
+        const sb = r.sb, sav = Number(sb.avanco) || 0, sf = sb.fim || sb.noite, venc = sav < 100 && sf < hoje, sc = VD; // subtarefa com andamento em verde; atrasada = base vermelho clarinho
         color(C.faint); font('bold', 5.2); text(String(r.idx), M + ix, r.y + 3.4);
-        color(venc ? NAO.map(v => Math.round(v * .85)) : C.muted); font('normal', 6); text(fit(sb.titulo, cIni - M - ix - 6), M + ix + 3, r.y + 3.4);
-        datas(r.y, subH, sb.noite, sf, venc ? NAO.map(v => Math.round(v * .85)) : C.muted);
+        color(C.muted); font('normal', 6); text(fit(sb.titulo, cIni - M - ix - 6), M + ix + 3, r.y + 3.4);
+        datas(r.y, subH, sb.noite, sf, C.muted);
         const j0 = di(sb.noite), j1 = di(sf), a0 = Math.max(0, j0), a1 = Math.min(n - 1, j1);
         if (a1 >= a0){ const x0 = gx + a0 * cw + .6, w = (a1 - a0 + 1) * cw - 1.2, bh2 = 2.8, by2 = r.y + (subH - bh2) / 2;
-          fill(venc ? mix(NAO, .72) : AZ); doc.roundedRect(x0, by2, w, bh2, .7, .7, 'F');
+          fill(venc ? VM : AZ); doc.roundedRect(x0, by2, w, bh2, .7, .7, 'F');
           if (sav > 0){ fill(sc); doc.roundedRect(x0, by2, Math.max(1, w * sav / 100), bh2, .7, .7, 'F'); }
           if (sav > 0) txtBarra(`${sav}%`, x0, w, by2 + bh2 / 2, 4.8, sav < 75); }
         return;
@@ -484,7 +484,7 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
         color(C.muted); font('bold', 6.4); text(`${done}/${gr.items.length}`, cIni - 2, r.y + 4.3, {align:'right'});
         // barra-resumo do grupo
         const gs = Math.max(0, Math.min(...gr.items.map(a => di(a.noite))));
-        const ge = Math.min(n - 1, Math.max(...gr.items.map(a => Math.max(di(ctx.fimOf(a)), a.aberta && ctx.fimOf(a) < hoje ? ti : -1))));
+        const ge = Math.min(n - 1, Math.max(...gr.items.map(a => di(ctx.fimOf(a)))));
         if (ge >= gs){ const x0 = gx + gs * cw + .8, x1 = gx + (ge + 1) * cw - .8, yy = r.y + grpH / 2; fill([150,156,166]); doc.rect(x0, yy - .55, x1 - x0, 1.1, 'F'); doc.rect(x0, yy - .55, .6, 2, 'F'); doc.rect(x1 - .6, yy - .55, .6, 2, 'F'); }
         return;
       }
@@ -497,34 +497,24 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
       color(C.ink); font('bold', 6.6); text(fit(a.titulo, cIni - lx - 2), lx, r.y + 3.3);
       const meta = [ctx.lojaDe ? ctx.lojaDe(a) : '', ctx.turnoDe(a) === 'diurno' ? 'Diurno' : 'Noturno', a.fornecedor, ctx.nomeDe(a.dono || a.criadoPor)].filter(Boolean).join(' · ');
       color(C.faint); font('normal', 5.4); text(fit(meta, cIni - M - 4 - ix), M + 2 + ix, r.y + 6.2);
-      datas(r.y, rowH, a.noite, ctx.fimOf(a), a.aberta && ctx.fimOf(a) < hoje ? NAO.map(v => Math.round(v * .85)) : C.ink);
+      const atrasada = a.aberta && ctx.fimOf(a) < hoje; // o status não muda: só a cor da barra
+      datas(r.y, rowH, a.noite, ctx.fimOf(a), C.ink);
       const bh = 4.4, by = r.y + (rowH - bh) / 2;
-      // atraso: faixa até hoje
-      if (a.aberta && ctx.fimOf(a) < hoje){
-        const t0 = Math.max(0, i1 + 1), t1 = Math.min(n - 1, ti);
-        if (t1 >= t0){
-          const x0 = gx + t0 * cw - (i1 + 1 >= 0 ? .6 : -.6), w = (t1 - t0 + 1) * cw - .6;
-          fill(mix(NAO, .78)); doc.rect(x0, by + .7, w, bh - 1.4, 'F');
-          stroke(NAO); doc.setLineWidth(.2); doc.setLineDashPattern([.8, .6], 0); doc.rect(x0, by + .7, w, bh - 1.4, 'S'); doc.setLineDashPattern([], 0);
-          const d = ctx.nightsBetween(ctx.fimOf(a), hoje);
-          if (w > 8){ color(NAO.map(v => Math.round(v * .8))); font('bold', 5.2); text(`+${d}d`, x0 + w - 1, by + bh / 2 + .9, {align:'right'}); }
-        }
-      }
       const subsA = Array.isArray(a.subtarefas) ? a.subtarefas : [];
       if (subsA.length && e0 >= s0){
         // atividade com subtarefas = barra-resumo (como no Project): o andamento real está nas subtarefas
-        const atr = subsA.filter(sb => (Number(sb.avanco) || 0) < 100 && (sb.fim || sb.noite) < hoje).length, rc = atr ? NAO : AZF;
+        const atr = subsA.filter(sb => (Number(sb.avanco) || 0) < 100 && (sb.fim || sb.noite) < hoje).length, rc = atr || atrasada ? VMF : AZF;
         const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2, yb = by + bh - 1.6;
         fill(rc); doc.rect(x0, yb, w, 1.3, 'F');
         if (i0 >= 0) doc.rect(x0, yb - .9, .7, 2.6, 'F');
         if (i1 <= n - 1) doc.rect(x0 + w - .7, yb - .9, .7, 2.6, 'F');
-        const labR = `${ctx.statusLabel(a.status)}${av ? ` · ${av}%` : ''}${atr ? ` · ${atr} ${atr === 1 ? 'subtarefa atrasada' : 'subtarefas atrasadas'}` : ''}`;
-        font('bold', 5.4); color(atr ? NAO.map(v => Math.round(v * .8)) : C.ink); text(fit(labR, Math.max(w, 30)), x0 + .4, by + 1.9);
+        const labR = `${ctx.statusLabel(a.status)}${av ? ` · ${av}%` : ''}`;
+        font('bold', 5.4); color(C.ink); text(fit(labR, Math.max(w, 30)), x0 + .4, by + 1.9);
       } else
       // barra planejada com o avanço
       if (e0 >= s0){
         const x0 = gx + s0 * cw + .6, w = (e0 - s0 + 1) * cw - 1.2;
-        fill(AZ); doc.roundedRect(x0, by, w, bh, 1, 1, 'F');
+        fill(atrasada ? VM : AZ); doc.roundedRect(x0, by, w, bh, 1, 1, 'F');
         const lab = w > 34 ? `${ctx.statusLabel(a.status)}${av ? ` · ${av}%` : ''}` : av ? `${av}%` : '';
         if (lab) txtBarra(lab, x0, w, by + bh / 2, 5.6, true);
       }
@@ -536,8 +526,8 @@ function desenharGantt(doc, ctx, logo, primeiraNaPaginaAtual){
     fill(AZ); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); color(C.muted); text('Período planejado', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Período planejado') + 3;
     fill(VD); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F'); text('Executado da subtarefa', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Executado da subtarefa') + 3;
     fill(AZF); doc.rect(lx, ly - .9, 5, 1, 'F'); doc.rect(lx, ly - 1.7, .5, 1.8, 'F'); doc.rect(lx + 4.5, ly - 1.7, .5, 1.8, 'F'); text(t('Resumo das subtarefas'), lx + 6.2, ly); lx += 8 + doc.getTextWidth(t('Resumo das subtarefas')) + 3;
-    fill(mix(NAO, .78)); doc.rect(lx, ly - 2, 5, 2.4, 'F'); stroke(NAO); doc.setLineWidth(.2); doc.setLineDashPattern([.8, .6], 0); doc.rect(lx, ly - 2, 5, 2.4, 'S'); doc.setLineDashPattern([], 0);
-    color(C.muted); text('Atraso (até hoje)', lx + 6.2, ly); lx += 8 + doc.getTextWidth('Atraso (até hoje)') + 3;
+    fill(VM); doc.roundedRect(lx, ly - 2, 5, 2.4, .6, .6, 'F');
+    color(C.muted); text(t('Prazo ultrapassado'), lx + 6.2, ly); lx += 8 + doc.getTextWidth(t('Prazo ultrapassado')) + 3;
     fill(LAR); doc.rect(lx + 2, ly - 2.6, .6, 3.4, 'F'); text('Hoje', lx + 4, ly); lx += 14;
     color(C.faint); text('O status aparece no texto da barra.', lx, ly);
   });
